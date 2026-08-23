@@ -9,7 +9,7 @@ The in-game UI automatically uses Brazilian Portuguese on `ptBR` clients and Eng
 ## Highlights
 
 - Blood, Frost, and Unholy specialization detection.
-- World, Delve, Dungeon, Raid, and PvP context detection with manual override.
+- World, Delve, Dungeon, Raid, and PvP context detection with automatic runtime switching.
 - Blizzard Assisted Combat offensive highlighting; DK Mentor never casts abilities.
 - Health-aware Survival Coach for defensive, healing, control, and utility priorities.
 - Contextual talent-loadout and Equipment Set mapping with optional automatic switching when WoW permits it.
@@ -17,20 +17,23 @@ The in-game UI automatically uses Brazilian Portuguese on `ptBR` clients and Eng
 - **DK Ready Check** in the Build HUD for mapped talents, mapped equipment, Death Knight Runeforge coverage, and the Unholy ghoul when applicable.
 - **Runeforge Guard** validates a DK Runeforge on every equipped weapon without pretending one rune is universally best for all builds.
 - **Ghoul Guard** warns Unholy Death Knights when their permanent pet is missing/dead, with travel/vehicle suppression.
-- DK Buff Bar for important class buffs/procs.
+- DK Buff Bar for important class buffs/procs using Blizzard's Retail 12.1 AuraContainer with a spec-aware Cooldown Manager whitelist; it defaults to five icons per row and can display up to 30 active tracked effects.
 - External Buff Bar for helpful effects applied to you by other players or NPCs.
 - Player Debuff Bar for harmful effects currently affecting your own character.
-- External buffs and debuffs wrap at **five icons per row** and grow upward instead of becoming a long horizontal strip.
+- DK Buffs, External Buffs, and Debuffs default to **five icons per row**, can be widened/narrowed independently, and grow upward when they wrap.
 - Ability Availability Bar for important abilities, cooldowns, charges, and temporary unavailability.
-- Optional combat-only visibility for DK Buffs, External Buffs, Debuffs, and the Ability Bar; leave it off to keep enabled bars visible outside combat.
-- HUD lock/unlock, preview, and reset-position workflow.
+- **DK Resources HUD** with all six Rune recharge segments plus a Runic Power bar; each resource can be shown independently.
+- Optional icon-only **Mind Freeze interrupt alert** that appears for a confirmed interruptible cast/channel on your current target; it never casts the interrupt automatically.
+- Combat-only visibility for DK Buffs, External Buffs, Debuffs, the Ability Bar, and DK Resources is the default; it can be switched to always-visible from Settings.
+- Independent 70%-160% combat-HUD scaling, **30%-100% opacity**, configurable icons per row for icon bars, and a Runes / Runic Power / Both mode for DK Resources.
+- HUD lock/unlock, hard-override preview, and reset-position workflow.
 - Beginner Guide tab per specialization.
 - Optional situational Lich King commentary using sound resources already installed by the WoW client; no Blizzard audio files are bundled.
 - Minimap button positioned on the outer edge of the current Edit Mode minimap size.
 
 ## Retail 12.1 combat restrictions
 
-Modern WoW can protect or hide some combat values from addons. DK Mentor does not attempt to bypass those restrictions. The addon uses Blizzard-owned APIs and UI mechanisms where available, including Assisted Combat, DurationObjects, proc events, and the Retail 12.1 AuraContainer/AuraButton system for dynamic player aura HUDs.
+Modern WoW can protect or hide some combat values from addons. DK Mentor does not attempt to bypass those restrictions. The addon uses Blizzard-owned APIs and UI mechanisms where available, including Assisted Combat, DurationObjects, proc events, and the Retail 12.1 AuraContainer/AuraButton system for dynamic player aura HUDs. The DK Resources HUD reads the six secondary Rune cooldowns normally. Runic Power is a primary resource and can become a secret value in combat, so DK Mentor passes it directly into Blizzard's native `StatusBar` value path and does not branch, threshold, or make recommendations from the hidden number.
 
 When the game does not expose a restricted value, DK Mentor avoids pretending that the value is known.
 
@@ -56,6 +59,10 @@ When the game does not expose a restricted value, DK Mentor avoids pretending th
 /dkm externalbuffs on|off
 /dkm debuffs on|off
 /dkm abilities on|off
+/dkm resources on|off
+/dkm resources runes on|off
+/dkm resources power on|off
+/dkm interrupt on|off
 /dkm combatbars combat|always
 /dkm ready
 /dkm hud lock|unlock|preview
@@ -77,6 +84,18 @@ Runeforge Guard answers **"is this a Death Knight Runeforge?"**, not **"is this 
 
 Use `/dkm ready` for a chat report while testing.
 
+## DK Resources HUD
+
+The optional **DK Resources** HUD keeps the Death Knight resource loop close to the other combat bars:
+
+- Six Rune segments show ready/recharging state.
+- A Runic Power bar follows the player resource using Blizzard's native status-bar rendering path.
+- Settings can show **Runes + Runic Power**, **Runes only**, or **Runic Power only**.
+- The HUD has its own 70%-160% scale, 30%-100% opacity, saved position, lock/unlock behavior, Preview support, and the same Combat only / Always visibility rule as the other combat HUDs.
+- Runic Power text can be hidden for a cleaner visual, and Rune spacing can be switched between Compact, Normal, and Wide.
+- **Restore DK Resources** resets only this HUD without changing the other combat HUDs.
+- In restricted combat, the Runic Power fill may remain live while its numeric text is intentionally omitted if the underlying number is secret.
+
 ## Aura HUDs
 
 The addon provides three separate aura concepts:
@@ -85,7 +104,7 @@ The addon provides three separate aura concepts:
 - **External Buffs**: positive effects on the player supplied by other players/NPCs.
 - **Debuffs**: negative effects currently affecting the player character.
 
-External Buffs and Debuffs use Blizzard's Retail aura-container system so the game client owns aura assignment and refreshes during restricted combat. They are display-only and do not inspect enemy aura state or automate reactions.
+DK Buffs, External Buffs, and Debuffs use Blizzard's Retail aura-container system so the game client owns aura assignment and refreshes during restricted combat. DK Buffs uses a spell-ID whitelist assembled from spec data and current Cooldown Manager profiles; DK Mentor never branches on secret aura presence to decide what should be shown. The HUDs are display-only and do not automate reactions.
 
 ## Lich King commentary
 
@@ -93,7 +112,7 @@ The commentary feature is optional and disabled by default. It references numeri
 
 ## Publishing and project policy
 
-- [1.0 live test checklist](TESTING_v1.0.9.md)
+- [1.0 live test checklist](TESTING_v1.0.21.md)
 - [Publishing guide](PUBLISHING.md)
 - [Policy and sources](POLICY_AND_SOURCES.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)

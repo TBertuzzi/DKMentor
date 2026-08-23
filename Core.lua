@@ -21,12 +21,17 @@ local minimapButton
 local statusWidget
 local specializationPickerFrame
 local voiceConfigFrame
+local languagePickerFrame
 local equipmentPickerFrame
 local loadoutPickerFrame
+local barLayoutFrame
 local buffFrame
 local externalBuffFrame
 local debuffFrame
 local abilityFrame
+local resourceFrame
+local resourceArcFrame
+local interruptFrame
 local modeButtons = {}
 local tipRows = {}
 local coachCards = {}
@@ -39,9 +44,15 @@ local externalBuffSlots = {}
 local debuffSlots = {}
 local abilitySlots = {}
 local mirroredBuffItems = {}
+local mirroredActiveBuffItems = {}
+local mirroredActiveBuffOrder = {}
 local mirroredBuffHooks = setmetatable({}, { __mode = "k" })
 local mirroredViewerHooks = setmetatable({}, { __mode = "k" })
 local overlayProcState = {}
+local activeProcGlows = {}
+local activeProcGlowOrder = {}
+local cooldownManagerProfileCache = {}
+local targetInterruptEventState = nil
 local runtimeBuffState = {}
 local buffRefreshElapsed = 0
 local contextPollElapsed = 0
@@ -63,6 +74,7 @@ local updateNeedsBarCheck = false
 
 local PREFIX = "|cff69ccf0DK Mentor|r"
 local QUESTION_MARK_ICON = 134400
+local RUNIC_POWER_TYPE = (Enum and Enum.PowerType and Enum.PowerType.RunicPower) or 6
 
 local function Print(message)
     if DEFAULT_CHAT_FRAME then
@@ -126,6 +138,25 @@ local function IsAccessibleNumber(value)
         end
     end
     return true
+end
+
+local function GetAccessibleBoolean(value)
+    -- Midnight may return secret booleans from otherwise familiar Unit APIs.
+    -- Never compare, negate, or branch on the value until accessibility is known.
+    if not IsAccessibleValue(value) then
+        return nil
+    end
+    if type(value) ~= "boolean" then
+        return nil
+    end
+    return value
+end
+
+local function GetAccessibleBooleanFromCall(ok, value)
+    if not ok then
+        return nil
+    end
+    return GetAccessibleBoolean(value)
 end
 
 local function FormatShortTime(seconds)
@@ -264,8 +295,9 @@ local function ApplyDefaults(target, defaults)
 end
 
 local DEFAULTS = {
-    schema = 19,
+    schema = 27,
     firstRun = true,
+    languageOverride = "auto",
     modeOverride = "auto",
     buildContextSelection = "world",
     selectedBuild = {},
@@ -275,7 +307,7 @@ local DEFAULTS = {
     autoSwitchLoadouts = true,
     autoSwitchEquipment = true,
     autoHideMainInCombat = true,
-    combatBarsOnlyInCombat = false,
+    combatBarsOnlyInCombat = true,
     mainTab = "combat",
     hudLocked = true,
     main = {
@@ -310,6 +342,8 @@ local DEFAULTS = {
         x = 0,
         y = 205,
         scale = 1,
+        iconsPerRow = 5,
+        opacity = 1,
     },
     externalBuffBar = {
         enabled = false,
@@ -318,6 +352,8 @@ local DEFAULTS = {
         x = 0,
         y = 255,
         scale = 1,
+        iconsPerRow = 5,
+        opacity = 1,
     },
     debuffBar = {
         enabled = false,
@@ -326,6 +362,8 @@ local DEFAULTS = {
         x = 0,
         y = 305,
         scale = 1,
+        iconsPerRow = 5,
+        opacity = 1,
     },
     abilityBar = {
         enabled = false,
@@ -333,6 +371,35 @@ local DEFAULTS = {
         relativePoint = "BOTTOM",
         x = 0,
         y = 155,
+        scale = 1,
+        iconsPerRow = 11,
+        opacity = 1,
+    },
+    resourceHUD = {
+        enabled = true,
+        showRunes = true,
+        showRunicPower = true,
+        showPowerText = true,
+        runeSpacing = "normal",
+        style = "classic",
+        arcSpacing = 105,
+        arcPoint = "CENTER",
+        arcRelativePoint = "CENTER",
+        arcX = 0,
+        arcY = 0,
+        point = "BOTTOM",
+        relativePoint = "BOTTOM",
+        x = 0,
+        y = 85,
+        scale = 1,
+        opacity = 1,
+    },
+    interruptAlert = {
+        enabled = true,
+        point = "CENTER",
+        relativePoint = "CENTER",
+        x = 0,
+        y = 95,
         scale = 1,
     },
     minimap = {
@@ -530,22 +597,25 @@ function addon:GetGhoulReadyStatus(specID)
     end
 
     if UnitInVehicle then
-        local ok, inVehicle = pcall(UnitInVehicle, "player")
-        if ok and inVehicle == true then
+        local ok, rawInVehicle = pcall(UnitInVehicle, "player")
+        local inVehicle = GetAccessibleBooleanFromCall(ok, rawInVehicle)
+        if inVehicle == true then
             return { required = true, ready = true, paused = true, detail = T("Paused while in a vehicle") }
         end
     end
     if UnitOnTaxi then
-        local ok, onTaxi = pcall(UnitOnTaxi, "player")
-        if ok and onTaxi == true then
+        local ok, rawOnTaxi = pcall(UnitOnTaxi, "player")
+        local onTaxi = GetAccessibleBooleanFromCall(ok, rawOnTaxi)
+        if onTaxi == true then
             return { required = true, ready = true, paused = true, detail = T("Paused while travelling") }
         end
     end
 
     local petExists = false
     if UnitExists then
-        local ok, exists = pcall(UnitExists, "pet")
-        petExists = ok and exists == true
+        local ok, rawExists = pcall(UnitExists, "pet")
+        local exists = GetAccessibleBooleanFromCall(ok, rawExists)
+        petExists = exists == true
     end
 
     if not petExists then
@@ -554,11 +624,13 @@ function addon:GetGhoulReadyStatus(specID)
 
     local petDead = false
     if UnitIsDead then
-        local ok, dead = pcall(UnitIsDead, "pet")
-        petDead = ok and dead == true
+        local ok, rawDead = pcall(UnitIsDead, "pet")
+        local dead = GetAccessibleBooleanFromCall(ok, rawDead)
+        petDead = dead == true
     elseif UnitIsDeadOrGhost then
-        local ok, dead = pcall(UnitIsDeadOrGhost, "pet")
-        petDead = ok and dead == true
+        local ok, rawDead = pcall(UnitIsDeadOrGhost, "pet")
+        local dead = GetAccessibleBooleanFromCall(ok, rawDead)
+        petDead = dead == true
     end
 
     if petDead then
@@ -759,7 +831,9 @@ local function RestoreFramePosition(frame, dbKey)
         config.x or 0,
         config.y or 0
     )
-    frame:SetScale(Clamp(config.scale or 1, 0.7, 1.4))
+    local combatBar = dbKey == "buffBar" or dbKey == "externalBuffBar" or dbKey == "debuffBar" or dbKey == "abilityBar" or dbKey == "resourceHUD"
+    frame:SetScale(Clamp(config.scale or 1, 0.7, combatBar and 1.6 or 1.4))
+    if combatBar then frame:SetAlpha(Clamp(config.opacity or 1, 0.3, 1)) end
 end
 
 function addon:IsDeathKnight()
@@ -2121,11 +2195,14 @@ function addon:CheckMountedTransition()
         return
     end
 
-    local ok, mounted = pcall(IsMounted)
+    local ok, rawMounted = pcall(IsMounted)
     if not ok then
         return
     end
-    mounted = mounted == true
+    local mounted = GetAccessibleBoolean(rawMounted)
+    if mounted == nil then
+        return
+    end
 
     if mounted and not self.lastMountedState then
         self.lastMountedState = true
@@ -2692,6 +2769,86 @@ local function CreateContextSelector(parent, labelText, options)
     return bar
 end
 
+local function NormalizeAddonLanguage(value)
+    value = string.lower(tostring(value or "auto"))
+    if value == "ptbr" or value == "pt" or value == "portuguese" or value == "portugues" then
+        return "ptBR"
+    end
+    if value == "enus" or value == "engb" or value == "en" or value == "english" then
+        return "enUS"
+    end
+    return "auto"
+end
+
+local function GetAddonLanguageLabel(value)
+    value = NormalizeAddonLanguage(value)
+    if value == "ptBR" then return T("Portuguese (Brazil)") end
+    if value == "enUS" then return T("English") end
+    return T("Automatic (WoW)")
+end
+
+local function CreateLanguagePickerFrame()
+    local frame = CreateFrame("Frame", "DKMentorLanguagePicker", UIParent, "BackdropTemplate")
+    frame:SetSize(390, 250)
+    -- This picker is modal-like and must always render above the DK Mentor main window.
+    -- The main window itself uses DIALOG, so FULLSCREEN_DIALOG prevents the picker
+    -- from being visually/mouse-obscured by the parent settings UI.
+    frame:SetFrameStrata("FULLSCREEN_DIALOG")
+    frame:SetFrameLevel(1000)
+    frame:SetClampedToScreen(true)
+    frame:EnableMouse(true)
+    if frame.SetToplevel then frame:SetToplevel(true) end
+    ApplyBackdrop(frame, 0.98)
+
+    frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    frame.title:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -16)
+    frame.title:SetText(T("Addon language"))
+    frame.title:SetTextColor(0.55, 0.86, 1)
+
+    frame.description = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    frame.description:SetPoint("TOPLEFT", frame.title, "BOTTOMLEFT", 0, -10)
+    frame.description:SetWidth(350)
+    frame.description:SetJustifyH("LEFT")
+    frame.description:SetJustifyV("TOP")
+    frame.description:SetText(T("Choose the DK Mentor language. Automatic follows the WoW client language; unsupported client languages use English."))
+
+    frame.current = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    frame.current:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -92)
+    frame.current:SetWidth(350)
+    frame.current:SetJustifyH("LEFT")
+
+    local choices = {
+        { value = "auto", label = "Automatic (WoW)" },
+        { value = "ptBR", label = "Portuguese (Brazil)" },
+        { value = "enUS", label = "English" },
+    }
+    frame.choiceButtons = {}
+    for index, choice in ipairs(choices) do
+        local button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+        button:SetSize(110, 30)
+        button:SetPoint("TOPLEFT", frame, "TOPLEFT", 16 + ((index - 1) * 118), -120)
+        button.languageValue = choice.value
+        button.languageLabelKey = choice.label
+        button:SetText(T(choice.label))
+        button:SetScript("OnClick", function(self)
+            addon:SetLanguageOverride(self.languageValue)
+        end)
+        frame.choiceButtons[index] = button
+    end
+
+    frame.cancel = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.cancel:SetSize(120, 28)
+    frame.cancel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, 16)
+    frame.cancel:SetText(T("Cancel"))
+    frame.cancel:SetScript("OnClick", function() frame:Hide() end)
+
+    frame:SetScript("OnShow", function(self)
+        addon:UpdateLanguagePicker()
+    end)
+    frame:Hide()
+    return frame
+end
+
 local function CreateMainFrame()
     local frame = CreateFrame("Frame", "DKMentorMainFrame", UIParent, "BackdropTemplate")
     frame:SetSize(830, 760)
@@ -3067,10 +3224,17 @@ local function CreateMainFrame()
     -- SETTINGS TAB ---------------------------------------------------------
     settingsPage.scope = settingsPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     settingsPage.scope:SetPoint("TOPLEFT", settingsPage, "TOPLEFT", 12, -8)
-    settingsPage.scope:SetWidth(760)
+    settingsPage.scope:SetWidth(500)
     settingsPage.scope:SetJustifyH("LEFT")
     settingsPage.scope:SetText(T("Global addon settings. These options apply across all Death Knight specializations and content profiles."))
     settingsPage.scope:SetTextColor(0.55, 0.84, 0.95)
+
+    frame.languageButton = CreateFrame("Button", nil, settingsPage, "UIPanelButtonTemplate")
+    frame.languageButton:SetSize(235, 27)
+    frame.languageButton:SetPoint("TOPRIGHT", settingsPage, "TOPRIGHT", -12, -2)
+    frame.languageButton:SetScript("OnClick", function() addon:ToggleLanguagePicker() end)
+    local languageFont = frame.languageButton.GetFontString and frame.languageButton:GetFontString()
+    if languageFont and GameFontNormalSmall then languageFont:SetFontObject(GameFontNormalSmall) end
 
     frame.hudSection = CreateSection(settingsPage, T("HUDs and layout"), -38, 315)
     local hud = frame.hudSection
@@ -3096,7 +3260,7 @@ local function CreateMainFrame()
         local text = hud:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         text:SetPoint("TOPLEFT", hud, "TOPLEFT", 205, y)
         text:SetWidth(540)
-        text:SetHeight(30)
+        text:SetHeight(24)
         text:SetJustifyH("LEFT")
         text:SetJustifyV("MIDDLE")
         text:SetText(description)
@@ -3104,61 +3268,78 @@ local function CreateMainFrame()
     end
 
     hud.buildButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
-    hud.buildButton:SetSize(180, 27)
+    hud.buildButton:SetSize(180, 24)
     hud.buildButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -72)
     hud.buildButton:SetScript("OnClick", function() addon:SetStatusWidgetEnabled(not DB.statusWidget.enabled) end)
     AddHudRow(-68, T("Shows specialization, detected content, active build, and mapped gear."))
     build.hudButton = hud.buildButton
 
     hud.coachButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
-    hud.coachButton:SetSize(180, 27)
-    hud.coachButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -102)
+    hud.coachButton:SetSize(180, 24)
+    hud.coachButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -97)
     hud.coachButton:SetScript("OnClick", function() addon:SetCoachEnabled(not DB.coach.enabled) end)
-    AddHudRow(-98, T("Shows defensive and recovery recommendations, including health-adaptive priorities."))
+    AddHudRow(-93, T("Shows defensive and recovery recommendations, including health-adaptive priorities."))
 
     hud.buffButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
-    hud.buffButton:SetSize(180, 27)
-    hud.buffButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -132)
+    hud.buffButton:SetSize(180, 24)
+    hud.buffButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -122)
     hud.buffButton:SetScript("OnClick", function() addon:SetBuffBarEnabled(not DB.buffBar.enabled) end)
-    AddHudRow(-128, T("Shows important Death Knight buffs in a compact movable row."))
+    AddHudRow(-118, T("Shows important Death Knight buffs in a compact movable row."))
 
     hud.externalBuffButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
-    hud.externalBuffButton:SetSize(180, 27)
-    hud.externalBuffButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -162)
+    hud.externalBuffButton:SetSize(180, 24)
+    hud.externalBuffButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -147)
     hud.externalBuffButton:SetScript("OnClick", function() addon:SetExternalBuffBarEnabled(not DB.externalBuffBar.enabled) end)
-    AddHudRow(-158, T("Shows helpful effects on you that were applied by other players or NPCs."))
+    AddHudRow(-143, T("Shows helpful effects on you that were applied by other players or NPCs."))
 
     hud.debuffButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
-    hud.debuffButton:SetSize(180, 27)
-    hud.debuffButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -192)
+    hud.debuffButton:SetSize(180, 24)
+    hud.debuffButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -172)
     hud.debuffButton:SetScript("OnClick", function() addon:SetDebuffBarEnabled(not DB.debuffBar.enabled) end)
-    AddHudRow(-188, T("Shows harmful effects currently affecting your character."))
+    AddHudRow(-168, T("Shows harmful effects currently affecting your character."))
 
     hud.abilityButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
-    hud.abilityButton:SetSize(180, 27)
-    hud.abilityButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -222)
+    hud.abilityButton:SetSize(180, 24)
+    hud.abilityButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -197)
     hud.abilityButton:SetScript("OnClick", function() addon:SetAbilityBarEnabled(not DB.abilityBar.enabled) end)
-    AddHudRow(-218, T("Shows important abilities and whether they are ready, cooling down, or temporarily unusable."))
+    AddHudRow(-193, T("Shows important abilities and whether they are ready, cooling down, or temporarily unusable."))
 
-    -- Keep the three layout controls on one clean row even with the longer
-    -- ptBR labels. The old 180px buttons clipped/overflowed localized text.
+    hud.resourceButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
+    hud.resourceButton:SetSize(180, 24)
+    hud.resourceButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -222)
+    hud.resourceButton:SetScript("OnClick", function() addon:SetResourceHUDEnabled(not DB.resourceHUD.enabled) end)
+    hud.resourceDescription = AddHudRow(-218, T("Shows all six Runes plus Runic Power in a compact movable Death Knight resource HUD."))
+
+    hud.interruptButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
+    hud.interruptButton:SetSize(180, 24)
+    hud.interruptButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -247)
+    hud.interruptButton:SetScript("OnClick", function() addon:SetInterruptAlertEnabled(not DB.interruptAlert.enabled) end)
+    AddHudRow(-243, T("Shows the Mind Freeze icon only when your current target has a confirmed interruptible cast or channel."))
+
+    -- Keep the layout controls on one clean row even with localized labels.
     hud.lockButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
-    hud.lockButton:SetSize(190, 27)
+    hud.lockButton:SetSize(170, 27)
     hud.lockButton:SetPoint("BOTTOMLEFT", hud, "BOTTOMLEFT", 12, 12)
     hud.lockButton:SetScript("OnClick", function() addon:ToggleHUDLock() end)
 
     hud.previewButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
-    hud.previewButton:SetSize(230, 27)
-    hud.previewButton:SetPoint("LEFT", hud.lockButton, "RIGHT", 9, 0)
+    hud.previewButton:SetSize(180, 27)
+    hud.previewButton:SetPoint("LEFT", hud.lockButton, "RIGHT", 8, 0)
     hud.previewButton:SetScript("OnClick", function() addon:ToggleHUDPreview() end)
 
+    hud.barLayoutButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
+    hud.barLayoutButton:SetSize(180, 27)
+    hud.barLayoutButton:SetPoint("LEFT", hud.previewButton, "RIGHT", 8, 0)
+    hud.barLayoutButton:SetText(T("HUD appearance..."))
+    hud.barLayoutButton:SetScript("OnClick", function() addon:ToggleBarLayoutFrame() end)
+
     hud.resetButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
-    hud.resetButton:SetSize(250, 27)
-    hud.resetButton:SetPoint("LEFT", hud.previewButton, "RIGHT", 9, 0)
+    hud.resetButton:SetSize(200, 27)
+    hud.resetButton:SetPoint("LEFT", hud.barLayoutButton, "RIGHT", 8, 0)
     hud.resetButton:SetText(T("Reset HUD positions"))
     hud.resetButton:SetScript("OnClick", function() addon:ResetHUDPositions() end)
 
-    for _, button in ipairs({ hud.lockButton, hud.previewButton, hud.resetButton }) do
+    for _, button in ipairs({ hud.lockButton, hud.previewButton, hud.barLayoutButton, hud.resetButton }) do
         local fontString = button.GetFontString and button:GetFontString()
         if fontString and GameFontNormalSmall then
             fontString:SetFontObject(GameFontNormalSmall)
@@ -3656,7 +3837,31 @@ local function LayoutStatusWidget()
     statusWidget:SetHeight(desiredHeight)
 end
 
-local function CreateTrackingBar(frameName, dbKey, title, slotStore, maxSlots, updateInterval)
+local function GetConfiguredBarColumns(dbKey, fallback, maximum)
+    local config = DB and DB[dbKey]
+    local value = config and tonumber(config.iconsPerRow) or tonumber(fallback) or 5
+    value = math.floor(value + 0.5)
+    return Clamp(value, 3, maximum or 12)
+end
+
+local function LayoutTrackingSlots(frame, slotStore, columns, anchorFromBottom)
+    if not frame or not slotStore then return end
+    columns = math.max(1, math.floor(tonumber(columns) or frame.slotsPerRow or #slotStore))
+    frame.slotsPerRow = columns
+
+    for index, slot in ipairs(slotStore) do
+        slot:ClearAllPoints()
+        local column = (index - 1) % columns
+        local row = math.floor((index - 1) / columns)
+        if anchorFromBottom then
+            slot:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 7 + (column * 38), 18 + (row * 38))
+        else
+            slot:SetPoint("TOPLEFT", frame, "TOPLEFT", 7 + (column * 38), -16 - (row * 38))
+        end
+    end
+end
+
+local function CreateTrackingBar(frameName, dbKey, title, slotStore, maxSlots, updateInterval, slotsPerRow)
     local frame = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
     frame:SetSize(330, 54)
     frame:SetFrameStrata("HIGH")
@@ -3665,6 +3870,7 @@ local function CreateTrackingBar(frameName, dbKey, title, slotStore, maxSlots, u
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
     frame.dbKey = dbKey
+    frame.slotsPerRow = GetConfiguredBarColumns(dbKey, slotsPerRow or maxSlots, maxSlots)
     frame.updateElapsed = 0
     frame.updateInterval = tonumber(updateInterval) or 0.12
     ApplyBackdrop(frame, 0.82)
@@ -3690,7 +3896,9 @@ local function CreateTrackingBar(frameName, dbKey, title, slotStore, maxSlots, u
     for index = 1, maxSlots do
         local slot = CreateFrame("Button", nil, frame, "BackdropTemplate")
         slot:SetSize(34, 34)
-        slot:SetPoint("TOPLEFT", frame, "TOPLEFT", 7 + ((index - 1) * 38), -16)
+        local column = (index - 1) % frame.slotsPerRow
+        local row = math.floor((index - 1) / frame.slotsPerRow)
+        slot:SetPoint("TOPLEFT", frame, "TOPLEFT", 7 + (column * 38), -16 - (row * 38))
         slot:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8X8",
             edgeFile = "Interface\\Buttons\\WHITE8X8",
@@ -3773,9 +3981,7 @@ local function CreateTrackingBar(frameName, dbKey, title, slotStore, maxSlots, u
     return frame
 end
 
-local function CreateBuffBar()
-    return CreateTrackingBar("DKMentorBuffBar", "buffBar", T("DK Buffs"), buffSlots, 10, 0.12)
-end
+local CreateBuffBar
 
 -- Midnight 12.1 makes player aura identity/timing secret during restricted combat.
 -- The sanctioned way to keep custom aura HUDs live is AuraContainer: Blizzard owns
@@ -3827,39 +4033,42 @@ local function UpdateManagedAuraBarChrome(frame)
     if not frame or not frame.managedAuraContainer then return end
     local editing = (DB and DB.hudLocked == false) or addon.hudPreviewMode == true
 
-    if frame.label then frame.label:SetShown(editing) end
+    -- HUD lock is interaction-only. Locking a bar must never change whether the
+    -- player can see it in combat; it only disables dragging/click interception.
+    -- Keep managed-aura bars visually consistent with the Abilities bar.
+    if frame.label then frame.label:SetShown(true) end
     if frame.dragHint then
         frame.dragHint:SetShown(editing)
         if editing then frame.dragHint:SetText(T("Drag to move")) end
     end
 
-    -- When locked, keep the host frame visually/click-through transparent. The
-    -- Blizzard-owned AuraButtons remain visible and continue updating normally.
     frame:EnableMouse(editing)
-    if editing then
-        frame:SetBackdropColor(0.02, 0.04, 0.06, 0.82)
-        frame:SetBackdropBorderColor(0.16, 0.47, 0.62, 0.85)
-    else
-        frame:SetBackdropColor(0, 0, 0, 0)
-        frame:SetBackdropBorderColor(0, 0, 0, 0)
-    end
+    frame:SetBackdropColor(0.02, 0.04, 0.06, 0.82)
+    frame:SetBackdropBorderColor(0.16, 0.47, 0.62, 0.85)
 end
 
 local MANAGED_AURA_ICON_SIZE = 34
 local MANAGED_AURA_SPACING = 4
 local MANAGED_AURAS_PER_LINE = 5
 local MANAGED_AURA_MAX_FRAMES = 30
-local MANAGED_AURA_LINE_SIZE = (MANAGED_AURAS_PER_LINE * (MANAGED_AURA_ICON_SIZE + MANAGED_AURA_SPACING)) + 1
 
-local function ConfigureManagedAuraFlow(container)
+local function GetManagedAuraLineSize(perLine)
+    perLine = math.max(1, math.floor(tonumber(perLine) or MANAGED_AURAS_PER_LINE))
+    return (perLine * (MANAGED_AURA_ICON_SIZE + MANAGED_AURA_SPACING)) + 1
+end
+
+local function ConfigureManagedAuraFlow(container, perLine)
     if not container then return end
+    perLine = math.max(1, math.floor(tonumber(perLine) or MANAGED_AURAS_PER_LINE))
+    local lineSize = GetManagedAuraLineSize(perLine)
 
-    -- Five icons per row. Additional rows grow UP so a HUD placed above the
-    -- action bars never turns into an extremely long horizontal strip.
+    -- The default remains five icons per row, but the user can widen/narrow
+    -- each aura HUD from Settings. Additional rows always grow UP so a HUD
+    -- placed above the action bars never turns into an uncontrolled strip.
     if container.SetFlowLayoutMaximumLineSize then
-        pcall(container.SetFlowLayoutMaximumLineSize, container, MANAGED_AURA_LINE_SIZE)
+        pcall(container.SetFlowLayoutMaximumLineSize, container, lineSize)
     elseif container.SetAuraLayoutRowWidth then
-        pcall(container.SetAuraLayoutRowWidth, container, MANAGED_AURA_LINE_SIZE)
+        pcall(container.SetAuraLayoutRowWidth, container, lineSize)
     end
 
     local anchorSetter = container.SetFlowLayoutAnchorPoint or container.SetAuraLayoutAnchorPoint
@@ -3874,11 +4083,13 @@ local function ConfigureManagedAuraFlow(container)
     end
 end
 
-local function CreateManagedAuraBar(frameName, dbKey, title, slotStore, filterString, harmful)
+local function CreateManagedAuraBar(frameName, dbKey, title, slotStore, filterString, harmful, candidateFilters)
     -- Build the legacy row first as a compatibility fallback. On Retail 12.1 the
     -- managed container path below takes over and these ordinary slots stay hidden.
     local frame = CreateTrackingBar(frameName, dbKey, title, slotStore, MANAGED_AURA_MAX_FRAMES, 0.25)
-    frame:SetSize(200, 56)
+    local perLine = GetConfiguredBarColumns(dbKey, MANAGED_AURAS_PER_LINE, 10)
+    local lineSize = GetManagedAuraLineSize(perLine)
+    frame:SetSize(math.max(92, 14 + (perLine * 38)), 56)
     if frame.label then
         frame.label:ClearAllPoints()
         frame.label:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 7, 3)
@@ -3896,24 +4107,31 @@ local function CreateManagedAuraBar(frameName, dbKey, title, slotStore, filterSt
     -- The bottom row remains at the saved HUD position; wrapped rows are placed
     -- above it by the AuraContainer flow engine.
     container:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 7, 18)
-    container:SetSize(MANAGED_AURA_LINE_SIZE, MANAGED_AURA_ICON_SIZE)
+    container:SetSize(lineSize, MANAGED_AURA_ICON_SIZE)
     container:Show()
-    ConfigureManagedAuraFlow(container)
+    ConfigureManagedAuraFlow(container, perLine)
 
     local options = {
         maxFrameCount = MANAGED_AURA_MAX_FRAMES,
         initializeFrame = function(button)
             StyleManagedAuraButton(button, harmful)
         end,
-        candidateFilters = {},
+        candidateFilters = candidateFilters or {},
         layout = {
             elementWidth = MANAGED_AURA_ICON_SIZE,
             elementHeight = MANAGED_AURA_ICON_SIZE,
             elementSpacing = MANAGED_AURA_SPACING,
             lineSpacing = MANAGED_AURA_SPACING,
-            maximumLineSize = MANAGED_AURA_LINE_SIZE,
+            maximumLineSize = lineSize,
         },
     }
+
+    -- Retail 12.1 live order: SetUnit -> AddAuraGroup -> SetEnabled LAST.
+    -- SetEnabled arms Blizzard's own aura-event processing; the addon never
+    -- needs to inspect secret combat aura state to decide what is active.
+    if container.SetUnit then
+        pcall(container.SetUnit, container, "player")
+    end
 
     -- IMPORTANT: the PLAYER filter is negatable and is evaluated inside the
     -- secure aura engine. HELPFUL|!PLAYER therefore means positive effects on
@@ -3927,15 +4145,12 @@ local function CreateManagedAuraBar(frameName, dbKey, title, slotStore, filterSt
 
     -- Apply the flow settings again after the group exists; this is harmless on
     -- current Retail and also covers builds that dirty/rebuild the layout here.
-    ConfigureManagedAuraFlow(container)
+    ConfigureManagedAuraFlow(container, perLine)
     if container.SetAuraGroupLayout then
         pcall(container.SetAuraGroupLayout, container, dbKey, options.layout)
     end
-
-    -- Declare groups before assigning the unit so the container registers the
-    -- proper aura events. The container then owns all combat-time refreshes.
-    if container.SetUnit then
-        pcall(container.SetUnit, container, "player")
+    if container.SetEnabled then
+        pcall(container.SetEnabled, container, true)
     end
     if container.UpdateAllAuras then
         pcall(container.UpdateAllAuras, container)
@@ -3943,12 +4158,133 @@ local function CreateManagedAuraBar(frameName, dbKey, title, slotStore, filterSt
 
     frame.managedAuraContainer = container
     frame.managedAuraFilter = filterString
+    frame.managedAuraGroupKey = dbKey
+    frame.managedAuraCandidateFilters = options.candidateFilters
+    frame.managedAuraHarmful = harmful == true
+    frame.managedAuraTitle = title
+    frame.slotsPerRow = perLine
+    frame.managedAuraAppliedColumns = perLine
     frame:SetScript("OnUpdate", nil)
     for _, slot in ipairs(slotStore) do
         slot:Hide()
     end
     UpdateManagedAuraBarChrome(frame)
     return frame
+end
+
+local function ClearTrackingCooldown(slot)
+    if slot and slot.cooldown and slot.cooldown.Clear then
+        pcall(slot.cooldown.Clear, slot.cooldown)
+    end
+end
+
+local function HideTrackingSlots(slotStore)
+    for _, slot in ipairs(slotStore or {}) do
+        slot.spellID = nil
+        slot.spellName = nil
+        if slot.timer then slot.timer:SetText("") end
+        if slot.count then slot.count:SetText("") end
+        ClearTrackingCooldown(slot)
+        slot:Hide()
+    end
+end
+
+local function ShowManagedAuraPreview(frame, slotStore)
+    if not frame then return end
+    local columns = GetConfiguredBarColumns(frame.dbKey, MANAGED_AURAS_PER_LINE, 10)
+    frame.slotsPerRow = columns
+    frame:SetSize(math.max(92, 14 + (columns * 38)), 56)
+    LayoutTrackingSlots(frame, slotStore, columns, true)
+
+    if frame.managedAuraContainer then
+        frame.managedAuraContainer:Hide()
+    end
+
+    for index, slot in ipairs(slotStore or {}) do
+        if index <= columns then
+            slot.spellID = nil
+            slot.spellName = frame.managedAuraTitle or T("Aura")
+            slot.icon:SetTexture(QUESTION_MARK_ICON)
+            if slot.icon.SetDesaturated then slot.icon:SetDesaturated(true) end
+            slot.icon:SetAlpha(0.42)
+            slot.timer:SetText("")
+            slot.count:SetText("")
+            ClearTrackingCooldown(slot)
+            if frame.managedAuraHarmful then
+                slot:SetBackdropBorderColor(0.70, 0.22, 0.20, 0.85)
+            else
+                slot:SetBackdropBorderColor(0.20, 0.58, 0.76, 0.85)
+            end
+            slot:Show()
+        else
+            slot:Hide()
+        end
+    end
+
+    UpdateManagedAuraBarChrome(frame)
+    frame:Show()
+end
+
+local function ApplyManagedAuraLayout(frame)
+    if not frame or not frame.managedAuraContainer then return end
+    local lockdown = false
+    if InCombatLockdown then
+        local ok, rawValue = pcall(InCombatLockdown)
+        lockdown = GetAccessibleBooleanFromCall(ok, rawValue) == true
+    end
+    if lockdown then
+        frame.managedAuraLayoutPending = true
+        return
+    end
+
+    local columns = GetConfiguredBarColumns(frame.dbKey, MANAGED_AURAS_PER_LINE, 10)
+    local lineSize = GetManagedAuraLineSize(columns)
+    frame.slotsPerRow = columns
+    frame:SetSize(math.max(92, 14 + (columns * 38)), 56)
+    frame.managedAuraContainer:SetSize(lineSize, MANAGED_AURA_ICON_SIZE)
+    ConfigureManagedAuraFlow(frame.managedAuraContainer, columns)
+    if frame.managedAuraContainer.SetAuraGroupLayout then
+        pcall(frame.managedAuraContainer.SetAuraGroupLayout, frame.managedAuraContainer, frame.managedAuraGroupKey, {
+            elementWidth = MANAGED_AURA_ICON_SIZE,
+            elementHeight = MANAGED_AURA_ICON_SIZE,
+            elementSpacing = MANAGED_AURA_SPACING,
+            lineSpacing = MANAGED_AURA_SPACING,
+            maximumLineSize = lineSize,
+        })
+    end
+    frame.managedAuraAppliedColumns = columns
+    frame.managedAuraLayoutPending = false
+end
+
+local function RestoreManagedAuraRuntime(frame, slotStore)
+    if not frame or not frame.managedAuraContainer then return end
+    HideTrackingSlots(slotStore)
+    local configuredColumns = GetConfiguredBarColumns(frame.dbKey, MANAGED_AURAS_PER_LINE, 10)
+    if frame.managedAuraLayoutPending == true or frame.managedAuraAppliedColumns ~= configuredColumns then
+        ApplyManagedAuraLayout(frame)
+    end
+    frame.managedAuraContainer:Show()
+    if frame.managedAuraContainer.UpdateAllAuras then
+        pcall(frame.managedAuraContainer.UpdateAllAuras, frame.managedAuraContainer)
+    end
+    UpdateManagedAuraBarChrome(frame)
+end
+
+CreateBuffBar = function()
+    -- The primary DK buff/proc HUD now uses the same Blizzard-owned AuraContainer
+    -- engine as the native 12.1 UI. candidateFilters.includeSpellIDs is a
+    -- whitelist assembled from our curated DK list plus the current Cooldown
+    -- Manager profile, so Blizzard decides active state, stacks and duration.
+    local candidateFilters = addon.BuildDKBuffCandidateFilters and addon:BuildDKBuffCandidateFilters() or {}
+    return CreateManagedAuraBar(
+        "DKMentorBuffBar",
+        "buffBar",
+        T("DK Buffs"),
+        buffSlots,
+        "HELPFUL",
+        false,
+        candidateFilters
+    )
 end
 
 local function CreateExternalBuffBar()
@@ -3975,6 +4311,1371 @@ end
 
 local function CreateAbilityBar()
     return CreateTrackingBar("DKMentorAbilityBar", "abilityBar", T("Abilities"), abilitySlots, 11, 0.12)
+end
+
+local RESOURCE_RUNE_LAYOUTS = {
+    compact = { runeWidth = 40, gap = 3 },
+    normal = { runeWidth = 47, gap = 4 },
+    wide = { runeWidth = 54, gap = 6 },
+}
+
+local function NormalizeResourceRuneSpacing(value)
+    value = tostring(value or "normal")
+    if not RESOURCE_RUNE_LAYOUTS[value] then return "normal" end
+    return value
+end
+
+local function NormalizeResourceHUDStyle(value)
+    value = tostring(value or "classic")
+    if value ~= "classic" and value ~= "arcs" then
+        return "classic"
+    end
+    return value
+end
+
+local function LayoutResourceHUDComponents(frame, showRunes, showRunicPower)
+    if not frame then return end
+
+    local config = DB and DB.resourceHUD or DEFAULTS.resourceHUD
+    local spacingKey = NormalizeResourceRuneSpacing(config and config.runeSpacing)
+    local spacing = RESOURCE_RUNE_LAYOUTS[spacingKey]
+    local contentWidth = (spacing.runeWidth * 6) + (spacing.gap * 5)
+    local frameWidth = contentWidth + 28
+
+    if showRunes and showRunicPower then
+        frame:SetSize(frameWidth, 66)
+    elseif showRunes then
+        frame:SetSize(frameWidth, 45)
+    elseif showRunicPower then
+        frame:SetSize(frameWidth, 43)
+    else
+        frame:SetSize(frameWidth, 43)
+    end
+
+    for index, rune in ipairs(frame.runes or {}) do
+        rune:SetShown(showRunes == true)
+        rune:SetSize(spacing.runeWidth, 12)
+        rune:ClearAllPoints()
+        rune:SetPoint("TOPLEFT", frame, "TOPLEFT", 7 + ((index - 1) * (spacing.runeWidth + spacing.gap)), -22)
+    end
+
+    if frame.power then
+        frame.power:SetShown(showRunicPower == true)
+        frame.power:SetWidth(contentWidth)
+        frame.power:ClearAllPoints()
+        if showRunes then
+            frame.power:SetPoint("TOPLEFT", frame, "TOPLEFT", 7, -43)
+        else
+            frame.power:SetPoint("TOPLEFT", frame, "TOPLEFT", 7, -21)
+        end
+    end
+
+    local showText = config == nil or config.showPowerText ~= false
+    if frame.powerLabel then frame.powerLabel:SetShown(showRunicPower == true and showText) end
+    if frame.powerValue then frame.powerValue:SetShown(showRunicPower == true and showText) end
+
+    frame.layoutShowRunes = showRunes == true
+    frame.layoutShowRunicPower = showRunicPower == true
+    frame.layoutRuneSpacing = spacingKey
+    frame.layoutShowPowerText = showText
+end
+
+local function CreateResourceHUD()
+    local frame = CreateFrame("Frame", "DKMentorResourceHUD", UIParent, "BackdropTemplate")
+    frame:SetSize(330, 66)
+    frame:SetFrameStrata("HIGH")
+    frame:SetClampedToScreen(true)
+    frame:SetMovable(true)
+    frame:EnableMouse(true)
+    frame:RegisterForDrag("LeftButton")
+    ApplyBackdrop(frame, 0.84)
+
+    frame:SetScript("OnDragStart", function(self)
+        if addon:CanMoveHUDs() then self:StartMoving() end
+    end)
+    frame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        if DB and DB.hudLocked == false then SaveFramePosition(self, "resourceHUD") end
+    end)
+
+    frame.label = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    frame.label:SetPoint("TOPLEFT", frame, "TOPLEFT", 7, -4)
+    frame.label:SetText(T("DK Resources"))
+    frame.label:SetTextColor(0.55, 0.82, 0.95)
+
+    frame.dragHint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    frame.dragHint:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -7, -4)
+    frame.dragHint:SetText(T("Drag to move"))
+    frame.dragHint:SetTextColor(0.42, 0.55, 0.62)
+
+    frame.runes = {}
+    for index = 1, 6 do
+        local rune = CreateFrame("StatusBar", nil, frame, "BackdropTemplate")
+        rune:SetSize(47, 12)
+        rune:SetPoint("TOPLEFT", frame, "TOPLEFT", 7 + ((index - 1) * 51), -22)
+        rune:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+        rune:SetMinMaxValues(0, 1)
+        rune:SetValue(1)
+        rune:SetStatusBarColor(0.25, 0.78, 0.98, 0.95)
+        rune:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8X8",
+            edgeFile = "Interface\\Buttons\\WHITE8X8",
+            edgeSize = 1,
+        })
+        rune:SetBackdropColor(0.015, 0.035, 0.05, 0.92)
+        rune:SetBackdropBorderColor(0.16, 0.42, 0.56, 0.9)
+        frame.runes[index] = rune
+    end
+
+    frame.power = CreateFrame("StatusBar", nil, frame, "BackdropTemplate")
+    frame.power:SetSize(302, 15)
+    frame.power:SetPoint("TOPLEFT", frame, "TOPLEFT", 7, -43)
+    frame.power:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    frame.power:SetMinMaxValues(0, 100)
+    frame.power:SetValue(0)
+    frame.power:SetStatusBarColor(0.18, 0.62, 0.92, 0.95)
+    frame.power:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    frame.power:SetBackdropColor(0.015, 0.035, 0.05, 0.92)
+    frame.power:SetBackdropBorderColor(0.16, 0.42, 0.56, 0.9)
+
+    frame.powerLabel = frame.power:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.powerLabel:SetPoint("LEFT", frame.power, "LEFT", 5, 0)
+    frame.powerLabel:SetText(T("Runic Power"))
+    frame.powerLabel:SetShadowOffset(1, -1)
+
+    frame.powerValue = frame.power:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.powerValue:SetPoint("RIGHT", frame.power, "RIGHT", -5, 0)
+    frame.powerValue:SetText("")
+    frame.powerValue:SetShadowOffset(1, -1)
+
+    frame:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText(T("DK Resources"))
+        GameTooltip:AddLine(T("Tracks all six Death Knight Runes and Runic Power in one compact HUD."), 0.72, 0.84, 0.95, true)
+        GameTooltip:AddLine(T("Runes fill as they recharge. Runic Power uses Blizzard's native StatusBar so primary-power secret values can be displayed safely during combat."), 0.62, 0.76, 0.86, true)
+        GameTooltip:Show()
+    end)
+    frame:SetScript("OnLeave", function()
+        if GameTooltip then GameTooltip:Hide() end
+    end)
+
+    frame.runeElapsed = 0
+    frame:SetScript("OnUpdate", function(self, elapsed)
+        self.runeElapsed = self.runeElapsed + (tonumber(elapsed) or 0)
+        if self.runeElapsed >= 0.05 then
+            self.runeElapsed = 0
+            addon:UpdateResourceRunes()
+        end
+    end)
+
+    RestoreFramePosition(frame, "resourceHUD")
+    frame:Hide()
+    return frame
+end
+
+local DK_ARC_FILL_TEXTURE = "Interface\\AddOns\\DKMentor\\Media\\DKArcFill"
+local DK_ARC_BG_TEXTURE = "Interface\\AddOns\\DKMentor\\Media\\DKArcBG"
+local DK_ARC_GLOW_TEXTURE = "Interface\\AddOns\\DKMentor\\Media\\DKArcGlow"
+local DK_ARC_FILL_RIGHT_TEXTURE = "Interface\\AddOns\\DKMentor\\Media\\DKArcFillRight"
+local DK_ARC_BG_RIGHT_TEXTURE = "Interface\\AddOns\\DKMentor\\Media\\DKArcBGRight"
+local DK_ARC_GLOW_RIGHT_TEXTURE = "Interface\\AddOns\\DKMentor\\Media\\DKArcGlowRight"
+local DK_RUNE_TEXTURE = "Interface\\PlayerFrame\\UI-PlayerFrame-DeathKnight-SingleRune"
+
+local function NormalizeResourceArcSpacing(value)
+    value = tonumber(value) or 105
+    value = Clamp(value, 65, 165)
+    return math.floor((value / 5) + 0.5) * 5
+end
+
+local function CreateDKArcBar(parent, side)
+    local holder = CreateFrame("Frame", nil, parent)
+    holder:SetSize(76, 246)
+
+    local rightSide = side == "RIGHT"
+    local fillTexture = rightSide and DK_ARC_FILL_RIGHT_TEXTURE or DK_ARC_FILL_TEXTURE
+    local bgTexture = rightSide and DK_ARC_BG_RIGHT_TEXTURE or DK_ARC_BG_TEXTURE
+    local glowTexture = rightSide and DK_ARC_GLOW_RIGHT_TEXTURE or DK_ARC_GLOW_TEXTURE
+
+    holder.glow = holder:CreateTexture(nil, "BACKGROUND", nil, -2)
+    holder.glow:SetTexture(glowTexture)
+    holder.glow:SetAllPoints(holder)
+    holder.glow:SetVertexColor(0.10, 0.68, 0.92, 0.22)
+
+    holder.bg = holder:CreateTexture(nil, "BACKGROUND", nil, -1)
+    holder.bg:SetTexture(bgTexture)
+    holder.bg:SetAllPoints(holder)
+    holder.bg:SetVertexColor(0.025, 0.055, 0.075, 0.82)
+
+    holder.bar = CreateFrame("StatusBar", nil, holder)
+    holder.bar:SetAllPoints(holder)
+    holder.bar:SetOrientation("VERTICAL")
+    holder.bar:SetMinMaxValues(0, 100)
+    holder.bar:SetValue(0)
+    holder.bar:SetStatusBarTexture(fillTexture)
+    holder.bar:SetStatusBarColor(0.20, 0.82, 0.96, 0.98)
+    if holder.bar.SetReverseFill then holder.bar:SetReverseFill(false) end
+
+    return holder
+end
+
+local function SaveResourceArcPosition(frame)
+    if not frame or not DB or not DB.resourceHUD then return end
+    local point, _, relativePoint, x, y = frame:GetPoint(1)
+    DB.resourceHUD.arcPoint = point or "CENTER"
+    DB.resourceHUD.arcRelativePoint = relativePoint or point or "CENTER"
+    DB.resourceHUD.arcX = tonumber(x) or 0
+    DB.resourceHUD.arcY = tonumber(y) or 0
+end
+
+local function RestoreResourceArcPosition(frame)
+    if not frame or not DB or not DB.resourceHUD then return end
+    frame:ClearAllPoints()
+    frame:SetPoint(
+        DB.resourceHUD.arcPoint or DEFAULTS.resourceHUD.arcPoint or "CENTER",
+        UIParent,
+        DB.resourceHUD.arcRelativePoint or DEFAULTS.resourceHUD.arcRelativePoint or "CENTER",
+        tonumber(DB.resourceHUD.arcX) or 0,
+        tonumber(DB.resourceHUD.arcY) or 0
+    )
+end
+
+local function ResetResourceArcPosition()
+    if not DB or not DB.resourceHUD then return end
+    DB.resourceHUD.arcPoint = DEFAULTS.resourceHUD.arcPoint
+    DB.resourceHUD.arcRelativePoint = DEFAULTS.resourceHUD.arcRelativePoint
+    DB.resourceHUD.arcX = DEFAULTS.resourceHUD.arcX
+    DB.resourceHUD.arcY = DEFAULTS.resourceHUD.arcY
+    if resourceArcFrame then RestoreResourceArcPosition(resourceArcFrame) end
+end
+
+local function GetDKRuneColors()
+    local specID = addon and addon.GetSpecInfo and select(1, addon:GetSpecInfo()) or nil
+    if specID == 250 then
+        return { 0.88, 0.16, 0.18, 1 }, { 0.42, 0.08, 0.10, 0.72 }
+    elseif specID == 252 then
+        return { 0.30, 0.86, 0.34, 1 }, { 0.10, 0.38, 0.14, 0.72 }
+    end
+    return { 0.22, 0.82, 1.00, 1 }, { 0.08, 0.38, 0.56, 0.72 }
+end
+
+local function LayoutResourceArcHUDComponents(frame, showRunes, showRunicPower)
+    if not frame then return end
+
+    local spacing = NormalizeResourceArcSpacing(DB and DB.resourceHUD and DB.resourceHUD.arcSpacing or DEFAULTS.resourceHUD.arcSpacing)
+    if frame.healthHolder then
+        frame.healthHolder:ClearAllPoints()
+        frame.healthHolder:SetPoint("CENTER", frame, "CENTER", -spacing, -2)
+    end
+    if frame.powerHolder then
+        frame.powerHolder:ClearAllPoints()
+        frame.powerHolder:SetPoint("CENTER", frame, "CENTER", spacing, -2)
+        frame.powerHolder:SetShown(showRunicPower == true)
+    end
+    if frame.runeAnchor then frame.runeAnchor:SetShown(showRunes == true) end
+
+    local showText = DB == nil or DB.resourceHUD == nil or DB.resourceHUD.showPowerText ~= false
+    if frame.powerValue then frame.powerValue:SetShown(showRunicPower == true and showText) end
+    if frame.healthValue then frame.healthValue:SetShown(showText) end
+
+    frame.layoutShowRunes = showRunes == true
+    frame.layoutShowRunicPower = showRunicPower == true
+    frame.layoutShowPowerText = showText
+end
+
+local function CreateResourceArcHUD()
+    -- This is deliberately an original DK-specific implementation. It follows
+    -- the proven IceHUD idea of texture-driven vertical StatusBars positioned
+    -- around the player, but uses DK Mentor code, layout, colors and textures.
+    local frame = CreateFrame("Frame", "DKMentorResourceArcHUD", UIParent)
+    frame:SetSize(360, 300)
+    frame:SetFrameStrata("HIGH")
+    frame:SetClampedToScreen(true)
+    frame:SetMovable(true)
+    frame:EnableMouse(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function(self)
+        if addon:CanMoveHUDs() then self:StartMoving() end
+    end)
+    frame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        if DB and DB.hudLocked == false then SaveResourceArcPosition(self) end
+    end)
+
+    frame.healthHolder = CreateDKArcBar(frame, "LEFT")
+    frame.healthHolder:SetPoint("CENTER", frame, "CENTER", -105, -2)
+    frame.healthHolder.glow:SetVertexColor(0.18, 0.92, 0.34, 0.20)
+    frame.healthHolder.bar:SetStatusBarColor(0.18, 0.92, 0.34, 0.98)
+
+    frame.powerHolder = CreateDKArcBar(frame, "RIGHT")
+    frame.powerHolder:SetPoint("CENTER", frame, "CENTER", 105, -2)
+    frame.powerHolder.glow:SetVertexColor(0.08, 0.64, 0.98, 0.24)
+    frame.powerHolder.bar:SetStatusBarColor(0.12, 0.66, 0.98, 0.98)
+
+    frame.healthBar = frame.healthHolder.bar
+    frame.powerBar = frame.powerHolder.bar
+
+    frame.runeAnchor = CreateFrame("Frame", nil, frame)
+    frame.runeAnchor:SetSize(154, 28)
+    frame.runeAnchor:SetPoint("TOP", frame, "CENTER", 0, -62)
+
+    frame.runes = {}
+    local readyColor = GetDKRuneColors()
+    for index = 1, 6 do
+        local rune = CreateFrame("StatusBar", nil, frame.runeAnchor)
+        rune:SetSize(22, 22)
+        rune:SetPoint("LEFT", frame.runeAnchor, "LEFT", (index - 1) * 26, 0)
+        rune:SetOrientation("VERTICAL")
+        rune:SetMinMaxValues(0, 1)
+        rune:SetValue(1)
+        rune:SetStatusBarTexture(DK_RUNE_TEXTURE)
+        rune:SetStatusBarColor(readyColor[1], readyColor[2], readyColor[3], readyColor[4])
+        if rune.SetReverseFill then rune:SetReverseFill(false) end
+
+        rune.bg = rune:CreateTexture(nil, "BACKGROUND")
+        rune.bg:SetTexture(DK_RUNE_TEXTURE)
+        rune.bg:SetAllPoints(rune)
+        rune.bg:SetVertexColor(0.08, 0.15, 0.20, 0.58)
+
+        frame.runes[index] = rune
+    end
+
+    frame.healthValue = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    frame.healthValue:SetPoint("TOP", frame.healthHolder, "BOTTOM", 0, -4)
+    frame.healthValue:SetJustifyH("CENTER")
+    frame.healthValue:SetText("")
+    frame.healthValue:SetTextColor(0.94, 0.98, 0.94)
+    frame.healthValue:SetShadowOffset(1, -1)
+
+    frame.powerValue = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    frame.powerValue:SetPoint("TOP", frame.powerHolder, "BOTTOM", 0, -4)
+    frame.powerValue:SetJustifyH("CENTER")
+    frame.powerValue:SetText("")
+    frame.powerValue:SetTextColor(0.75, 0.90, 1.00)
+    frame.powerValue:SetShadowOffset(1, -1)
+
+
+    frame.runeElapsed = 0
+    frame:SetScript("OnUpdate", function(self, elapsed)
+        self.runeElapsed = self.runeElapsed + (tonumber(elapsed) or 0)
+        if self.runeElapsed >= 0.05 then
+            self.runeElapsed = 0
+            addon:UpdateResourceHealthHUD()
+            addon:UpdateResourceRunes()
+            addon:UpdateRunicPowerHUD()
+        end
+    end)
+
+    RestoreResourceArcPosition(frame)
+    frame:Hide()
+    return frame
+end
+
+local COMBAT_BAR_LAYOUT_LIMITS = {
+    buffBar = { minColumns = 3, maxColumns = 10, defaultColumns = 5 },
+    externalBuffBar = { minColumns = 3, maxColumns = 10, defaultColumns = 5 },
+    debuffBar = { minColumns = 3, maxColumns = 10, defaultColumns = 5 },
+    abilityBar = { minColumns = 3, maxColumns = 11, defaultColumns = 11 },
+    resourceHUD = { minColumns = 6, maxColumns = 6, defaultColumns = 6, resourceMode = true },
+}
+
+local function GetCombatBarParts(dbKey)
+    if dbKey == "buffBar" then return buffFrame, buffSlots end
+    if dbKey == "externalBuffBar" then return externalBuffFrame, externalBuffSlots end
+    if dbKey == "debuffBar" then return debuffFrame, debuffSlots end
+    if dbKey == "abilityBar" then return abilityFrame, abilitySlots end
+    if dbKey == "resourceHUD" then return resourceFrame, nil end
+    return nil, nil
+end
+
+local function NormalizeCombatBarScale(value)
+    value = Clamp(value or 1, 0.7, 1.6)
+    return math.floor((value * 10) + 0.5) / 10
+end
+
+local function NormalizeCombatBarOpacity(value)
+    value = Clamp(value or 1, 0.3, 1)
+    return math.floor((value * 10) + 0.5) / 10
+end
+
+function addon:ApplyCombatBarLayout(dbKey)
+    if not DB or not DB[dbKey] then return end
+    local limits = COMBAT_BAR_LAYOUT_LIMITS[dbKey]
+    if not limits then return end
+
+    local frame, slots = GetCombatBarParts(dbKey)
+    local config = DB[dbKey]
+
+    if limits.resourceMode then
+        config.scale = NormalizeCombatBarScale(config.scale)
+        config.opacity = NormalizeCombatBarOpacity(config.opacity)
+        config.runeSpacing = NormalizeResourceRuneSpacing(config.runeSpacing)
+        config.style = NormalizeResourceHUDStyle(config.style)
+        config.arcSpacing = NormalizeResourceArcSpacing(config.arcSpacing)
+        if resourceFrame then
+            resourceFrame:SetScale(config.scale)
+            resourceFrame:SetAlpha(config.opacity)
+            LayoutResourceHUDComponents(resourceFrame, config.showRunes ~= false, config.showRunicPower ~= false)
+        end
+        if resourceArcFrame then
+            resourceArcFrame:SetScale(config.scale)
+            resourceArcFrame:SetAlpha(config.opacity)
+            LayoutResourceArcHUDComponents(resourceArcFrame, config.showRunes ~= false, config.showRunicPower ~= false)
+        end
+        self:UpdateResourceHUD()
+        return
+    end
+
+    if not frame then return end
+
+    config.scale = NormalizeCombatBarScale(config.scale)
+    config.opacity = NormalizeCombatBarOpacity(config.opacity)
+    frame:SetScale(config.scale)
+    frame:SetAlpha(config.opacity)
+
+    config.iconsPerRow = Clamp(math.floor((tonumber(config.iconsPerRow) or limits.defaultColumns) + 0.5), limits.minColumns, limits.maxColumns)
+    frame.slotsPerRow = config.iconsPerRow
+
+    if frame.managedAuraContainer then
+        ApplyManagedAuraLayout(frame)
+        if self.hudPreviewMode == true then
+            ShowManagedAuraPreview(frame, slots)
+        else
+            RestoreManagedAuraRuntime(frame, slots)
+        end
+    else
+        LayoutTrackingSlots(frame, slots, config.iconsPerRow, false)
+    end
+
+    if dbKey == "abilityBar" then
+        self:UpdateAbilityBar()
+    end
+end
+
+function addon:SetCombatBarScale(dbKey, value)
+    if not DB or not DB[dbKey] or not COMBAT_BAR_LAYOUT_LIMITS[dbKey] then return end
+    if InCombatLockdown and InCombatLockdown() then
+        Print(T("Bar layout cannot be changed during combat."))
+        return
+    end
+
+    DB[dbKey].scale = NormalizeCombatBarScale(value)
+    self:ApplyCombatBarLayout(dbKey)
+    self:RefreshCombatHUDVisibility()
+    self:UpdateBarLayoutFrame()
+end
+
+function addon:SetCombatBarOpacity(dbKey, value)
+    if not DB or not DB[dbKey] or not COMBAT_BAR_LAYOUT_LIMITS[dbKey] then return end
+    if InCombatLockdown and InCombatLockdown() then
+        Print(T("Bar layout cannot be changed during combat."))
+        return
+    end
+
+    DB[dbKey].opacity = NormalizeCombatBarOpacity(value)
+    self:ApplyCombatBarLayout(dbKey)
+    self:RefreshCombatHUDVisibility()
+    self:UpdateBarLayoutFrame()
+end
+
+function addon:SetCombatBarColumns(dbKey, value)
+    if not DB or not DB[dbKey] then return end
+    local limits = COMBAT_BAR_LAYOUT_LIMITS[dbKey]
+    if not limits then return end
+    if InCombatLockdown and InCombatLockdown() then
+        Print(T("Bar layout cannot be changed during combat."))
+        return
+    end
+
+    if limits.resourceMode then return end
+    DB[dbKey].iconsPerRow = Clamp(math.floor((tonumber(value) or limits.defaultColumns) + 0.5), limits.minColumns, limits.maxColumns)
+    self:ApplyCombatBarLayout(dbKey)
+    self:RefreshCombatHUDVisibility()
+    self:UpdateBarLayoutFrame()
+end
+
+function addon:ResetCombatBarLayout()
+    if not DB then return end
+    if InCombatLockdown and InCombatLockdown() then
+        Print(T("Bar layout cannot be changed during combat."))
+        return
+    end
+
+    for dbKey, limits in pairs(COMBAT_BAR_LAYOUT_LIMITS) do
+        if DB[dbKey] then
+            DB[dbKey].scale = DEFAULTS[dbKey].scale or 1
+            DB[dbKey].opacity = DEFAULTS[dbKey].opacity or 1
+            if not limits.resourceMode then
+                DB[dbKey].iconsPerRow = limits.defaultColumns
+            else
+                DB[dbKey].showPowerText = DEFAULTS.resourceHUD.showPowerText
+                DB[dbKey].runeSpacing = DEFAULTS.resourceHUD.runeSpacing
+                DB[dbKey].style = DEFAULTS.resourceHUD.style
+                DB[dbKey].arcSpacing = DEFAULTS.resourceHUD.arcSpacing
+            end
+            self:ApplyCombatBarLayout(dbKey)
+        end
+    end
+    self:RefreshCombatHUDVisibility()
+    self:UpdateBarLayoutFrame()
+    self:UpdateHUDSettings()
+    Print(T("HUD size and opacity restored to defaults."))
+end
+
+function addon:SetResourceHUDEnabled(enabled)
+    if not DB or not DB.resourceHUD then return end
+    DB.resourceHUD.enabled = enabled == true
+    self:UpdateResourceHUD()
+    self:UpdateHUDSettings()
+    Print(T(DB.resourceHUD.enabled and "DK resource HUD enabled." or "DK resource HUD disabled."))
+end
+
+function addon:SetResourceHUDRunesEnabled(enabled)
+    if not DB or not DB.resourceHUD then return end
+    if InCombatLockdown and InCombatLockdown() then
+        Print(T("Bar layout cannot be changed during combat."))
+        return
+    end
+    DB.resourceHUD.showRunes = enabled == true
+    self:ApplyCombatBarLayout("resourceHUD")
+    self:UpdateResourceHUD()
+    self:UpdateBarLayoutFrame()
+    self:UpdateHUDSettings()
+end
+
+function addon:SetResourceHUDRunicPowerEnabled(enabled)
+    if not DB or not DB.resourceHUD then return end
+    if InCombatLockdown and InCombatLockdown() then
+        Print(T("Bar layout cannot be changed during combat."))
+        return
+    end
+    DB.resourceHUD.showRunicPower = enabled == true
+    self:ApplyCombatBarLayout("resourceHUD")
+    self:UpdateResourceHUD()
+    self:UpdateBarLayoutFrame()
+    self:UpdateHUDSettings()
+end
+
+function addon:CycleResourceHUDMode()
+    if not DB or not DB.resourceHUD then return end
+    if InCombatLockdown and InCombatLockdown() then
+        Print(T("Bar layout cannot be changed during combat."))
+        return
+    end
+
+    local runes = DB.resourceHUD.showRunes ~= false
+    local power = DB.resourceHUD.showRunicPower ~= false
+    if runes and power then
+        DB.resourceHUD.showRunes = true
+        DB.resourceHUD.showRunicPower = false
+    elseif runes then
+        DB.resourceHUD.showRunes = false
+        DB.resourceHUD.showRunicPower = true
+    else
+        DB.resourceHUD.showRunes = true
+        DB.resourceHUD.showRunicPower = true
+    end
+
+    self:ApplyCombatBarLayout("resourceHUD")
+    self:UpdateResourceHUD()
+    self:UpdateBarLayoutFrame()
+    self:UpdateHUDSettings()
+end
+
+function addon:GetResourceHUDModeLabel()
+    if not DB or not DB.resourceHUD then return T("Runes + Runic Power") end
+    local runes = DB.resourceHUD.showRunes ~= false
+    local power = DB.resourceHUD.showRunicPower ~= false
+    if runes and power then return T("Runes + Runic Power") end
+    if runes then return T("Runes only") end
+    if power then return T("Runic Power only") end
+    return T("Resources hidden")
+end
+
+function addon:GetResourceRuneSpacingLabel()
+    local spacing = DB and DB.resourceHUD and NormalizeResourceRuneSpacing(DB.resourceHUD.runeSpacing) or "normal"
+    if spacing == "compact" then return T("Compact") end
+    if spacing == "wide" then return T("Wide") end
+    return T("Normal")
+end
+
+function addon:GetResourceHUDStyleLabel()
+    local style = DB and DB.resourceHUD and NormalizeResourceHUDStyle(DB.resourceHUD.style) or "classic"
+    if style == "arcs" then return T("DK Arcs") end
+    return T("Classic")
+end
+
+function addon:CycleResourceHUDStyle()
+    if not DB or not DB.resourceHUD then return end
+    if InCombatLockdown and InCombatLockdown() then
+        Print(T("Bar layout cannot be changed during combat."))
+        return
+    end
+
+    local current = NormalizeResourceHUDStyle(DB.resourceHUD.style)
+    DB.resourceHUD.style = current == "classic" and "arcs" or "classic"
+    self:ApplyCombatBarLayout("resourceHUD")
+    self:RefreshCombatHUDVisibility()
+    self:UpdateBarLayoutFrame()
+    self:UpdateHUDSettings()
+end
+
+function addon:SetResourceHUDPowerTextEnabled(enabled)
+    if not DB or not DB.resourceHUD then return end
+    if InCombatLockdown and InCombatLockdown() then
+        Print(T("Bar layout cannot be changed during combat."))
+        return
+    end
+    DB.resourceHUD.showPowerText = enabled == true
+    self:ApplyCombatBarLayout("resourceHUD")
+    self:UpdateResourceHUD()
+    self:UpdateBarLayoutFrame()
+    self:UpdateHUDSettings()
+end
+
+function addon:CycleResourceRuneSpacing()
+    if not DB or not DB.resourceHUD then return end
+    if InCombatLockdown and InCombatLockdown() then
+        Print(T("Bar layout cannot be changed during combat."))
+        return
+    end
+
+    local current = NormalizeResourceRuneSpacing(DB.resourceHUD.runeSpacing)
+    if current == "compact" then
+        DB.resourceHUD.runeSpacing = "normal"
+    elseif current == "normal" then
+        DB.resourceHUD.runeSpacing = "wide"
+    else
+        DB.resourceHUD.runeSpacing = "compact"
+    end
+
+    self:ApplyCombatBarLayout("resourceHUD")
+    self:RefreshCombatHUDVisibility()
+    self:UpdateBarLayoutFrame()
+    self:UpdateHUDSettings()
+end
+
+function addon:SetResourceArcSpacing(value)
+    if not DB or not DB.resourceHUD then return end
+    if InCombatLockdown and InCombatLockdown() then
+        Print(T("Bar layout cannot be changed during combat."))
+        return
+    end
+    DB.resourceHUD.arcSpacing = NormalizeResourceArcSpacing(value)
+    self:ApplyCombatBarLayout("resourceHUD")
+    self:RefreshCombatHUDVisibility()
+    self:UpdateBarLayoutFrame()
+    self:UpdateHUDSettings()
+end
+
+function addon:GetResourceArcSpacingLabel()
+    if not DB or not DB.resourceHUD then return "100%" end
+    local spacing = NormalizeResourceArcSpacing(DB.resourceHUD.arcSpacing)
+    return string.format("%d%%", math.floor(((spacing / 105) * 100) + 0.5))
+end
+
+function addon:ResetResourceHUDLayout()
+    if not DB or not DB.resourceHUD then return end
+    if InCombatLockdown and InCombatLockdown() then
+        Print(T("Bar layout cannot be changed during combat."))
+        return
+    end
+
+    local enabled = DB.resourceHUD.enabled
+    DB.resourceHUD.showRunes = DEFAULTS.resourceHUD.showRunes
+    DB.resourceHUD.showRunicPower = DEFAULTS.resourceHUD.showRunicPower
+    DB.resourceHUD.showPowerText = DEFAULTS.resourceHUD.showPowerText
+    DB.resourceHUD.runeSpacing = DEFAULTS.resourceHUD.runeSpacing
+    DB.resourceHUD.style = DEFAULTS.resourceHUD.style
+    DB.resourceHUD.arcSpacing = DEFAULTS.resourceHUD.arcSpacing
+    DB.resourceHUD.scale = DEFAULTS.resourceHUD.scale
+    DB.resourceHUD.opacity = DEFAULTS.resourceHUD.opacity
+    DB.resourceHUD.point = DEFAULTS.resourceHUD.point
+    DB.resourceHUD.relativePoint = DEFAULTS.resourceHUD.relativePoint
+    DB.resourceHUD.x = DEFAULTS.resourceHUD.x
+    DB.resourceHUD.y = DEFAULTS.resourceHUD.y
+    DB.resourceHUD.enabled = enabled
+
+    RestoreFramePosition(resourceFrame, "resourceHUD")
+    ResetResourceArcPosition()
+    self:ApplyCombatBarLayout("resourceHUD")
+    self:RefreshCombatHUDVisibility()
+    self:UpdateBarLayoutFrame()
+    self:UpdateHUDSettings()
+    Print(T("DK Resources HUD restored to defaults."))
+end
+
+function addon:UpdateResourceRunes()
+    if not DB or not DB.resourceHUD then return end
+
+    local style = NormalizeResourceHUDStyle(DB.resourceHUD.style)
+    local activeFrame = style == "arcs" and resourceArcFrame or resourceFrame
+    if not activeFrame or not activeFrame:IsShown() then return end
+
+    local preview = self.hudPreviewMode == true
+    local showRunes = preview or DB.resourceHUD.showRunes ~= false
+    if not showRunes then return end
+
+    local readyColor = { 0.25, 0.78, 0.98, 0.95 }
+    local chargingColor = { 0.16, 0.52, 0.72, 0.92 }
+    local emptyColor = { 0.12, 0.34, 0.46, 0.80 }
+    if style == "arcs" then
+        readyColor, chargingColor = GetDKRuneColors()
+        emptyColor = { chargingColor[1] * 0.55, chargingColor[2] * 0.55, chargingColor[3] * 0.55, 0.62 }
+    end
+
+    if preview then
+        local samples = { 1, 1, 1, 0.78, 0.48, 0.22 }
+        for index, rune in ipairs(activeFrame.runes or {}) do
+            local sample = samples[index] or 0
+            rune:SetMinMaxValues(0, 1)
+            rune:SetValue(sample)
+            local color = sample >= 1 and readyColor or chargingColor
+            rune:SetStatusBarColor(color[1], color[2], color[3], color[4])
+        end
+        return
+    end
+
+    if not GetRuneCooldown then return end
+    local now = GetNow()
+    for index, rune in ipairs(activeFrame.runes or {}) do
+        local ok, startTime, duration, rawReady = pcall(GetRuneCooldown, index)
+        local ready = ok and GetAccessibleBoolean(rawReady) or nil
+        if ready == true then
+            rune:SetMinMaxValues(0, 1)
+            rune:SetValue(1)
+            rune:SetStatusBarColor(readyColor[1], readyColor[2], readyColor[3], readyColor[4])
+        elseif ok and IsAccessibleNumber(startTime) and IsAccessibleNumber(duration) and duration > 0 then
+            local elapsed = Clamp(now - startTime, 0, duration)
+            rune:SetMinMaxValues(0, duration)
+            rune:SetValue(elapsed)
+            rune:SetStatusBarColor(chargingColor[1], chargingColor[2], chargingColor[3], chargingColor[4])
+        else
+            rune:SetMinMaxValues(0, 1)
+            rune:SetValue(0)
+            rune:SetStatusBarColor(emptyColor[1], emptyColor[2], emptyColor[3], emptyColor[4])
+        end
+    end
+end
+
+function addon:UpdateRunicPowerHUD()
+    if not DB or not DB.resourceHUD then return end
+
+    local style = NormalizeResourceHUDStyle(DB.resourceHUD.style)
+    local preview = self.hudPreviewMode == true
+    local showPower = preview or DB.resourceHUD.showRunicPower ~= false
+
+    if style == "arcs" then
+        if not resourceArcFrame or not resourceArcFrame:IsShown() or not resourceArcFrame.powerBar then return end
+        local bar = resourceArcFrame.powerBar
+        if not showPower then
+            if resourceArcFrame.powerValue then resourceArcFrame.powerValue:SetText("") end
+            return
+        end
+
+        if preview then
+            bar:SetMinMaxValues(0, 100)
+            bar:SetValue(65)
+            if resourceArcFrame.powerValue then resourceArcFrame.powerValue:SetText("65%") end
+            return
+        end
+
+        if not UnitPower or not UnitPowerMax then
+            bar:SetMinMaxValues(0, 100)
+            bar:SetValue(0)
+            if resourceArcFrame.powerValue then resourceArcFrame.powerValue:SetText("") end
+            return
+        end
+
+        local okPower, power = pcall(UnitPower, "player", RUNIC_POWER_TYPE)
+        local okMax, maxPower = pcall(UnitPowerMax, "player", RUNIC_POWER_TYPE)
+
+        -- Midnight may make Runic Power secret in combat. Feed the raw value
+        -- directly into StatusBar where Blizzard permits it and only build text
+        -- when both values are normal accessible numbers.
+        if okMax then
+            local okSetMax = pcall(bar.SetMinMaxValues, bar, 0, maxPower)
+            if not okSetMax then bar:SetMinMaxValues(0, 100) end
+        else
+            bar:SetMinMaxValues(0, 100)
+        end
+        if okPower then
+            local okSetValue = pcall(bar.SetValue, bar, power)
+            if not okSetValue then bar:SetValue(0) end
+        else
+            bar:SetValue(0)
+        end
+
+        if IsAccessibleNumber(power) and IsAccessibleNumber(maxPower) and maxPower > 0 then
+            local percent = math.floor(((power / maxPower) * 100) + 0.5)
+            if resourceArcFrame.powerValue then resourceArcFrame.powerValue:SetText(string.format("%d%%", percent)) end
+        else
+            if resourceArcFrame.powerValue then resourceArcFrame.powerValue:SetText("") end
+        end
+        return
+    end
+
+    if not resourceFrame or not resourceFrame.power or not resourceFrame:IsShown() then return end
+    if not showPower then return end
+
+    if preview then
+        resourceFrame.power:SetMinMaxValues(0, 100)
+        resourceFrame.power:SetValue(65)
+        resourceFrame.powerValue:SetText("65 / 100")
+        return
+    end
+
+    if not UnitPower or not UnitPowerMax then
+        resourceFrame.power:SetMinMaxValues(0, 100)
+        resourceFrame.power:SetValue(0)
+        resourceFrame.powerValue:SetText("")
+        return
+    end
+
+    local okPower, power = pcall(UnitPower, "player", RUNIC_POWER_TYPE)
+    local okMax, maxPower = pcall(UnitPowerMax, "player", RUNIC_POWER_TYPE)
+
+    -- Runic Power is a primary resource in Midnight and may be secret in combat.
+    -- Do not compare or calculate with it. Blizzard explicitly allows secret
+    -- BarValue inputs to flow into StatusBar:SetMinMaxValues/SetValue.
+    if okMax then
+        local okSetMax = pcall(resourceFrame.power.SetMinMaxValues, resourceFrame.power, 0, maxPower)
+        if not okSetMax then
+            resourceFrame.power:SetMinMaxValues(0, 100)
+        end
+    else
+        resourceFrame.power:SetMinMaxValues(0, 100)
+    end
+    if okPower then
+        local okSetValue = pcall(resourceFrame.power.SetValue, resourceFrame.power, power)
+        if not okSetValue then
+            resourceFrame.power:SetValue(0)
+        end
+    else
+        resourceFrame.power:SetValue(0)
+    end
+
+    if IsAccessibleNumber(power) and IsAccessibleNumber(maxPower) then
+        resourceFrame.powerValue:SetText(string.format("%d / %d", math.floor(power + 0.5), math.floor(maxPower + 0.5)))
+    else
+        -- The fill remains live in combat even when the raw number is secret.
+        resourceFrame.powerValue:SetText("")
+    end
+end
+
+local function SetResourceArcHealthColors(percent)
+    if not resourceArcFrame or not resourceArcFrame.healthBar or not resourceArcFrame.healthHolder then return end
+    local low = IsAccessibleNumber(percent) and percent <= 30
+    if low then
+        resourceArcFrame.healthHolder.glow:SetVertexColor(0.92, 0.18, 0.18, 0.28)
+        resourceArcFrame.healthBar:SetStatusBarColor(0.92, 0.20, 0.20, 0.98)
+        if resourceArcFrame.healthValue then
+            resourceArcFrame.healthValue:SetTextColor(1.00, 0.34, 0.34)
+        end
+    else
+        resourceArcFrame.healthHolder.glow:SetVertexColor(0.18, 0.92, 0.34, 0.20)
+        resourceArcFrame.healthBar:SetStatusBarColor(0.18, 0.92, 0.34, 0.98)
+        if resourceArcFrame.healthValue then
+            resourceArcFrame.healthValue:SetTextColor(0.94, 0.98, 0.94)
+        end
+    end
+end
+
+function addon:UpdateResourceHealthHUD()
+    if not resourceArcFrame or not DB or not DB.resourceHUD or not resourceArcFrame:IsShown() or not resourceArcFrame.healthBar then return end
+
+    local bar = resourceArcFrame.healthBar
+    local showText = DB.resourceHUD.showPowerText ~= false
+    if self.hudPreviewMode == true then
+        bar:SetMinMaxValues(0, 100)
+        bar:SetValue(85)
+        SetResourceArcHealthColors(85)
+        if resourceArcFrame.healthValue then
+            resourceArcFrame.healthValue:SetText(showText and "85%" or "")
+        end
+        return
+    end
+
+    if not UnitHealth or not UnitHealthMax then
+        bar:SetMinMaxValues(0, 100)
+        bar:SetValue(0)
+        SetResourceArcHealthColors(nil)
+        if resourceArcFrame.healthValue then resourceArcFrame.healthValue:SetText("") end
+        return
+    end
+
+    local okHealth, health = pcall(UnitHealth, "player")
+    local okMax, maxHealth = pcall(UnitHealthMax, "player")
+
+    -- Use the same secret-safe pattern as Runic Power so the visual bar keeps
+    -- working even when Midnight protects combat values.
+    if okMax then
+        local okSetMax = pcall(bar.SetMinMaxValues, bar, 0, maxHealth)
+        if not okSetMax then bar:SetMinMaxValues(0, 100) end
+    else
+        bar:SetMinMaxValues(0, 100)
+    end
+    if okHealth then
+        local okSetValue = pcall(bar.SetValue, bar, health)
+        if not okSetValue then bar:SetValue(0) end
+    else
+        bar:SetValue(0)
+    end
+
+    -- Raw UnitHealth/UnitHealthMax can become secret in combat. The DK Mentor
+    -- already has a dedicated percentage helper that prefers UnitHealthPercent,
+    -- which remains suitable for threshold checks in supported Midnight contexts.
+    -- Use that percentage for the <=30% warning so the arc can actually turn red
+    -- during combat instead of falling back to green whenever raw health is secret.
+    local percent = GetPlayerHealthPercent()
+    if IsAccessibleNumber(percent) then
+        percent = math.floor(percent + 0.5)
+        SetResourceArcHealthColors(percent)
+        if resourceArcFrame.healthValue then
+            resourceArcFrame.healthValue:SetText(showText and string.format("%d%%", percent) or "")
+        end
+    else
+        SetResourceArcHealthColors(nil)
+        if resourceArcFrame.healthValue then resourceArcFrame.healthValue:SetText("") end
+    end
+end
+
+function addon:UpdateResourceHUD()
+    if not DB or not DB.resourceHUD then return end
+    local style = NormalizeResourceHUDStyle(DB.resourceHUD.style)
+    local preview = self.hudPreviewMode == true
+
+    if resourceFrame == nil and resourceArcFrame == nil then return end
+    if not self:ShouldShowCombatBar(DB.resourceHUD) then
+        if resourceFrame then resourceFrame:Hide() end
+        if resourceArcFrame then resourceArcFrame:Hide() end
+        return
+    end
+
+    local showRunes = preview or DB.resourceHUD.showRunes ~= false
+    local showPower = preview or DB.resourceHUD.showRunicPower ~= false
+    if not showRunes and not showPower then
+        if resourceFrame then resourceFrame:Hide() end
+        if resourceArcFrame then resourceArcFrame:Hide() end
+        return
+    end
+
+    local spacingKey = NormalizeResourceRuneSpacing(DB.resourceHUD.runeSpacing)
+    local showPowerText = DB.resourceHUD.showPowerText ~= false
+    local lockdown = InCombatLockdown and InCombatLockdown()
+
+    if style == "arcs" then
+        if resourceFrame then resourceFrame:Hide() end
+        if resourceArcFrame then
+            local layoutChanged = resourceArcFrame.layoutShowRunes ~= (showRunes == true)
+                or resourceArcFrame.layoutShowRunicPower ~= (showPower == true)
+                or resourceArcFrame.layoutShowPowerText ~= showPowerText
+            if layoutChanged and not lockdown then
+                LayoutResourceArcHUDComponents(resourceArcFrame, showRunes, showPower)
+            end
+            resourceArcFrame:Show()
+            self:UpdateResourceHealthHUD()
+            self:UpdateResourceRunes()
+            self:UpdateRunicPowerHUD()
+        end
+        return
+    end
+
+    if resourceArcFrame then resourceArcFrame:Hide() end
+    if resourceFrame then
+        local layoutChanged = resourceFrame.layoutShowRunes ~= (showRunes == true)
+            or resourceFrame.layoutShowRunicPower ~= (showPower == true)
+            or resourceFrame.layoutRuneSpacing ~= spacingKey
+            or resourceFrame.layoutShowPowerText ~= showPowerText
+        if layoutChanged and not lockdown then
+            -- Never re-anchor the Runic Power StatusBar after it has received a
+            -- secret combat value. The resource-mode switches are already blocked
+            -- in combat, so the layout can safely stay frozen until combat ends.
+            LayoutResourceHUDComponents(resourceFrame, showRunes, showPower)
+        end
+
+        resourceFrame:Show()
+        self:UpdateResourceRunes()
+        self:UpdateRunicPowerHUD()
+    end
+end
+
+local function CreateInterruptAlert()
+    local frame = CreateFrame("Frame", "DKMentorInterruptAlert", UIParent, "BackdropTemplate")
+    frame:SetSize(58, 58)
+    frame:SetFrameStrata("HIGH")
+    frame:SetClampedToScreen(true)
+    frame:SetMovable(true)
+    frame:EnableMouse(true)
+    frame:RegisterForDrag("LeftButton")
+    ApplyBackdrop(frame, 0.92)
+
+    frame:SetScript("OnDragStart", function(self)
+        if addon:CanMoveHUDs() then self:StartMoving() end
+    end)
+    frame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        if DB and DB.hudLocked == false then SaveFramePosition(self, "interruptAlert") end
+    end)
+
+    frame.icon = frame:CreateTexture(nil, "ARTWORK")
+    frame.icon:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -4)
+    frame.icon:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -4, 4)
+    frame.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    local _, icon = GetSpellData(Data.spells and Data.spells.MIND_FREEZE or 47528, T("Mind Freeze"))
+    frame.icon:SetTexture(icon or QUESTION_MARK_ICON)
+
+    frame.cooldown = CreateFrame("Cooldown", nil, frame, "CooldownFrameTemplate")
+    frame.cooldown:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -4)
+    frame.cooldown:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -4, 4)
+    if frame.cooldown.SetDrawEdge then frame.cooldown:SetDrawEdge(false) end
+    if frame.cooldown.SetDrawBling then frame.cooldown:SetDrawBling(false) end
+    if frame.cooldown.SetHideCountdownNumbers then frame.cooldown:SetHideCountdownNumbers(false) end
+
+    frame:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        if GameTooltip.SetSpellByID then
+            GameTooltip:SetSpellByID(Data.spells and Data.spells.MIND_FREEZE or 47528)
+        else
+            GameTooltip:SetText(T("Mind Freeze"))
+        end
+        GameTooltip:AddLine(T("Appears when your current target is confirmed to be casting or channeling an interruptible spell."), 0.72, 0.84, 0.95, true)
+        GameTooltip:Show()
+    end)
+    frame:SetScript("OnLeave", function()
+        if GameTooltip then GameTooltip:Hide() end
+    end)
+
+    RestoreFramePosition(frame, "interruptAlert")
+    frame:Hide()
+    return frame
+end
+
+local function CreateBarLayoutFrame()
+    local frame = CreateFrame("Frame", "DKMentorBarLayoutFrame", UIParent, "BackdropTemplate")
+    frame:SetSize(820, 560)
+    frame:SetFrameStrata("DIALOG")
+    frame:SetClampedToScreen(true)
+    frame:SetMovable(true)
+    frame:EnableMouse(true)
+    frame:RegisterForDrag("LeftButton")
+    ApplyBackdrop(frame, 0.98)
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+
+    frame:SetScript("OnDragStart", function(self)
+        if not InCombatLockdown() then self:StartMoving() end
+    end)
+    frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+
+    frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    frame.title:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -15)
+    frame.title:SetText(T("Combat HUD size and layout"))
+    frame.title:SetTextColor(0.52, 0.88, 1)
+
+    frame.closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+    frame.closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -4)
+
+    frame.description = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    frame.description:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -45)
+    frame.description:SetWidth(780)
+    frame.description:SetHeight(40)
+    frame.description:SetJustifyH("LEFT")
+    frame.description:SetJustifyV("TOP")
+    frame.description:SetText(T("Adjust each combat HUD independently. Size scales the whole HUD, opacity controls transparency, aura/ability rows can change width, and DK Resources has its own mode, style, text, Rune spacing, and Arc opening. Preview HUDs overrides combat-only visibility while you arrange the interface."))
+
+    local function AddHeader(text, x, width)
+        local header = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        header:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -92)
+        header:SetWidth(width)
+        header:SetJustifyH("CENTER")
+        header:SetText(T(text))
+        header:SetTextColor(0.55, 0.84, 0.95)
+        return header
+    end
+
+    frame.headerBar = AddHeader("Bar", 20, 150)
+    frame.headerScale = AddHeader("Size", 180, 125)
+    frame.headerOpacity = AddHeader("Opacity", 330, 125)
+    frame.headerColumns = AddHeader("Icons / mode", 505, 250)
+
+    frame.rows = {}
+    local rowDefs = {
+        { key = "buffBar", label = T("DK Buffs") },
+        { key = "externalBuffBar", label = T("External Buffs") },
+        { key = "debuffBar", label = T("Debuffs") },
+        { key = "abilityBar", label = T("Abilities") },
+        { key = "resourceHUD", label = T("DK Resources"), resourceMode = true },
+    }
+
+    for index, definition in ipairs(rowDefs) do
+        local y = -120 - ((index - 1) * 44)
+        local row = CreateFrame("Frame", nil, frame)
+        row:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, y)
+        row:SetSize(788, 38)
+        row.dbKey = definition.key
+
+        row.label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        row.label:SetPoint("LEFT", row, "LEFT", 6, 0)
+        row.label:SetWidth(150)
+        row.label:SetJustifyH("LEFT")
+        row.label:SetText(definition.label)
+
+        row.scaleMinus = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        row.scaleMinus:SetSize(30, 26)
+        row.scaleMinus:SetPoint("LEFT", row, "LEFT", 166, 0)
+        row.scaleMinus:SetText("-")
+        row.scaleMinus:SetScript("OnClick", function()
+            addon:SetCombatBarScale(row.dbKey, (DB[row.dbKey].scale or 1) - 0.1)
+        end)
+
+        row.scaleValue = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        row.scaleValue:SetPoint("LEFT", row.scaleMinus, "RIGHT", 5, 0)
+        row.scaleValue:SetWidth(58)
+        row.scaleValue:SetJustifyH("CENTER")
+
+        row.scalePlus = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        row.scalePlus:SetSize(30, 26)
+        row.scalePlus:SetPoint("LEFT", row.scaleValue, "RIGHT", 5, 0)
+        row.scalePlus:SetText("+")
+        row.scalePlus:SetScript("OnClick", function()
+            addon:SetCombatBarScale(row.dbKey, (DB[row.dbKey].scale or 1) + 0.1)
+        end)
+
+        row.opacityMinus = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        row.opacityMinus:SetSize(30, 26)
+        row.opacityMinus:SetPoint("LEFT", row, "LEFT", 316, 0)
+        row.opacityMinus:SetText("-")
+        row.opacityMinus:SetScript("OnClick", function()
+            addon:SetCombatBarOpacity(row.dbKey, (DB[row.dbKey].opacity or 1) - 0.1)
+        end)
+
+        row.opacityValue = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        row.opacityValue:SetPoint("LEFT", row.opacityMinus, "RIGHT", 5, 0)
+        row.opacityValue:SetWidth(58)
+        row.opacityValue:SetJustifyH("CENTER")
+
+        row.opacityPlus = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        row.opacityPlus:SetSize(30, 26)
+        row.opacityPlus:SetPoint("LEFT", row.opacityValue, "RIGHT", 5, 0)
+        row.opacityPlus:SetText("+")
+        row.opacityPlus:SetScript("OnClick", function()
+            addon:SetCombatBarOpacity(row.dbKey, (DB[row.dbKey].opacity or 1) + 0.1)
+        end)
+
+        row.columnsMinus = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        row.columnsMinus:SetSize(30, 26)
+        row.columnsMinus:SetPoint("LEFT", row, "LEFT", 510, 0)
+        row.columnsMinus:SetText("-")
+        row.columnsMinus:SetScript("OnClick", function()
+            addon:SetCombatBarColumns(row.dbKey, (DB[row.dbKey].iconsPerRow or 5) - 1)
+        end)
+
+        row.columnsValue = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        row.columnsValue:SetPoint("LEFT", row.columnsMinus, "RIGHT", 5, 0)
+        row.columnsValue:SetWidth(64)
+        row.columnsValue:SetJustifyH("CENTER")
+
+        row.columnsPlus = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        row.columnsPlus:SetSize(30, 26)
+        row.columnsPlus:SetPoint("LEFT", row.columnsValue, "RIGHT", 5, 0)
+        row.columnsPlus:SetText("+")
+        row.columnsPlus:SetScript("OnClick", function()
+            addon:SetCombatBarColumns(row.dbKey, (DB[row.dbKey].iconsPerRow or 5) + 1)
+        end)
+
+        if definition.resourceMode then
+            row.columnsMinus:Hide()
+            row.columnsValue:Hide()
+            row.columnsPlus:Hide()
+            row.resourceModeButton = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+            row.resourceModeButton:SetSize(240, 26)
+            row.resourceModeButton:SetPoint("LEFT", row, "LEFT", 500, 0)
+            row.resourceModeButton:SetScript("OnClick", function() addon:CycleResourceHUDMode() end)
+            local modeFont = row.resourceModeButton.GetFontString and row.resourceModeButton:GetFontString()
+            if modeFont and GameFontNormalSmall then modeFont:SetFontObject(GameFontNormalSmall) end
+        end
+
+        frame.rows[definition.key] = row
+    end
+
+    frame.resourceOptionsTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    frame.resourceOptionsTitle:SetPoint("TOPLEFT", frame, "TOPLEFT", 22, -350)
+    frame.resourceOptionsTitle:SetText(T("DK Resources appearance"))
+    frame.resourceOptionsTitle:SetTextColor(0.55, 0.84, 0.95)
+
+    frame.resourceTextButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.resourceTextButton:SetSize(165, 28)
+    frame.resourceTextButton:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -374)
+    frame.resourceTextButton:SetScript("OnClick", function()
+        addon:SetResourceHUDPowerTextEnabled(not DB.resourceHUD.showPowerText)
+    end)
+
+    frame.resourceStyleButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.resourceStyleButton:SetSize(165, 28)
+    frame.resourceStyleButton:SetPoint("LEFT", frame.resourceTextButton, "RIGHT", 8, 0)
+    frame.resourceStyleButton:SetScript("OnClick", function() addon:CycleResourceHUDStyle() end)
+
+    frame.resourceSpacingButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.resourceSpacingButton:SetSize(190, 28)
+    frame.resourceSpacingButton:SetPoint("LEFT", frame.resourceStyleButton, "RIGHT", 8, 0)
+    frame.resourceSpacingButton:SetScript("OnClick", function() addon:CycleResourceRuneSpacing() end)
+
+    frame.resourceResetButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.resourceResetButton:SetSize(190, 28)
+    frame.resourceResetButton:SetPoint("LEFT", frame.resourceSpacingButton, "RIGHT", 8, 0)
+    frame.resourceResetButton:SetText(T("Restore DK Resources"))
+    frame.resourceResetButton:SetScript("OnClick", function() addon:ResetResourceHUDLayout() end)
+
+    frame.resourceArcSpacingLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.resourceArcSpacingLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 22, -414)
+    frame.resourceArcSpacingLabel:SetWidth(150)
+    frame.resourceArcSpacingLabel:SetJustifyH("LEFT")
+    frame.resourceArcSpacingLabel:SetText(T("Arc opening"))
+
+    frame.resourceArcSpacingMinus = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.resourceArcSpacingMinus:SetSize(32, 26)
+    frame.resourceArcSpacingMinus:SetPoint("TOPLEFT", frame, "TOPLEFT", 174, -407)
+    frame.resourceArcSpacingMinus:SetText("-")
+    frame.resourceArcSpacingMinus:SetScript("OnClick", function()
+        addon:SetResourceArcSpacing((DB.resourceHUD.arcSpacing or 105) - 10)
+    end)
+
+    frame.resourceArcSpacingValue = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    frame.resourceArcSpacingValue:SetPoint("LEFT", frame.resourceArcSpacingMinus, "RIGHT", 6, 0)
+    frame.resourceArcSpacingValue:SetWidth(70)
+    frame.resourceArcSpacingValue:SetJustifyH("CENTER")
+
+    frame.resourceArcSpacingPlus = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.resourceArcSpacingPlus:SetSize(32, 26)
+    frame.resourceArcSpacingPlus:SetPoint("LEFT", frame.resourceArcSpacingValue, "RIGHT", 6, 0)
+    frame.resourceArcSpacingPlus:SetText("+")
+    frame.resourceArcSpacingPlus:SetScript("OnClick", function()
+        addon:SetResourceArcSpacing((DB.resourceHUD.arcSpacing or 105) + 10)
+    end)
+
+    frame.resourceArcSpacingHint = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    frame.resourceArcSpacingHint:SetPoint("LEFT", frame.resourceArcSpacingPlus, "RIGHT", 10, 0)
+    frame.resourceArcSpacingHint:SetWidth(430)
+    frame.resourceArcSpacingHint:SetJustifyH("LEFT")
+    frame.resourceArcSpacingHint:SetText(T("Close or open the two arcs around the character without changing their size."))
+    frame.resourceArcSpacingHint:SetTextColor(0.62, 0.76, 0.86)
+
+    frame.resourceStatus = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    frame.resourceStatus:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -452)
+    frame.resourceStatus:SetWidth(775)
+    frame.resourceStatus:SetHeight(34)
+    frame.resourceStatus:SetJustifyH("LEFT")
+    frame.resourceStatus:SetJustifyV("TOP")
+    frame.resourceStatus:SetTextColor(0.62, 0.76, 0.86)
+
+    frame.resetButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.resetButton:SetSize(245, 28)
+    frame.resetButton:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 16)
+    frame.resetButton:SetText(T("Restore HUD appearance"))
+    frame.resetButton:SetScript("OnClick", function() addon:ResetCombatBarLayout() end)
+
+    frame.previewButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.previewButton:SetSize(245, 28)
+    frame.previewButton:SetPoint("LEFT", frame.resetButton, "RIGHT", 10, 0)
+    frame.previewButton:SetScript("OnClick", function() addon:ToggleHUDPreview() end)
+
+    frame.doneButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.doneButton:SetSize(245, 28)
+    frame.doneButton:SetPoint("LEFT", frame.previewButton, "RIGHT", 10, 0)
+    frame.doneButton:SetText(T("Close"))
+    frame.doneButton:SetScript("OnClick", function() frame:Hide() end)
+
+    for _, button in ipairs({
+        frame.resourceTextButton, frame.resourceStyleButton, frame.resourceSpacingButton, frame.resourceResetButton,
+        frame.resourceArcSpacingMinus, frame.resourceArcSpacingPlus,
+        frame.resetButton, frame.previewButton, frame.doneButton,
+    }) do
+        local fontString = button.GetFontString and button:GetFontString()
+        if fontString and GameFontNormalSmall then fontString:SetFontObject(GameFontNormalSmall) end
+    end
+
+    frame:SetScript("OnShow", function() addon:UpdateBarLayoutFrame() end)
+    frame:Hide()
+    return frame
+end
+
+function addon:UpdateBarLayoutFrame()
+    if not barLayoutFrame or not DB then return end
+    for dbKey, row in pairs(barLayoutFrame.rows or {}) do
+        local config = DB[dbKey]
+        local limits = COMBAT_BAR_LAYOUT_LIMITS[dbKey]
+        if config and limits then
+            local scale = NormalizeCombatBarScale(config.scale)
+            row.scaleValue:SetText(string.format("%d%%", math.floor((scale * 100) + 0.5)))
+            row.scaleMinus:SetEnabled(scale > 0.7)
+            row.scalePlus:SetEnabled(scale < 1.6)
+
+            local opacity = NormalizeCombatBarOpacity(config.opacity)
+            row.opacityValue:SetText(string.format("%d%%", math.floor((opacity * 100) + 0.5)))
+            row.opacityMinus:SetEnabled(opacity > 0.3)
+            row.opacityPlus:SetEnabled(opacity < 1)
+
+            if limits.resourceMode then
+                if row.resourceModeButton then row.resourceModeButton:SetText(self:GetResourceHUDModeLabel()) end
+            else
+                local columns = Clamp(math.floor((tonumber(config.iconsPerRow) or limits.defaultColumns) + 0.5), limits.minColumns, limits.maxColumns)
+                row.columnsValue:SetText(tostring(columns))
+                row.columnsMinus:SetEnabled(columns > limits.minColumns)
+                row.columnsPlus:SetEnabled(columns < limits.maxColumns)
+            end
+        end
+    end
+
+    if barLayoutFrame.resourceTextButton then
+        barLayoutFrame.resourceTextButton:SetText(T(DB.resourceHUD.showPowerText ~= false and "Power text: ON" or "Power text: OFF"))
+    end
+    if barLayoutFrame.resourceStyleButton then
+        barLayoutFrame.resourceStyleButton:SetText(T("Style: %s", self:GetResourceHUDStyleLabel()))
+    end
+    if barLayoutFrame.resourceSpacingButton then
+        barLayoutFrame.resourceSpacingButton:SetText(T("Rune spacing: %s", self:GetResourceRuneSpacingLabel()))
+    end
+    if barLayoutFrame.resourceArcSpacingValue then
+        local arcSpacing = NormalizeResourceArcSpacing(DB.resourceHUD.arcSpacing)
+        local arcMode = NormalizeResourceHUDStyle(DB.resourceHUD.style) == "arcs"
+        barLayoutFrame.resourceArcSpacingValue:SetText(self:GetResourceArcSpacingLabel())
+        barLayoutFrame.resourceArcSpacingMinus:SetEnabled(arcMode and arcSpacing > 65)
+        barLayoutFrame.resourceArcSpacingPlus:SetEnabled(arcMode and arcSpacing < 165)
+        if barLayoutFrame.resourceArcSpacingLabel then
+            barLayoutFrame.resourceArcSpacingLabel:SetTextColor(arcMode and 1 or 0.45, arcMode and 0.82 or 0.45, arcMode and 0.25 or 0.45)
+        end
+        if barLayoutFrame.resourceArcSpacingHint then
+            barLayoutFrame.resourceArcSpacingHint:SetTextColor(arcMode and 0.62 or 0.42, arcMode and 0.76 or 0.42, arcMode and 0.86 or 0.42)
+        end
+    end
+    if barLayoutFrame.resourceStatus then
+        barLayoutFrame.resourceStatus:SetText(T(
+            "Current DK Resources: %s • Style %s • Size %d%% • Opacity %d%% • Arc opening %s",
+            self:GetResourceHUDModeLabel(),
+            self:GetResourceHUDStyleLabel(),
+            math.floor((NormalizeCombatBarScale(DB.resourceHUD.scale) * 100) + 0.5),
+            math.floor((NormalizeCombatBarOpacity(DB.resourceHUD.opacity) * 100) + 0.5),
+            self:GetResourceArcSpacingLabel()
+        ))
+    end
+    if barLayoutFrame.previewButton then
+        barLayoutFrame.previewButton:SetText(self.hudPreviewMode == true and T("Preview HUDs: ON") or T("Preview HUDs: OFF"))
+    end
+end
+
+function addon:ToggleBarLayoutFrame()
+    if not barLayoutFrame then return end
+    if barLayoutFrame:IsShown() then
+        barLayoutFrame:Hide()
+    else
+        barLayoutFrame:Show()
+        barLayoutFrame:Raise()
+    end
 end
 
 
@@ -4472,22 +6173,66 @@ function addon:CanMoveHUDs()
 end
 
 function addon:IsPlayerInCombat()
+    -- PLAYER_REGEN_* remains the primary latch, but zone/loading transitions can
+    -- leave a stale TRUE behind. If both public combat signals explicitly say
+    -- "out of combat", heal the latch instead of keeping combat-only HUDs stuck.
+    local unitCombat
+    local lockdown
+
     if UnitAffectingCombat then
-        local ok, value = pcall(UnitAffectingCombat, "player")
-        if ok and value ~= nil then
-            return value == true
-        end
+        local ok, rawValue = pcall(UnitAffectingCombat, "player")
+        unitCombat = GetAccessibleBooleanFromCall(ok, rawValue)
     end
     if InCombatLockdown then
-        local ok, value = pcall(InCombatLockdown)
-        if ok then
-            return value == true
+        local ok, rawValue = pcall(InCombatLockdown)
+        lockdown = GetAccessibleBooleanFromCall(ok, rawValue)
+    end
+
+    if self.combatEventState == true then
+        if unitCombat == false and lockdown == false then
+            self.combatEventState = false
+            return false
         end
+        return true
+    elseif self.combatEventState == false then
+        return false
+    end
+
+    if unitCombat ~= nil then
+        return unitCombat
+    end
+    if lockdown ~= nil then
+        return lockdown
     end
     return false
 end
 
+function addon:SyncCombatEventState()
+    local unitCombat
+    local lockdown
+    if UnitAffectingCombat then
+        local ok, rawValue = pcall(UnitAffectingCombat, "player")
+        unitCombat = GetAccessibleBooleanFromCall(ok, rawValue)
+    end
+    if InCombatLockdown then
+        local ok, rawValue = pcall(InCombatLockdown)
+        lockdown = GetAccessibleBooleanFromCall(ok, rawValue)
+    end
+
+    if unitCombat == true or lockdown == true then
+        self.combatEventState = true
+    elseif unitCombat == false and lockdown == false then
+        self.combatEventState = false
+    else
+        self.combatEventState = nil
+    end
+    return self:IsPlayerInCombat()
+end
+
 function addon:ShouldShowCombatBar(config)
+    -- Preview is a hard layout override. It intentionally ignores both the
+    -- individual ON/OFF toggle and Bars only in combat so every combat HUD can
+    -- be positioned and resized safely while the player is out of combat.
     if self.hudPreviewMode == true then
         return true
     end
@@ -4505,17 +6250,23 @@ function addon:SetCombatBarsOnlyInCombat(enabled)
     DB.combatBarsOnlyInCombat = enabled == true
     self:RefreshCombatHUDVisibility()
     self:UpdateHUDSettings()
-    Print(T(DB.combatBarsOnlyInCombat and "Aura and ability bars now show only in combat." or "Aura and ability bars can now show outside combat."))
+    Print(T(DB.combatBarsOnlyInCombat and "Combat bars and resources now show only in combat." or "Combat bars and resources can now show outside combat."))
 end
 
 function addon:UpdateHUDMoveHints()
     if not DB then return end
+    local editing = (DB.hudLocked == false) or self.hudPreviewMode == true
     local text = DB.hudLocked and "" or T("Drag to move")
     if coachFrame and coachFrame.dragHint then coachFrame.dragHint:SetText(text) end
     if buffFrame and buffFrame.dragHint then buffFrame.dragHint:SetText(text) end
     if externalBuffFrame and externalBuffFrame.dragHint then externalBuffFrame.dragHint:SetText(text) end
     if debuffFrame and debuffFrame.dragHint then debuffFrame.dragHint:SetText(text) end
     if abilityFrame and abilityFrame.dragHint then abilityFrame.dragHint:SetText(text) end
+    if resourceFrame and resourceFrame.dragHint then resourceFrame.dragHint:SetText(text) end
+    if resourceArcFrame and resourceArcFrame.dragHint then resourceArcFrame.dragHint:SetText("") end
+    if resourceArcFrame and resourceArcFrame.dragHandle then resourceArcFrame.dragHandle:Hide() end
+    if resourceArcFrame then resourceArcFrame:EnableMouse(editing) end
+    UpdateManagedAuraBarChrome(buffFrame)
     UpdateManagedAuraBarChrome(externalBuffFrame)
     UpdateManagedAuraBarChrome(debuffFrame)
 end
@@ -4533,11 +6284,16 @@ function addon:ToggleHUDLock()
 end
 
 function addon:ToggleHUDPreview()
+    if InCombatLockdown and InCombatLockdown() then
+        Print(T("HUD preview cannot be changed during combat."))
+        return
+    end
     self.hudPreviewMode = not (self.hudPreviewMode == true)
     self:RefreshCoachVisibility()
     self:RefreshStatusWidgetVisibility()
     self:RefreshCombatHUDVisibility()
     self:UpdateHUDSettings()
+    self:UpdateBarLayoutFrame()
 end
 
 function addon:SetCoachEnabled(enabled)
@@ -5137,14 +6893,18 @@ local function GetPlayerAuraDataSingleSafe(spellID)
 
     if C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
         local ok, aura = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID)
-        if ok and aura then
+        -- In Midnight some aura results may be secret/tainted in restricted
+        -- contexts. Never branch on a returned value before accessibility is
+        -- confirmed; Blizzard's own Cooldown Viewer mirror remains our combat
+        -- fallback when direct aura data is unavailable.
+        if ok and IsAccessibleValue(aura) and type(aura) == "table" then
             return aura
         end
     end
 
     if AuraUtil and AuraUtil.FindAuraBySpellID then
         local ok, name, icon, count, _, duration, expirationTime, source, _, _, auraSpellID = pcall(AuraUtil.FindAuraBySpellID, spellID, "player", "HELPFUL")
-        if ok and name then
+        if ok and IsAccessibleValue(name) then
             return {
                 name = name,
                 icon = icon,
@@ -5152,7 +6912,7 @@ local function GetPlayerAuraDataSingleSafe(spellID)
                 duration = duration,
                 expirationTime = expirationTime,
                 sourceUnit = source,
-                spellId = auraSpellID or spellID,
+                spellId = IsAccessibleNumber(auraSpellID) and auraSpellID or spellID,
             }
         end
     end
@@ -5187,6 +6947,105 @@ local function GetPlayerAuraDataSafe(spellID)
     return nil
 end
 
+local function InvalidateCooldownManagerProfileCache()
+    for key in pairs(cooldownManagerProfileCache) do
+        cooldownManagerProfileCache[key] = nil
+    end
+end
+
+local function GetCooldownManagerProfileCooldownIDSet(specID, kind)
+    local result = {}
+    local profile = Data.cooldownManagerProfiles and Data.cooldownManagerProfiles[specID]
+    if type(profile) ~= "table" then return result end
+
+    local function Add(list)
+        for _, cooldownID in ipairs(list or {}) do
+            if IsAccessibleNumber(cooldownID) then result[cooldownID] = true end
+        end
+    end
+
+    if kind == "buff" then
+        Add(profile.trackedBuffCooldownIDs)
+        Add(profile.trackedBarCooldownIDs)
+    elseif kind == "ability" then
+        Add(profile.essentialCooldownIDs)
+    else
+        Add(profile.trackedBuffCooldownIDs)
+        Add(profile.trackedBarCooldownIDs)
+        Add(profile.essentialCooldownIDs)
+    end
+    return result
+end
+
+local function GetCachedCooldownViewerDisplayData()
+    -- IMPORTANT: GetDisplayData() is a passive accessor. Do not call
+    -- GetCooldownInfoForID/CheckBuildDisplayData here because those paths can
+    -- invoke C_CooldownViewer functions with AllowedWhenUntainted secret args.
+    local provider = _G.CooldownViewerDataProvider
+    if not provider or type(provider.GetDisplayData) ~= "function" then
+        return nil
+    end
+    local ok, displayData = pcall(provider.GetDisplayData, provider)
+    if ok and IsAccessibleValue(displayData) and type(displayData) == "table" then
+        return displayData
+    end
+    return nil
+end
+
+local function GetCachedCooldownViewerInfo(cooldownID)
+    if not IsAccessibleNumber(cooldownID) then return nil end
+    local displayData = GetCachedCooldownViewerDisplayData()
+    if not displayData then return nil end
+    local infoByID = displayData.cooldownInfoByID
+    if type(infoByID) ~= "table" then return nil end
+    local info = infoByID[cooldownID]
+    if IsAccessibleValue(info) and type(info) == "table" then return info end
+    return nil
+end
+
+local function CollectCooldownInfoSpellIDs(info, output, seen)
+    if type(info) ~= "table" then return end
+    local function Add(value)
+        if IsAccessibleNumber(value) and not seen[value] then
+            seen[value] = true
+            table.insert(output, value)
+        end
+    end
+
+    -- Prefer the same order Blizzard uses for display resolution, while also
+    -- retaining every associated ID because the active aura can be a linked
+    -- spell rather than the action's base spell.
+    Add(info.linkedSpellID)
+    Add(info.overrideTooltipSpellID)
+    Add(info.overrideSpellID)
+    if type(info.linkedSpellIDs) == "table" then
+        for _, spellID in ipairs(info.linkedSpellIDs) do Add(spellID) end
+    end
+    Add(info.spellID)
+end
+
+local function BuildCooldownManagerProfileSpellList(kind, specID)
+    local key = tostring(specID or 0) .. ":" .. tostring(kind or "buff")
+    local cached = cooldownManagerProfileCache[key]
+    if cached then return cached end
+
+    local ids = GetCooldownManagerProfileCooldownIDSet(specID, kind)
+    local result, seen = {}, {}
+    local resolvedAny = false
+    for cooldownID in pairs(ids) do
+        local info = GetCachedCooldownViewerInfo(cooldownID)
+        if info then
+            resolvedAny = true
+            CollectCooldownInfoSpellIDs(info, result, seen)
+        end
+    end
+
+    -- Only cache a resolved result. If Blizzard has not built its provider yet,
+    -- a later COOLDOWN_VIEWER_DATA_LOADED refresh gets another chance.
+    if resolvedAny then cooldownManagerProfileCache[key] = result end
+    return result
+end
+
 local function BuildTrackingList(kind, specID)
     local source = kind == "buff" and Data.buffTracking or Data.abilityTracking
     local result = {}
@@ -5210,7 +7069,78 @@ local function BuildTrackingList(kind, specID)
 
     AddList(source and source[specID])
     AddList(source and source.general)
+
+    -- Augment the curated fallback with the spell/linked-aura IDs resolved from
+    -- the current Wowhead Cooldown Manager profile IDs. This allows Midnight
+    -- hotfix/override spell IDs to follow Blizzard data without hard-coding
+    -- every internal spell variant in DK Mentor.
+    AddList(BuildCooldownManagerProfileSpellList(kind, specID))
     return result
+end
+
+local function BuildDKBuffIncludeSpellIDs(specID)
+    local includeSpellIDs = {}
+
+    local function Add(spellID)
+        if not IsAccessibleNumber(spellID) then return end
+        includeSpellIDs[spellID] = true
+        local aliases = Data.buffAuraAliases and Data.buffAuraAliases[spellID]
+        for _, aliasSpellID in ipairs(aliases or {}) do
+            if IsAccessibleNumber(aliasSpellID) then
+                includeSpellIDs[aliasSpellID] = true
+            end
+        end
+    end
+
+    for _, entry in ipairs(BuildTrackingList("buff", specID)) do
+        Add(type(entry) == "table" and entry.spellID or entry)
+    end
+    return includeSpellIDs
+end
+
+function addon:BuildDKBuffCandidateFilters()
+    local specID = select(1, self:GetSpecInfo())
+    return {
+        includeSpellIDs = BuildDKBuffIncludeSpellIDs(specID),
+    }
+end
+
+function addon:RefreshManagedDKBuffFilter()
+    if not buffFrame or not buffFrame.managedAuraContainer then return end
+
+    -- Candidate-filter tuning is deliberately out-of-combat. Current 12.1
+    -- implementations treat this as live tuning; defer it to regen if needed.
+    local lockdown = false
+    if InCombatLockdown then
+        local ok, rawValue = pcall(InCombatLockdown)
+        lockdown = GetAccessibleBooleanFromCall(ok, rawValue) == true
+    end
+    if lockdown then
+        self.managedDKBuffFilterPending = true
+        return
+    end
+
+    local container = buffFrame.managedAuraContainer
+    local groupKey = buffFrame.managedAuraGroupKey or "buffBar"
+    local candidateFilters = self:BuildDKBuffCandidateFilters()
+    buffFrame.managedAuraCandidateFilters = candidateFilters
+
+    if container.SetAuraGroupCandidateFilters then
+        pcall(container.SetAuraGroupCandidateFilters, container, groupKey, candidateFilters)
+    end
+    if container.SetAuraGroupMaxFrameCount then
+        pcall(container.SetAuraGroupMaxFrameCount, container, groupKey, MANAGED_AURA_MAX_FRAMES)
+    end
+    ConfigureManagedAuraFlow(container, GetConfiguredBarColumns("buffBar", MANAGED_AURAS_PER_LINE, 10))
+    if container.UpdateAllAuras then
+        pcall(container.UpdateAllAuras, container)
+    end
+
+    -- The native dirty processor is partitioned; an out-of-combat Hide/Show kick
+    -- makes an updated whitelist visible immediately instead of waiting one aura event.
+    pcall(container.Hide, container)
+    pcall(container.Show, container)
+    self.managedDKBuffFilterPending = false
 end
 
 local function GetRuntimeBuffEntry(spellID)
@@ -5318,10 +7248,52 @@ function addon:TrackRuntimeBuffCast(spellID)
     SetRuntimeBuffState(buffSpellID, true, duration == nil and false or duration, "cast")
 end
 
-function addon:TrackRuntimeProc(spellID, active)
-    local trackedID = NormalizeTrackedBuffSpellID(spellID)
-    if not trackedID then return end
+local function ResolveProcGlowDisplaySpellID(spellID)
+    if not IsAccessibleNumber(spellID) then
+        return nil
+    end
 
+    local specID = select(1, addon:GetSpecInfo())
+    local mappings = Data.procGlowMappings and Data.procGlowMappings[specID]
+    if mappings and mappings[spellID] then
+        return mappings[spellID]
+    end
+
+    if C_Spell and C_Spell.GetBaseSpell then
+        local ok, baseSpellID = pcall(C_Spell.GetBaseSpell, spellID)
+        if ok and IsAccessibleNumber(baseSpellID) and mappings and mappings[baseSpellID] then
+            return mappings[baseSpellID]
+        end
+    end
+
+    return NormalizeTrackedBuffSpellID(spellID) or spellID
+end
+
+function addon:TrackRuntimeProc(spellID, active)
+    if not IsAccessibleNumber(spellID) then return end
+
+    local displaySpellID = ResolveProcGlowDisplaySpellID(spellID)
+    if not displaySpellID then return end
+
+    -- Proc-glow events identify the action that should light up. Prefer the
+    -- mapped DK proc aura (KM/Rime/Frostbane) so the HUD uses the same icon a
+    -- player recognizes from the buff/proc itself. Unknown future proc glows
+    -- are still kept dynamically using their action spell as a fallback.
+    if active == true then
+        if activeProcGlows[displaySpellID] ~= true then
+            activeProcGlows[displaySpellID] = true
+            table.insert(activeProcGlowOrder, displaySpellID)
+        end
+    else
+        activeProcGlows[displaySpellID] = nil
+        for index = #activeProcGlowOrder, 1, -1 do
+            if activeProcGlowOrder[index] == displaySpellID then
+                table.remove(activeProcGlowOrder, index)
+            end
+        end
+    end
+
+    local trackedID = NormalizeTrackedBuffSpellID(displaySpellID) or displaySpellID
     overlayProcState[trackedID] = active == true
     SetRuntimeBuffState(trackedID, active == true, false, "proc")
 
@@ -5336,6 +7308,22 @@ function addon:TrackRuntimeProc(spellID, active)
             if IsAccessibleNumber(breath.duration) then
                 breath.duration = breath.duration + 0.8
             end
+        end
+    end
+end
+
+function addon:ClearTransientProcStates()
+    for key in pairs(activeProcGlows) do activeProcGlows[key] = nil end
+    for index = #activeProcGlowOrder, 1, -1 do activeProcGlowOrder[index] = nil end
+    for spellID in pairs(overlayProcState) do overlayProcState[spellID] = false end
+
+    for _, state in pairs(runtimeBuffState) do
+        if type(state) == "table" and (state.source == "proc" or state.source == "proc-poll") then
+            state.active = false
+            state.duration = nil
+            state.startedAt = nil
+            state.expiresAt = nil
+            state.auraInstanceID = nil
         end
     end
 end
@@ -5381,12 +7369,6 @@ function addon:SyncReadableBuffRuntime(clearMissing)
                 end
             end
         end
-    end
-end
-
-local function ClearTrackingCooldown(slot)
-    if slot and slot.cooldown and slot.cooldown.Clear then
-        pcall(slot.cooldown.Clear, slot.cooldown)
     end
 end
 
@@ -5511,68 +7493,172 @@ local function GetWantedSpellForMirrorItem(item, wanted)
     return nil
 end
 
+local function GetMirrorItemDisplaySpellID(item)
+    if not item then return nil end
+
+    -- Blizzard's Cooldown Viewer resolves linked/override proc auras internally.
+    -- Prefer the materialized aura spell ID because it is the closest match to
+    -- the icon the player is actually seeing in the Tracked Buffs viewer.
+    if item.GetAuraSpellID then
+        local ok, value = pcall(item.GetAuraSpellID, item)
+        if ok and IsAccessibleNumber(value) then
+            return value
+        end
+    end
+
+    local okAuraField, auraSpellID = pcall(function() return item.auraSpellID end)
+    if okAuraField and IsAccessibleNumber(auraSpellID) then
+        return auraSpellID
+    end
+
+    if item.GetSpellID then
+        local ok, value = pcall(item.GetSpellID, item)
+        if ok and IsAccessibleNumber(value) then
+            return value
+        end
+    end
+
+    local baseSpellID = GetMirrorItemBaseSpellID(item)
+    if baseSpellID then
+        return baseSpellID
+    end
+
+    if item.GetCooldownInfo then
+        local ok, info = pcall(item.GetCooldownInfo, item)
+        if ok and type(info) == "table" then
+            for _, value in ipairs({ info.linkedSpellID, info.overrideTooltipSpellID, info.overrideSpellID, info.spellID }) do
+                if IsAccessibleNumber(value) then
+                    return value
+                end
+            end
+        end
+    end
+
+    -- Last-resort lookup uses ONLY Blizzard's already-built provider cache.
+    -- Calling C_CooldownViewer.GetCooldownViewerCooldownInfo directly from an
+    -- addon can be restricted/tainted in Midnight (AllowedWhenUntainted).
+    local cooldownID
+    if item.GetCooldownID then
+        local ok, value = pcall(item.GetCooldownID, item)
+        if ok and IsAccessibleNumber(value) then cooldownID = value end
+    end
+    if not cooldownID then
+        local ok, value = pcall(function() return item.cooldownID end)
+        if ok and IsAccessibleNumber(value) then cooldownID = value end
+    end
+    local info = cooldownID and GetCachedCooldownViewerInfo(cooldownID) or nil
+    if info then
+        local candidates, seen = {}, {}
+        CollectCooldownInfoSpellIDs(info, candidates, seen)
+        for _, value in ipairs(candidates) do
+            if IsAccessibleNumber(value) then return value end
+        end
+    end
+
+    return nil
+end
+
+local function IsMirrorBuffItemActive(item)
+    if not item then return false end
+
+    -- Strongest signal: Blizzard has materialized a real aura instance for this
+    -- Cooldown Manager item. This is precisely the state DK Mentor wants to
+    -- mirror and does not require reading the protected aura payload ourselves.
+    if item.GetAuraSpellInstanceID then
+        local ok, value = pcall(item.GetAuraSpellInstanceID, item)
+        if ok and IsAccessibleNumber(value) and value > 0 then return true end
+    end
+    local okAuraID, auraInstanceID = pcall(function() return item.auraInstanceID end)
+    if okAuraID and IsAccessibleNumber(auraInstanceID) and auraInstanceID > 0 then return true end
+
+    -- CooldownViewerItemMixin explicitly marks visual data sourced from an aura.
+    -- Unlike item:IsActive(), this means an aura/proc is actually driving the
+    -- visual. Base IsActive only means the cooldown entry is configured.
+    for _, fieldName in ipairs({ "wasSetFromAura", "cooldownUseAuraDisplayTime" }) do
+        local ok, value = pcall(function() return item[fieldName] end)
+        if ok and IsAccessibleValue(value) and type(value) == "boolean" and value then
+            return true
+        end
+    end
+
+    -- A cached aura table is also safe evidence only when the table itself is
+    -- accessible. Do not inspect secret aura payloads.
+    if item.GetAuraDataCached then
+        local ok, auraData = pcall(item.GetAuraDataCached, item)
+        if ok and IsAccessibleValue(auraData) and type(auraData) == "table" then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function CanonicalizeMirroredBuffSpellID(spellID)
+    if not IsAccessibleNumber(spellID) then return nil end
+    return NormalizeTrackedBuffSpellID(spellID) or ResolveProcGlowDisplaySpellID(spellID) or spellID
+end
+
 function addon:RefreshCooldownViewerBuffMirrors()
     if not self.active then return end
 
-    local inCombat = InCombatLockdown and InCombatLockdown() == true
+    local inCombat = false
+    if InCombatLockdown then
+        local ok, value = pcall(InCombatLockdown)
+        inCombat = ok and IsAccessibleValue(value) and value == true
+    end
 
-    -- The Blizzard Cooldown Viewer is allowed to resolve restricted aura state.
-    -- When available, DK Mentor mirrors its active-state signal for tracked DK
-    -- buffs instead of trying to inspect secret aura identifiers in combat.
-    -- Loading Blizzard UI modules is deferred out of combat, but once the
-    -- viewer exists its already-created frames can be scanned safely in combat.
     if C_AddOns and C_AddOns.LoadAddOn and not _G.BuffIconCooldownViewer and not inCombat then
         pcall(C_AddOns.LoadAddOn, "Blizzard_CooldownViewer")
     end
 
-    for key in pairs(mirroredBuffItems) do
-        mirroredBuffItems[key] = nil
-    end
+    for key in pairs(mirroredBuffItems) do mirroredBuffItems[key] = nil end
+    for key in pairs(mirroredActiveBuffItems) do mirroredActiveBuffItems[key] = nil end
+    for index = #mirroredActiveBuffOrder, 1, -1 do mirroredActiveBuffOrder[index] = nil end
 
     local specID = select(1, self:GetSpecInfo())
+    local profileCooldownIDs = GetCooldownManagerProfileCooldownIDSet(specID, "buff")
     local wanted = {}
     for _, entry in ipairs(BuildTrackingList("buff", specID)) do
         local spellID = type(entry) == "table" and entry.spellID or entry
         if spellID then
             wanted[spellID] = spellID
             local aliases = Data.buffAuraAliases and Data.buffAuraAliases[spellID]
-            for _, aliasSpellID in ipairs(aliases or {}) do
-                wanted[aliasSpellID] = spellID
-            end
+            for _, aliasSpellID in ipairs(aliases or {}) do wanted[aliasSpellID] = spellID end
         end
     end
 
-    local function ScanViewer(viewer)
-        if not viewer or not viewer.itemFramePool or not viewer.itemFramePool.EnumerateActive then
-            return
+    local function GetItemCooldownID(item)
+        if item and item.GetCooldownID then
+            local ok, value = pcall(item.GetCooldownID, item)
+            if ok and IsAccessibleNumber(value) then return value end
         end
+        if item then
+            local ok, value = pcall(function() return item.cooldownID end)
+            if ok and IsAccessibleNumber(value) then return value end
+        end
+        return nil
+    end
 
-        if not mirroredViewerHooks[viewer] and hooksecurefunc and viewer.RefreshLayout then
-            mirroredViewerHooks[viewer] = true
-            hooksecurefunc(viewer, "RefreshLayout", function()
-                if addon.active and C_Timer and C_Timer.After then
-                    C_Timer.After(0, function()
-                        if addon.active then
-                            addon:RefreshCooldownViewerBuffMirrors()
-                            addon:UpdateBuffBar()
-                        end
-                    end)
-                end
-            end)
-        end
+    local function ScanViewer(viewer)
+        if not viewer or not viewer.itemFramePool or not viewer.itemFramePool.EnumerateActive then return end
 
         pcall(function()
             for item in viewer.itemFramePool:EnumerateActive() do
-                local spellID = GetWantedSpellForMirrorItem(item, wanted)
-                if spellID then
-                    mirroredBuffItems[spellID] = item
-                    if not mirroredBuffHooks[item] and hooksecurefunc and item.OnActiveStateChanged then
-                        mirroredBuffHooks[item] = true
-                        hooksecurefunc(item, "OnActiveStateChanged", function()
-                            if addon.active then
-                                addon:UpdateBuffBar()
-                            end
-                        end)
+                local cooldownID = GetItemCooldownID(item)
+                local profileWanted = cooldownID and profileCooldownIDs[cooldownID] == true
+                local rawSpellID = GetMirrorItemDisplaySpellID(item)
+                local canonicalSpellID = CanonicalizeMirroredBuffSpellID(rawSpellID)
+                local knownSpellID = GetWantedSpellForMirrorItem(item, wanted)
+
+                -- Profile cooldown IDs are authoritative even when Blizzard uses
+                -- a linked/override spell ID that is new to DK Mentor.
+                local displaySpellID = knownSpellID or canonicalSpellID or rawSpellID
+                local useful = profileWanted or knownSpellID ~= nil
+                if useful and displaySpellID then
+                    mirroredBuffItems[displaySpellID] = item
+                    if IsMirrorBuffItemActive(item) and not mirroredActiveBuffItems[displaySpellID] then
+                        mirroredActiveBuffItems[displaySpellID] = item
+                        table.insert(mirroredActiveBuffOrder, displaySpellID)
                     end
                 end
             end
@@ -5585,21 +7671,33 @@ end
 
 local function GetMirroredBuffState(spellID)
     local item = mirroredBuffItems[spellID]
-    if not item or not item.IsActive then
-        return nil, nil
+    if not item then return nil, nil end
+    return IsMirrorBuffItemActive(item), item
+end
+
+local function GetMirroredBuffTexture(item)
+    if not item then return nil end
+
+    if item.GetIconTexture then
+        local ok, textureRegion = pcall(item.GetIconTexture, item)
+        if ok and textureRegion and textureRegion.GetTexture then
+            local okTexture, texture = pcall(textureRegion.GetTexture, textureRegion)
+            if okTexture and IsAccessibleValue(texture) then return texture end
+        end
     end
 
-    local ok, active = pcall(item.IsActive, item)
-    if not ok then
-        return nil, item
+    if item.Icon then
+        if item.Icon.GetTexture then
+            local ok, texture = pcall(item.Icon.GetTexture, item.Icon)
+            if ok and IsAccessibleValue(texture) then return texture end
+        end
+        if item.Icon.Icon and item.Icon.Icon.GetTexture then
+            local ok, texture = pcall(item.Icon.Icon.GetTexture, item.Icon.Icon)
+            if ok and IsAccessibleValue(texture) then return texture end
+        end
     end
-    if IsSecretValue(active) then
-        return active, item
-    end
-    if active == nil then
-        return nil, item
-    end
-    return active, item
+
+    return nil
 end
 
 local function ApplyMirroredAuraDuration(slot, item)
@@ -5636,7 +7734,11 @@ function addon:SetBuffBarEnabled(enabled)
     if not DB or not DB.buffBar then return end
     DB.buffBar.enabled = enabled == true
     if DB.buffBar.enabled then
-        self:RefreshCooldownViewerBuffMirrors()
+        if buffFrame and buffFrame.managedAuraContainer then
+            self:RefreshManagedDKBuffFilter()
+        else
+            self:RefreshCooldownViewerBuffMirrors()
+        end
     end
     self:RefreshCombatHUDVisibility()
     self:UpdateHUDSettings()
@@ -5651,6 +7753,119 @@ function addon:SetAbilityBarEnabled(enabled)
     Print(T(DB.abilityBar.enabled and "Ability bar enabled." or "Ability bar disabled."))
 end
 
+local function SyncKnownProcGlowStates()
+    if not C_SpellActivationOverlay or not C_SpellActivationOverlay.IsSpellOverlayed then
+        return
+    end
+
+    local specID = select(1, addon:GetSpecInfo())
+    local mappings = Data.procGlowMappings and Data.procGlowMappings[specID]
+    if type(mappings) ~= "table" then return end
+
+    local canonicalSeen = {}
+    for actionSpellID, procSpellID in pairs(mappings) do
+        if IsAccessibleNumber(actionSpellID) and IsAccessibleNumber(procSpellID) then
+            local ok, overlayed = pcall(C_SpellActivationOverlay.IsSpellOverlayed, actionSpellID)
+            if ok and IsAccessibleValue(overlayed) and type(overlayed) == "boolean" then
+                -- Several actions can represent the same proc (KM on Obliterate
+                -- and Frostscythe). OR them together before clearing the proc.
+                local state = canonicalSeen[procSpellID]
+                if state == nil then state = false end
+                canonicalSeen[procSpellID] = state or overlayed
+            end
+        end
+    end
+
+    for procSpellID, overlayed in pairs(canonicalSeen) do
+        local current = activeProcGlows[procSpellID] == true
+        if current ~= overlayed then
+            if overlayed then
+                activeProcGlows[procSpellID] = true
+                table.insert(activeProcGlowOrder, procSpellID)
+            else
+                activeProcGlows[procSpellID] = nil
+                for index = #activeProcGlowOrder, 1, -1 do
+                    if activeProcGlowOrder[index] == procSpellID then
+                        table.remove(activeProcGlowOrder, index)
+                    end
+                end
+            end
+            overlayProcState[procSpellID] = overlayed
+            SetRuntimeBuffState(procSpellID, overlayed, false, "proc-poll")
+        end
+    end
+end
+
+local function BuildBuffDisplayList(specID)
+    local list = {}
+    local seen = {}
+
+    local function Add(spellID, flags)
+        if not spellID or seen[spellID] then return end
+        seen[spellID] = true
+        local entry = { spellID = spellID }
+        for key, value in pairs(flags or {}) do entry[key] = value end
+        table.insert(list, entry)
+    end
+
+    -- 1) Exact active entries currently materialized by Blizzard's Tracked
+    -- Buffs/Tracked Bars viewers. This is the closest possible mirror of the
+    -- proc row the player sees at the top of the screen.
+    for _, spellID in ipairs(mirroredActiveBuffOrder) do
+        if mirroredActiveBuffItems[spellID] then
+            Add(spellID, { mirrorActive = true, priorityProc = true })
+        end
+    end
+
+    -- 2) Proc glows are a fallback for procs the player has not configured in
+    -- Blizzard's tracked-buff viewer. They disappear as soon as the glow ends.
+    for _, spellID in ipairs(activeProcGlowOrder) do
+        if activeProcGlows[spellID] == true then
+            Add(spellID, { procGlow = true, priorityProc = true })
+        end
+    end
+
+    -- 3) Known DK buffs are included only while they are ACTUALLY active. No
+    -- inactive/dim placeholders remain in normal gameplay.
+    for _, tracked in ipairs(BuildTrackingList("buff", specID)) do
+        local spellID = type(tracked) == "table" and tracked.spellID or tracked
+        if spellID and not seen[spellID] then
+            local aura = GetPlayerAuraDataSafe(spellID)
+            local mirrorActive = select(1, GetMirroredBuffState(spellID))
+            local procActive = overlayProcState[spellID]
+            local runtimeActive = select(1, GetRuntimeBuffPresentation(spellID))
+
+            local active = aura ~= nil
+            if not active and IsAccessibleValue(mirrorActive) and type(mirrorActive) == "boolean" then
+                active = mirrorActive
+            end
+            if not active and procActive == true then active = true end
+            if not active and runtimeActive == true then active = true end
+
+            if active then
+                Add(spellID, { priorityProc = procActive == true })
+            end
+        end
+    end
+
+    -- Preview mode exists only so the user can position the HUD while no proc
+    -- is active. These samples disappear immediately when Preview HUDs is off.
+    if #list == 0 and addon.hudPreviewMode == true then
+        local previewCount = 0
+        local previewLimit = GetConfiguredBarColumns("buffBar", 5, 10)
+        for _, tracked in ipairs(BuildTrackingList("buff", specID)) do
+            local spellID = type(tracked) == "table" and tracked.spellID or tracked
+            if spellID and not seen[spellID] then
+                Add(spellID, { previewOnly = true })
+                previewCount = previewCount + 1
+                if previewCount >= previewLimit then break end
+            end
+        end
+    end
+
+    return list
+end
+
 function addon:UpdateBuffBar()
     if not buffFrame or not DB or not self.active then
         return
@@ -5660,23 +7875,67 @@ function addon:UpdateBuffBar()
         return
     end
 
+    if buffFrame.managedAuraContainer then
+        if self.hudPreviewMode == true then
+            ShowManagedAuraPreview(buffFrame, buffSlots)
+            return
+        end
+        RestoreManagedAuraRuntime(buffFrame, buffSlots)
+        buffFrame:Show()
+        UpdateManagedAuraBarChrome(buffFrame)
+        -- Blizzard's AuraContainer owns active-state/stacks/duration updates.
+        -- Do not poll secret aura data or infer presence from mirror frames here.
+        return
+    end
+
+    -- Compatibility fallback for clients without the 12.1 AuraContainer engine.
+    -- Poll Blizzard's materialized tracked-buff frames every bar refresh. The
+    -- previous event-only bridge could miss short/new procs in Midnight.
+    self:RefreshCooldownViewerBuffMirrors()
+    SyncKnownProcGlowStates()
+
     local specID = select(1, self:GetSpecInfo())
-    local list = BuildTrackingList("buff", specID)
+    local list = BuildBuffDisplayList(specID)
     local visibleCount = math.min(#list, #buffSlots)
-    buffFrame:SetWidth(math.max(92, 14 + (visibleCount * 38)))
+    if visibleCount <= 0 then
+        for _, slot in ipairs(buffSlots) do
+            slot.spellID = nil
+            ClearTrackingCooldown(slot)
+            slot:Hide()
+        end
+        buffFrame:Hide()
+        return
+    end
+    local perRow = buffFrame.slotsPerRow or #buffSlots
+    local columns = math.max(1, math.min(perRow, visibleCount))
+    local rows = math.max(1, math.ceil(math.max(1, visibleCount) / perRow))
+    buffFrame:SetWidth(math.max(92, 14 + (columns * 38)))
+    buffFrame:SetHeight(16 + (rows * 38))
 
     for index, slot in ipairs(buffSlots) do
         local entry = list[index]
         if entry then
             local spellID = type(entry) == "table" and entry.spellID or entry
+            local isDynamicProc = type(entry) == "table" and entry.procGlow == true
+            local isDynamicMirror = type(entry) == "table" and entry.mirrorActive == true
+            local isPriorityProc = type(entry) == "table" and entry.priorityProc == true
+            local isPreviewOnly = type(entry) == "table" and entry.previewOnly == true
             local spellName, spellIcon = GetSpellData(spellID)
-            local aura = GetPlayerAuraDataSafe(spellID)
-            local mirrorActive, mirrorItem = GetMirroredBuffState(spellID)
-            local procActive = overlayProcState[spellID]
-            local runtimeActive, runtimeState = GetRuntimeBuffPresentation(spellID)
+            local aura = (isDynamicProc or isDynamicMirror) and nil or GetPlayerAuraDataSafe(spellID)
+            local mirrorActive, mirrorItem
+            if isDynamicMirror then
+                mirrorActive = true
+                mirrorItem = mirroredActiveBuffItems[spellID]
+            elseif not isDynamicProc then
+                mirrorActive, mirrorItem = GetMirroredBuffState(spellID)
+            end
+            local procActive = isDynamicProc and true or overlayProcState[spellID]
+            local runtimeActive, runtimeState = (isDynamicProc or isDynamicMirror) and nil or GetRuntimeBuffPresentation(spellID)
             local activeState
 
-            if aura then
+            if isPreviewOnly then
+                activeState = false
+            elseif aura then
                 activeState = true
             elseif procActive == true then
                 activeState = true
@@ -5699,11 +7958,18 @@ function addon:UpdateBuffBar()
             local iconTexture = spellIcon
             if aura and IsAccessibleNumber(aura.icon) then
                 iconTexture = aura.icon
+            elseif mirrorItem then
+                local mirroredTexture = GetMirroredBuffTexture(mirrorItem)
+                if mirroredTexture ~= nil then
+                    iconTexture = mirroredTexture
+                end
             end
             slot.icon:SetTexture(iconTexture)
             SetTrackingReadyVisual(slot, activeState, 0.24)
 
-            if IsAccessibleValue(activeState) and type(activeState) == "boolean" then
+            if isPriorityProc and activeState == true then
+                slot:SetBackdropBorderColor(1.00, 0.76, 0.12, 1)
+            elseif IsAccessibleValue(activeState) and type(activeState) == "boolean" then
                 slot:SetBackdropBorderColor(activeState and 0.30 or 0.16, activeState and 0.82 or 0.35, activeState and 0.55 or 0.48, activeState and 1 or 0.65)
             else
                 slot:SetBackdropBorderColor(0.18, 0.52, 0.66, 0.90)
@@ -5872,18 +8138,19 @@ local function RenderDynamicAuraBar(frame, slots, dbEntry, filter, externalOnly,
         return
     end
 
+    local perLine = GetConfiguredBarColumns(frame.dbKey, 5, 10)
     local records = GetDynamicPlayerAuras(filter, #slots, externalOnly)
     local visibleCount = #records
-    if preview and visibleCount == 0 then visibleCount = math.min(5, #slots) end
+    if preview and visibleCount == 0 then visibleCount = math.min(perLine, #slots) end
 
     if visibleCount == 0 then
         frame:Hide()
         return
     end
 
-    local perLine = 5
     local rows = math.max(1, math.ceil(visibleCount / perLine))
-    frame:SetWidth(200)
+    local columns = math.max(1, math.min(perLine, visibleCount))
+    frame:SetWidth(math.max(92, 14 + (columns * 38)))
     frame:SetHeight(22 + (rows * 38))
     for index, slot in ipairs(slots) do
         slot:ClearAllPoints()
@@ -5945,10 +8212,14 @@ function addon:UpdateExternalBuffBar()
     end
 
     if externalBuffFrame.managedAuraContainer then
+        if self.hudPreviewMode == true then
+            ShowManagedAuraPreview(externalBuffFrame, externalBuffSlots)
+            return
+        end
         local visible = self:ShouldShowCombatBar(DB.externalBuffBar)
         if visible then
+            RestoreManagedAuraRuntime(externalBuffFrame, externalBuffSlots)
             externalBuffFrame:Show()
-            externalBuffFrame.managedAuraContainer:Show()
             UpdateManagedAuraBarChrome(externalBuffFrame)
             if externalBuffFrame.managedAuraContainer.UpdateAllAuras then
                 pcall(externalBuffFrame.managedAuraContainer.UpdateAllAuras, externalBuffFrame.managedAuraContainer)
@@ -5971,10 +8242,14 @@ function addon:UpdateDebuffBar()
     end
 
     if debuffFrame.managedAuraContainer then
+        if self.hudPreviewMode == true then
+            ShowManagedAuraPreview(debuffFrame, debuffSlots)
+            return
+        end
         local visible = self:ShouldShowCombatBar(DB.debuffBar)
         if visible then
+            RestoreManagedAuraRuntime(debuffFrame, debuffSlots)
             debuffFrame:Show()
-            debuffFrame.managedAuraContainer:Show()
             UpdateManagedAuraBarChrome(debuffFrame)
             if debuffFrame.managedAuraContainer.UpdateAllAuras then
                 pcall(debuffFrame.managedAuraContainer.UpdateAllAuras, debuffFrame.managedAuraContainer)
@@ -6032,6 +8307,100 @@ local function GetSpellCooldownPresentation(spellID)
     return cooldownInfo, chargeInfo, chargeDuration or cooldownDuration, usable, insufficientPower
 end
 
+function addon:SetInterruptAlertEnabled(enabled)
+    if not DB or not DB.interruptAlert then return end
+    DB.interruptAlert.enabled = enabled == true
+    targetInterruptEventState = nil
+    self:UpdateInterruptAlert()
+    self:UpdateHUDSettings()
+    Print(T(DB.interruptAlert.enabled and "Interrupt alert enabled." or "Interrupt alert disabled."))
+end
+
+local function GetTargetInterruptibleFromCastAPI()
+    local hasCast = false
+    local interruptible
+
+    if UnitCastingInfo then
+        local ok, _, _, _, _, _, _, _, notInterruptible, _, castBarID = pcall(UnitCastingInfo, "target")
+        if ok and IsAccessibleNumber(castBarID) then
+            hasCast = true
+            local guarded = GetAccessibleBoolean(notInterruptible)
+            if guarded ~= nil then interruptible = not guarded end
+        end
+    end
+
+    if not hasCast and UnitChannelInfo then
+        local ok, _, _, _, _, _, _, notInterruptible, _, _, _, castBarID = pcall(UnitChannelInfo, "target")
+        if ok and IsAccessibleNumber(castBarID) then
+            hasCast = true
+            local guarded = GetAccessibleBoolean(notInterruptible)
+            if guarded ~= nil then interruptible = not guarded end
+        end
+    end
+
+    return hasCast, interruptible
+end
+
+function addon:UpdateInterruptAlert()
+    if not interruptFrame or not DB or not self.active then return end
+
+    if self.hudPreviewMode == true then
+        interruptFrame:SetBackdropBorderColor(0.25, 0.78, 0.95, 1)
+        interruptFrame.icon:SetAlpha(1)
+        if interruptFrame.icon.SetDesaturated then interruptFrame.icon:SetDesaturated(false) end
+        ClearTrackingCooldown(interruptFrame)
+        interruptFrame:Show()
+        return
+    end
+
+    if not DB.interruptAlert or DB.interruptAlert.enabled ~= true then
+        interruptFrame:Hide()
+        return
+    end
+
+    if DB.combatBarsOnlyInCombat == true and not self:IsPlayerInCombat() then
+        interruptFrame:Hide()
+        return
+    end
+
+    local hasCast, interruptible = GetTargetInterruptibleFromCastAPI()
+    if interruptible == nil and hasCast and targetInterruptEventState ~= nil then
+        interruptible = targetInterruptEventState
+    end
+    if not hasCast or interruptible ~= true then
+        interruptFrame:Hide()
+        return
+    end
+
+    local spellID = Data.spells and Data.spells.MIND_FREEZE or 47528
+    local _, icon = GetSpellData(spellID, T("Mind Freeze"))
+    interruptFrame.icon:SetTexture(icon or QUESTION_MARK_ICON)
+
+    local cooldownInfo, _, durationObject, usable = GetSpellCooldownPresentation(spellID)
+    if IsSecretValue(usable) then
+        SetTrackingReadyVisual(interruptFrame, usable, 0.42)
+    elseif IsAccessibleValue(usable) then
+        SetTrackingReadyVisual(interruptFrame, usable, 0.42)
+    else
+        SetTrackingReadyVisual(interruptFrame, true, 0.42)
+    end
+    if durationObject then
+        SetTrackingCooldownDuration(interruptFrame, durationObject)
+    elseif cooldownInfo and IsAccessibleNumber(cooldownInfo.startTime) and IsAccessibleNumber(cooldownInfo.duration) and cooldownInfo.duration > 0 then
+        pcall(interruptFrame.cooldown.SetCooldown, interruptFrame.cooldown, cooldownInfo.startTime, cooldownInfo.duration)
+    else
+        ClearTrackingCooldown(interruptFrame)
+    end
+
+    local usableBool = GetAccessibleBoolean(usable)
+    if usableBool == false then
+        interruptFrame:SetBackdropBorderColor(0.72, 0.28, 0.20, 1)
+    else
+        interruptFrame:SetBackdropBorderColor(0.18, 0.88, 0.92, 1)
+    end
+    interruptFrame:Show()
+end
+
 function addon:UpdateAbilityBar()
     if not abilityFrame or not DB or not self.active then
         return
@@ -6043,8 +8412,20 @@ function addon:UpdateAbilityBar()
 
     local specID = select(1, self:GetSpecInfo())
     local list = BuildTrackingList("ability", specID)
+    local perRow = GetConfiguredBarColumns("abilityBar", 11, 11)
+    LayoutTrackingSlots(abilityFrame, abilitySlots, perRow, false)
     local visibleCount = math.min(#list, #abilitySlots)
-    abilityFrame:SetWidth(math.max(92, 14 + (visibleCount * 38)))
+    if self.hudPreviewMode == true and visibleCount == 0 then
+        visibleCount = math.min(perRow, #abilitySlots)
+    end
+    if visibleCount <= 0 then
+        abilityFrame:Hide()
+        return
+    end
+    local columns = math.max(1, math.min(perRow, visibleCount))
+    local rows = math.max(1, math.ceil(visibleCount / perRow))
+    abilityFrame:SetWidth(math.max(92, 14 + (columns * 38)))
+    abilityFrame:SetHeight(16 + (rows * 38))
 
     for index, slot in ipairs(abilitySlots) do
         local entry = list[index]
@@ -6056,6 +8437,8 @@ function addon:UpdateAbilityBar()
             slot.spellID = spellID
             slot.spellName = spellName
             slot.icon:SetTexture(spellIcon)
+            if slot.icon.SetDesaturated then slot.icon:SetDesaturated(false) end
+            slot.icon:SetAlpha(1)
 
             -- IsSpellUsable may be a secret boolean during combat. Feed it
             -- directly into the Region API rather than reading it in Lua.
@@ -6107,6 +8490,18 @@ function addon:UpdateAbilityBar()
             end
 
             slot:Show()
+        elseif self.hudPreviewMode == true and index <= visibleCount then
+            slot.spellID = nil
+            slot.spellName = T("Abilities")
+            slot.icon:SetTexture(QUESTION_MARK_ICON)
+            if slot.icon.SetDesaturated then slot.icon:SetDesaturated(true) end
+            slot.icon:SetAlpha(0.42)
+            slot.timer:SetText("")
+            slot.timer:SetAlpha(1)
+            slot.count:SetText("")
+            ClearTrackingCooldown(slot)
+            slot:SetBackdropBorderColor(0.20, 0.58, 0.76, 0.85)
+            slot:Show()
         else
             slot.spellID = nil
             slot.timer:SetAlpha(1)
@@ -6124,6 +8519,8 @@ function addon:RefreshCombatHUDVisibility()
         if externalBuffFrame then externalBuffFrame:Hide() end
         if debuffFrame then debuffFrame:Hide() end
         if abilityFrame then abilityFrame:Hide() end
+        if resourceFrame then resourceFrame:Hide() end
+        if interruptFrame then interruptFrame:Hide() end
         return
     end
 
@@ -6160,10 +8557,76 @@ function addon:RefreshCombatHUDVisibility()
             abilityFrame:Hide()
         end
     end
+
+    if resourceFrame then
+        self:UpdateResourceHUD()
+    end
+
+    self:UpdateInterruptAlert()
+end
+
+function addon:GetLanguageOverrideLabel()
+    return GetAddonLanguageLabel(DB and DB.languageOverride or "auto")
+end
+
+function addon:UpdateLanguagePicker()
+    if not languagePickerFrame or not DB then return end
+    local selected = NormalizeAddonLanguage(DB.languageOverride)
+    if languagePickerFrame.current then
+        languagePickerFrame.current:SetText(T("Current: %s", GetAddonLanguageLabel(selected)))
+    end
+    for _, button in ipairs(languagePickerFrame.choiceButtons or {}) do
+        local label = T(button.languageLabelKey or "")
+        if NormalizeAddonLanguage(button.languageValue) == selected then
+            button:SetText("|cff69d8ff✓|r " .. label)
+        else
+            button:SetText(label)
+        end
+    end
+end
+
+function addon:ToggleLanguagePicker()
+    if not languagePickerFrame then return end
+    if languagePickerFrame:IsShown() then
+        languagePickerFrame:Hide()
+        return
+    end
+    languagePickerFrame:ClearAllPoints()
+    if mainFrame and mainFrame:IsShown() then
+        languagePickerFrame:SetPoint("CENTER", mainFrame, "CENTER", 0, 20)
+    else
+        languagePickerFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    end
+    self:UpdateLanguagePicker()
+    languagePickerFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+    languagePickerFrame:SetFrameLevel(1000)
+    languagePickerFrame:Show()
+    if languagePickerFrame.Raise then languagePickerFrame:Raise() end
+end
+
+function addon:SetLanguageOverride(value)
+    if not DB then return end
+    local normalized = NormalizeAddonLanguage(value)
+    DB.languageOverride = normalized
+    local label = GetAddonLanguageLabel(normalized)
+
+    -- Do not call ReloadUI/Reload from addon code. In current Retail clients
+    -- that path can be protected and trigger ADDON_ACTION_BLOCKED. Persist the
+    -- preference and let the player explicitly run /reload instead.
+    self:UpdateLanguagePicker()
+    self:UpdateLanguageSettings()
+    if languagePickerFrame then languagePickerFrame:Hide() end
+    Print(T("Language saved as %s. Type /reload to apply it.", label))
+end
+
+function addon:UpdateLanguageSettings()
+    if not mainFrame or not mainFrame.languageButton or not DB then return end
+    mainFrame.languageButton:SetText(T("Language: %s", self:GetLanguageOverrideLabel()))
 end
 
 function addon:UpdateHUDSettings()
     if not mainFrame or not mainFrame.hudSection or not DB then return end
+    self:UpdateLanguageSettings()
     local hud = mainFrame.hudSection
     if hud.buildButton then hud.buildButton:SetText(DB.statusWidget.enabled and T("Build HUD: ON") or T("Build HUD: OFF")) end
     if hud.coachButton then hud.coachButton:SetText(DB.coach.enabled and T("Coach HUD: ON") or T("Coach HUD: OFF")) end
@@ -6171,6 +8634,17 @@ function addon:UpdateHUDSettings()
     if hud.externalBuffButton then hud.externalBuffButton:SetText(DB.externalBuffBar.enabled and T("External buffs: ON") or T("External buffs: OFF")) end
     if hud.debuffButton then hud.debuffButton:SetText(DB.debuffBar.enabled and T("Debuffs: ON") or T("Debuffs: OFF")) end
     if hud.abilityButton then hud.abilityButton:SetText(DB.abilityBar.enabled and T("Ability bar: ON") or T("Ability bar: OFF")) end
+    if hud.resourceButton then hud.resourceButton:SetText(DB.resourceHUD.enabled and T("DK resources: ON") or T("DK resources: OFF")) end
+    if hud.resourceDescription then
+        hud.resourceDescription:SetText(T(
+            "Resources: %s • Style: %s • Text: %s • Rune spacing: %s",
+            self:GetResourceHUDModeLabel(),
+            self:GetResourceHUDStyleLabel(),
+            T(DB.resourceHUD.showPowerText ~= false and "ON" or "OFF"),
+            self:GetResourceRuneSpacingLabel()
+        ))
+    end
+    if hud.interruptButton then hud.interruptButton:SetText(DB.interruptAlert.enabled and T("Interrupt alert: ON") or T("Interrupt alert: OFF")) end
     if hud.combatOnlyButton then hud.combatOnlyButton:SetText(DB.combatBarsOnlyInCombat and T("Bars only in combat: ON") or T("Bars only in combat: OFF")) end
     if hud.lockButton then hud.lockButton:SetText(DB.hudLocked and T("HUDs: LOCKED") or T("HUDs: UNLOCKED")) end
     if hud.previewButton then hud.previewButton:SetText(self.hudPreviewMode == true and T("Preview HUDs: ON") or T("Preview HUDs: OFF")) end
@@ -6257,13 +8731,16 @@ end
 
 function addon:ResetHUDPositions()
     if not DB then return end
+    if InCombatLockdown and InCombatLockdown() then
+        Print(T("HUD positions cannot be changed during combat."))
+        return
+    end
     local function ResetFramePosition(key, defaults)
         DB[key] = DB[key] or {}
         DB[key].point = defaults.point
         DB[key].relativePoint = defaults.relativePoint
         DB[key].x = defaults.x
         DB[key].y = defaults.y
-        DB[key].scale = defaults.scale
     end
 
     ResetFramePosition("coach", DEFAULTS.coach)
@@ -6272,16 +8749,26 @@ function addon:ResetHUDPositions()
     ResetFramePosition("externalBuffBar", DEFAULTS.externalBuffBar)
     ResetFramePosition("debuffBar", DEFAULTS.debuffBar)
     ResetFramePosition("abilityBar", DEFAULTS.abilityBar)
+    ResetFramePosition("resourceHUD", DEFAULTS.resourceHUD)
+    ResetResourceArcPosition()
+    ResetFramePosition("interruptAlert", DEFAULTS.interruptAlert)
     RestoreFramePosition(coachFrame, "coach")
     RestoreFramePosition(statusWidget, "statusWidget")
     RestoreFramePosition(buffFrame, "buffBar")
     RestoreFramePosition(externalBuffFrame, "externalBuffBar")
     RestoreFramePosition(debuffFrame, "debuffBar")
     RestoreFramePosition(abilityFrame, "abilityBar")
+    RestoreFramePosition(resourceFrame, "resourceHUD")
+    if resourceArcFrame then RestoreResourceArcPosition(resourceArcFrame) end
+    RestoreFramePosition(interruptFrame, "interruptAlert")
     Print(T("Combat HUD positions restored."))
 end
 
 function addon:ResetPositions()
+    if InCombatLockdown and InCombatLockdown() then
+        Print(T("HUD positions cannot be changed during combat."))
+        return
+    end
     local function ResetFramePosition(key, defaults)
         DB[key] = DB[key] or {}
         DB[key].point = defaults.point
@@ -6289,6 +8776,7 @@ function addon:ResetPositions()
         DB[key].x = defaults.x
         DB[key].y = defaults.y
         DB[key].scale = defaults.scale
+        if defaults.iconsPerRow then DB[key].iconsPerRow = defaults.iconsPerRow end
     end
 
     ResetFramePosition("main", DEFAULTS.main)
@@ -6298,6 +8786,9 @@ function addon:ResetPositions()
     ResetFramePosition("externalBuffBar", DEFAULTS.externalBuffBar)
     ResetFramePosition("debuffBar", DEFAULTS.debuffBar)
     ResetFramePosition("abilityBar", DEFAULTS.abilityBar)
+    ResetFramePosition("resourceHUD", DEFAULTS.resourceHUD)
+    ResetResourceArcPosition()
+    ResetFramePosition("interruptAlert", DEFAULTS.interruptAlert)
     RestoreFramePosition(mainFrame, "main")
     RestoreFramePosition(coachFrame, "coach")
     RestoreFramePosition(statusWidget, "statusWidget")
@@ -6305,6 +8796,11 @@ function addon:ResetPositions()
     RestoreFramePosition(externalBuffFrame, "externalBuffBar")
     RestoreFramePosition(debuffFrame, "debuffBar")
     RestoreFramePosition(abilityFrame, "abilityBar")
+    RestoreFramePosition(resourceFrame, "resourceHUD")
+    if resourceArcFrame then RestoreResourceArcPosition(resourceArcFrame) end
+    RestoreFramePosition(interruptFrame, "interruptAlert")
+    for dbKey in pairs(COMBAT_BAR_LAYOUT_LIMITS) do self:ApplyCombatBarLayout(dbKey) end
+    self:UpdateBarLayoutFrame()
     Print(T("Frame positions and scale restored. HUD visibility settings were kept."))
 end
 
@@ -6336,9 +8832,15 @@ function addon:ShowHelp()
     Print(T("/dkm externalbuffs on|off — show or hide buffs received from others"))
     Print(T("/dkm debuffs on|off — show or hide harmful effects on yourself"))
     Print(T("/dkm abilities on|off — show or hide the ability availability bar"))
+    Print(T("/dkm resources on|off — show or hide the Runes + Runic Power HUD"))
+    Print(T("/dkm resources runes on|off — show or hide Rune segments"))
+    Print(T("/dkm resources power on|off — show or hide Runic Power"))
+    Print(T("/dkm resources style classic|arcs — choose the DK Resources visual style"))
+    Print(T("/dkm interrupt on|off — show or hide the Mind Freeze interrupt alert"))
     Print(T("/dkm combatbars combat|always - show aura/ability bars only in combat or always"))
     Print(T("/dkm guide — open the beginner specialization guide"))
     Print(T("/dkm settings — open HUD and commentary settings"))
+    Print(T("/dkm language auto|ptbr|en — change DK Mentor language"))
     Print(T("/dkm voice on|off|test|low|normal|high|status|map|reset"))
     Print(T("/dkm voice pvp on|off — allow or mute commentary in PvP"))
     Print(T("/dkm voice situations on|off — toggle contextual spell/mount/hearthstone/AFK comments"))
@@ -6373,6 +8875,19 @@ function addon:HandleSlashCommand(message)
         mainFrame:Show()
         self:SetMainTab("settings")
         self:UpdateAll()
+    elseif command == "language" or command == "lang" or command == "idioma" then
+        local languageValue = string.lower(Trim(rest))
+        if languageValue == "" then
+            self:ToggleLanguagePicker()
+        elseif languageValue == "auto" or languageValue == "wow" then
+            self:SetLanguageOverride("auto")
+        elseif languageValue == "pt" or languageValue == "ptbr" or languageValue == "portuguese" or languageValue == "portugues" then
+            self:SetLanguageOverride("ptBR")
+        elseif languageValue == "en" or languageValue == "enus" or languageValue == "engb" or languageValue == "english" then
+            self:SetLanguageOverride("enUS")
+        else
+            self:ToggleLanguagePicker()
+        end
     elseif command == "buffs" or command == "buff" then
         local value = string.lower(Trim(rest))
         if value == "on" or value == "show" then
@@ -6408,6 +8923,50 @@ function addon:HandleSlashCommand(message)
             self:SetAbilityBarEnabled(false)
         else
             self:SetAbilityBarEnabled(not DB.abilityBar.enabled)
+        end
+    elseif command == "resources" or command == "resource" then
+        local resourceAction, resourceValue = rest:match("^(%S*)%s*(.-)$")
+        resourceAction = string.lower(resourceAction or "")
+        resourceValue = string.lower(Trim(resourceValue))
+        if resourceAction == "runes" or resourceAction == "rune" then
+            if resourceValue == "on" or resourceValue == "show" then
+                self:SetResourceHUDRunesEnabled(true)
+            elseif resourceValue == "off" or resourceValue == "hide" then
+                self:SetResourceHUDRunesEnabled(false)
+            else
+                self:SetResourceHUDRunesEnabled(not DB.resourceHUD.showRunes)
+            end
+        elseif resourceAction == "power" or resourceAction == "runic" or resourceAction == "runicpower" then
+            if resourceValue == "on" or resourceValue == "show" then
+                self:SetResourceHUDRunicPowerEnabled(true)
+            elseif resourceValue == "off" or resourceValue == "hide" then
+                self:SetResourceHUDRunicPowerEnabled(false)
+            else
+                self:SetResourceHUDRunicPowerEnabled(not DB.resourceHUD.showRunicPower)
+            end
+        elseif resourceAction == "style" or resourceAction == "view" then
+            if resourceValue == "arc" or resourceValue == "arcs" or resourceValue == "icehud" then
+                if NormalizeResourceHUDStyle(DB.resourceHUD.style) ~= "arcs" then self:CycleResourceHUDStyle() end
+            elseif resourceValue == "classic" or resourceValue == "bars" then
+                if NormalizeResourceHUDStyle(DB.resourceHUD.style) ~= "classic" then self:CycleResourceHUDStyle() end
+            else
+                self:CycleResourceHUDStyle()
+            end
+        elseif resourceAction == "on" or resourceAction == "show" then
+            self:SetResourceHUDEnabled(true)
+        elseif resourceAction == "off" or resourceAction == "hide" then
+            self:SetResourceHUDEnabled(false)
+        else
+            self:SetResourceHUDEnabled(not DB.resourceHUD.enabled)
+        end
+    elseif command == "interrupt" or command == "kick" then
+        local value = string.lower(Trim(rest))
+        if value == "on" or value == "show" then
+            self:SetInterruptAlertEnabled(true)
+        elseif value == "off" or value == "hide" then
+            self:SetInterruptAlertEnabled(false)
+        else
+            self:SetInterruptAlertEnabled(not DB.interruptAlert.enabled)
         end
     elseif command == "combatbars" or command == "hudbars" then
         local value = string.lower(Trim(rest))
@@ -6503,6 +9062,10 @@ function addon:InitializeDatabase()
     DB = _G.DKMentorDB
     local previousSchema = tonumber(DB.schema or 0) or 0
     ApplyDefaults(DB, DEFAULTS)
+    DB.languageOverride = NormalizeAddonLanguage(DB.languageOverride)
+    if DKM.SetLocaleOverride then
+        DKM.SetLocaleOverride(DB.languageOverride)
+    end
 
     if previousSchema < 16 then
         DB.autoSwitchLoadouts = true
@@ -6510,6 +9073,31 @@ function addon:InitializeDatabase()
         if DB.buildContextSelection == nil or DB.buildContextSelection == "auto" then
             DB.buildContextSelection = self:DetectActualContext()
         end
+    end
+
+    -- 1.0.16 regression repair: the combat HUD setting accidentally defaulted
+    -- back to Always. Restore combat-only behavior once during migration. Users
+    -- can still switch it off explicitly from Settings afterwards.
+    if previousSchema < 21 then
+        DB.combatBarsOnlyInCombat = true
+    end
+
+    -- 1.1.5 separates the movable DK Arcs position from the Classic resource HUD.
+    -- Existing Arc users keep the last shared resource position; Classic users
+    -- receive the centered Arc default on first use.
+    if previousSchema < 26 then
+        if DB.resourceHUD and DB.resourceHUD.style == "arcs" then
+            DB.resourceHUD.arcPoint = DB.resourceHUD.point or DEFAULTS.resourceHUD.arcPoint
+            DB.resourceHUD.arcRelativePoint = DB.resourceHUD.relativePoint or DEFAULTS.resourceHUD.arcRelativePoint
+            DB.resourceHUD.arcX = tonumber(DB.resourceHUD.x) or DEFAULTS.resourceHUD.arcX
+            DB.resourceHUD.arcY = tonumber(DB.resourceHUD.y) or DEFAULTS.resourceHUD.arcY
+        else
+            DB.resourceHUD.arcPoint = DEFAULTS.resourceHUD.arcPoint
+            DB.resourceHUD.arcRelativePoint = DEFAULTS.resourceHUD.arcRelativePoint
+            DB.resourceHUD.arcX = DEFAULTS.resourceHUD.arcX
+            DB.resourceHUD.arcY = DEFAULTS.resourceHUD.arcY
+        end
+        DB.resourceHUD.arcSpacing = NormalizeResourceArcSpacing(DB.resourceHUD.arcSpacing or DEFAULTS.resourceHUD.arcSpacing)
     end
 
     -- 1.0.8 deliberately removes the experimental War Mode profile/button.
@@ -6550,10 +9138,17 @@ function addon:CreateUI()
     externalBuffFrame = CreateExternalBuffBar()
     debuffFrame = CreateDebuffBar()
     abilityFrame = CreateAbilityBar()
+    resourceFrame = CreateResourceHUD()
+    resourceArcFrame = CreateResourceArcHUD()
+    interruptFrame = CreateInterruptAlert()
+    barLayoutFrame = CreateBarLayoutFrame()
     loadoutPickerFrame = CreateLoadoutPickerFrame()
     equipmentPickerFrame = CreateEquipmentPickerFrame()
     voiceConfigFrame = CreateVoiceConfigFrame()
+    languagePickerFrame = CreateLanguagePickerFrame()
     minimapButton = CreateMinimapButton()
+    for dbKey in pairs(COMBAT_BAR_LAYOUT_LIMITS) do self:ApplyCombatBarLayout(dbKey) end
+    self:UpdateBarLayoutFrame()
     self:UpdateMinimapPosition()
     self:UpdateHUDMoveHints()
 end
@@ -6583,11 +9178,13 @@ function addon:RegisterRuntimeEvents()
         "SPELL_UPDATE_CHARGES",
         "ACTIONBAR_UPDATE_USABLE",
         "UNIT_POWER_UPDATE",
+        "UNIT_DISPLAYPOWER",
         "RUNE_POWER_UPDATE",
         "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW",
         "SPELL_ACTIVATION_OVERLAY_GLOW_HIDE",
         "COOLDOWN_VIEWER_DATA_LOADED",
         "COOLDOWN_VIEWER_TABLE_HOTFIXED",
+        "COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED",
         "ADDON_RESTRICTION_STATE_CHANGED",
         "SPELLS_CHANGED",
         "ACTIONBAR_SLOT_CHANGED",
@@ -6606,7 +9203,15 @@ function addon:RegisterRuntimeEvents()
         "ENCOUNTER_END",
         "UNIT_SPELLCAST_SENT",
         "UNIT_SPELLCAST_START",
+        "UNIT_SPELLCAST_STOP",
+        "UNIT_SPELLCAST_FAILED",
+        "UNIT_SPELLCAST_INTERRUPTED",
         "UNIT_SPELLCAST_SUCCEEDED",
+        "UNIT_SPELLCAST_CHANNEL_START",
+        "UNIT_SPELLCAST_CHANNEL_STOP",
+        "UNIT_SPELLCAST_INTERRUPTIBLE",
+        "UNIT_SPELLCAST_NOT_INTERRUPTIBLE",
+        "PLAYER_TARGET_CHANGED",
         "ITEM_DATA_LOAD_RESULT",
         "NEW_MOUNT_ADDED",
         "PVP_MATCH_COMPLETE",
@@ -6666,6 +9271,8 @@ addon:SetScript("OnEvent", function(self, event, ...)
             if specializationPickerFrame then specializationPickerFrame:Hide() end
             buffFrame:Hide()
             abilityFrame:Hide()
+            if resourceFrame then resourceFrame:Hide() end
+            if interruptFrame then interruptFrame:Hide() end
             voiceConfigFrame:Hide()
             minimapButton:Hide()
             Print(T("This addon only runs on Death Knights."))
@@ -6674,8 +9281,18 @@ addon:SetScript("OnEvent", function(self, event, ...)
 
         self.active = true
         self.worldReady = false
-        self.playerWasDead = UnitIsDeadOrGhost and UnitIsDeadOrGhost("player") or false
-        self.lastMountedState = IsMounted and IsMounted() == true or false
+        self.playerWasDead = false
+        if UnitIsDeadOrGhost then
+            local ok, rawDead = pcall(UnitIsDeadOrGhost, "player")
+            local dead = GetAccessibleBooleanFromCall(ok, rawDead)
+            self.playerWasDead = dead == true
+        end
+        self.lastMountedState = false
+        if IsMounted then
+            local ok, rawMounted = pcall(IsMounted)
+            local mounted = GetAccessibleBooleanFromCall(ok, rawMounted)
+            self.lastMountedState = mounted == true
+        end
         if DB.minimap.show then
             minimapButton:Show()
         end
@@ -6706,6 +9323,7 @@ addon:SetScript("OnEvent", function(self, event, ...)
     end
 
     if event == "PLAYER_REGEN_DISABLED" then
+        self.combatEventState = true
         if specializationPickerFrame then specializationPickerFrame:Hide() end
         self:SyncReadableBuffRuntime(false)
         combatStartedAt = GetNow()
@@ -6722,24 +9340,63 @@ addon:SetScript("OnEvent", function(self, event, ...)
         -- Buff/cooldown HUDs must remain live after restrictions activate.
         -- Re-scan already-loaded Blizzard viewer frames because their secret
         -- active-state signals remain usable even after combat begins.
-        self:RefreshCooldownViewerBuffMirrors()
+        if not (buffFrame and buffFrame.managedAuraContainer) then
+            self:RefreshCooldownViewerBuffMirrors()
+        end
         self:UpdateBuffBar()
         self:UpdateExternalBuffBar()
         self:UpdateDebuffBar()
         self:UpdateAbilityBar()
+        self:UpdateResourceHUD()
     elseif event == "PLAYER_REGEN_ENABLED" then
+        self.combatEventState = false
         local combatDuration = combatStartedAt and (GetNow() - combatStartedAt) or 0
+        -- Remove proc-only fallbacks that may have missed a HIDE event during
+        -- restricted combat, then rebuild from actually readable auras/viewers.
+        self:ClearTransientProcStates()
         self:SyncReadableBuffRuntime(true)
         combatStartedAt = nil
+
+        -- Hide combat-only bars immediately on the definitive combat-end event.
+        -- UpdateAll below will repopulate only the bars the user's settings allow.
+        if DB.combatBarsOnlyInCombat == true and self.hudPreviewMode ~= true then
+            if buffFrame then buffFrame:Hide() end
+            if externalBuffFrame then externalBuffFrame:Hide() end
+            if debuffFrame then debuffFrame:Hide() end
+            if abilityFrame then abilityFrame:Hide() end
+            if resourceFrame then resourceFrame:Hide() end
+            if interruptFrame then interruptFrame:Hide() end
+        end
         if DB.autoHideMainInCombat and self.mainWasVisibleBeforeCombat then
             mainFrame:Show()
         end
         self.mainWasVisibleBeforeCombat = false
-        if combatDuration >= 8 and not (UnitIsDeadOrGhost and UnitIsDeadOrGhost("player")) then
+        local playerAliveConfirmed = true
+        if UnitIsDeadOrGhost then
+            local ok, rawDead = pcall(UnitIsDeadOrGhost, "player")
+            local dead = GetAccessibleBooleanFromCall(ok, rawDead)
+            playerAliveConfirmed = dead == false
+        end
+        if combatDuration >= 8 and playerAliveConfirmed then
             self:TryVoiceComment("combatVictory")
         end
-        self:RefreshCooldownViewerBuffMirrors()
+        if not (buffFrame and buffFrame.managedAuraContainer) then
+            self:RefreshCooldownViewerBuffMirrors()
+        end
+        self:RefreshManagedDKBuffFilter()
         self:UpdateAll()
+        self:RefreshCombatHUDVisibility()
+        if C_Timer and C_Timer.After then
+            C_Timer.After(0, function()
+                if addon.active then addon:RefreshCombatHUDVisibility() end
+            end)
+            C_Timer.After(0.25, function()
+                if addon.active then
+                    addon:SyncCombatEventState()
+                    addon:RefreshCombatHUDVisibility()
+                end
+            end)
+        end
         self:TryAutoSwitchLoadout("combat-ended")
         self:TryAutoSwitchEquipment("combat-ended")
     elseif event == "UNIT_AURA" then
@@ -6762,25 +9419,42 @@ addon:SetScript("OnEvent", function(self, event, ...)
         end
     elseif event == "SPELL_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_CHARGES" or event == "ACTIONBAR_UPDATE_USABLE" then
         self:UpdateAbilityBar()
+        self:UpdateInterruptAlert()
     elseif event == "UNIT_POWER_UPDATE" then
         local unit = ...
         if unit == "player" then
             self:UpdateAbilityBar()
+            self:UpdateRunicPowerHUD()
+        end
+    elseif event == "UNIT_DISPLAYPOWER" then
+        local unit = ...
+        if not unit or unit == "player" then
+            self:UpdateResourceHUD()
         end
     elseif event == "RUNE_POWER_UPDATE" then
         self:UpdateAbilityBar()
-    elseif event == "COOLDOWN_VIEWER_DATA_LOADED" or event == "COOLDOWN_VIEWER_TABLE_HOTFIXED" then
-        self:RefreshCooldownViewerBuffMirrors()
+        self:UpdateResourceRunes()
+    elseif event == "COOLDOWN_VIEWER_DATA_LOADED" or event == "COOLDOWN_VIEWER_TABLE_HOTFIXED" or event == "COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED" then
+        InvalidateCooldownManagerProfileCache()
+        if not (buffFrame and buffFrame.managedAuraContainer) then
+            self:RefreshCooldownViewerBuffMirrors()
+        end
+        self:RefreshManagedDKBuffFilter()
         self:UpdateBuffBar()
         self:UpdateAbilityBar()
+        self:UpdateInterruptAlert()
     elseif event == "ADDON_RESTRICTION_STATE_CHANGED" then
         -- Midnight can switch secret-data restrictions without a normal aura
         -- or cooldown event. Refresh every visual tracker at that boundary.
-        self:RefreshCooldownViewerBuffMirrors()
+        if not (buffFrame and buffFrame.managedAuraContainer) then
+            self:RefreshCooldownViewerBuffMirrors()
+        end
         self:UpdateBuffBar()
         self:UpdateExternalBuffBar()
         self:UpdateDebuffBar()
         self:UpdateAbilityBar()
+        self:UpdateResourceHUD()
+        self:UpdateInterruptAlert()
     elseif event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
         local unit = ...
         if unit == "player" then
@@ -6872,9 +9546,33 @@ addon:SetScript("OnEvent", function(self, event, ...)
         self:UpdateStatusWidget()
     elseif event == "PLAYER_EQUIPMENT_CHANGED" then
         self:ScheduleUpdate(false)
+    elseif event == "PLAYER_TARGET_CHANGED" then
+        targetInterruptEventState = nil
+        self:UpdateInterruptAlert()
+    elseif event == "UNIT_SPELLCAST_INTERRUPTIBLE" or event == "UNIT_SPELLCAST_NOT_INTERRUPTIBLE" then
+        local unitTarget = ...
+        if IsAccessibleValue(unitTarget) and type(unitTarget) == "string" and unitTarget == "target" then
+            targetInterruptEventState = event == "UNIT_SPELLCAST_INTERRUPTIBLE"
+            self:UpdateInterruptAlert()
+        end
+    elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_FAILED" or event == "UNIT_SPELLCAST_INTERRUPTED" or event == "UNIT_SPELLCAST_CHANNEL_STOP" then
+        local unitTarget = ...
+        if IsAccessibleValue(unitTarget) and type(unitTarget) == "string" and unitTarget == "target" then
+            targetInterruptEventState = nil
+            self:UpdateInterruptAlert()
+        end
+    elseif event == "UNIT_SPELLCAST_CHANNEL_START" then
+        local unitTarget = ...
+        if IsAccessibleValue(unitTarget) and type(unitTarget) == "string" and unitTarget == "target" then
+            targetInterruptEventState = nil
+            self:UpdateInterruptAlert()
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0.05, function() if addon.active then addon:UpdateInterruptAlert() end end)
+            end
+        end
     elseif event == "UNIT_SPELLCAST_SENT" then
         local unitTarget, _, _, spellID = ...
-        if unitTarget == "player" then
+        if IsAccessibleValue(unitTarget) and unitTarget == "player" and IsAccessibleNumber(spellID) then
             -- MountJournal summons fire UNIT_SPELLCAST_SENT before IsMounted()
             -- becomes true. Triggering here gives immediate, reliable feedback;
             -- the later mounted-state poll is retained as a macro/UI fallback.
@@ -6887,14 +9585,24 @@ addon:SetScript("OnEvent", function(self, event, ...)
         end
     elseif event == "UNIT_SPELLCAST_START" then
         local unitTarget, _, spellID = ...
-        if unitTarget == "player" and self:IsHearthstoneSpell(spellID) then
+        if IsAccessibleValue(unitTarget) and type(unitTarget) == "string" and unitTarget == "target" then
+            targetInterruptEventState = nil
+            self:UpdateInterruptAlert()
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0.05, function() if addon.active then addon:UpdateInterruptAlert() end end)
+            end
+        elseif IsAccessibleValue(unitTarget) and unitTarget == "player" and IsAccessibleNumber(spellID) and self:IsHearthstoneSpell(spellID) then
             -- Fallback for clients/toys where SENT was not observed. The
             -- per-category interval prevents this from double-playing.
             self:TriggerPriorityVoice("hearthstone", 6)
         end
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
         local unitTarget, _, spellID = ...
-        if unitTarget == "player" then
+        if IsAccessibleValue(unitTarget) and type(unitTarget) == "string" and unitTarget == "target" then
+            targetInterruptEventState = nil
+            self:UpdateInterruptAlert()
+        end
+        if IsAccessibleValue(unitTarget) and unitTarget == "player" and IsAccessibleNumber(spellID) then
             self:TrackRuntimeBuffCast(spellID)
             self:UpdateBuffBar()
             if self:IsMountSpell(spellID) and C_Timer and C_Timer.After then
@@ -6916,16 +9624,23 @@ addon:SetScript("OnEvent", function(self, event, ...)
         end)
         self:ScheduleUpdate(false)
     elseif event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
+        self:SyncCombatEventState()
+        self:RefreshCombatHUDVisibility()
         self:ScheduleUpdate(false)
         -- Delay non-essential work until the loading transition has settled.
         C_Timer.After(4, function()
             if addon.active then
                 addon.worldReady = true
+                addon:SyncCombatEventState()
                 addon:SyncReadableBuffRuntime(true)
-                addon:RefreshCooldownViewerBuffMirrors()
+                if not (buffFrame and buffFrame.managedAuraContainer) then
+                    addon:RefreshCooldownViewerBuffMirrors()
+                end
+                addon:RefreshManagedDKBuffFilter()
                 addon:RefreshVoiceTriggerCaches(false)
                 addon:TryVoiceComment("zone")
                 addon:UpdateAll()
+                addon:RefreshCombatHUDVisibility()
                 addon:TryAutoSwitchLoadout("context-change")
                 addon:TryAutoSwitchEquipment("context-change")
             end
@@ -6951,8 +9666,9 @@ addon:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_FLAGS_CHANGED" then
         local unit = ...
         if (not unit or unit == "player") and DB.voice.situational and UnitIsAFK then
-            local afk = UnitIsAFK("player") == true
-            if afk ~= self.lastAFKState then
+            local ok, rawAFK = pcall(UnitIsAFK, "player")
+            local afk = GetAccessibleBooleanFromCall(ok, rawAFK)
+            if afk ~= nil and afk ~= self.lastAFKState then
                 self.lastAFKState = afk
                 self:TryVoiceComment(afk and "afkStart" or "afkEnd")
             end
@@ -6961,8 +9677,12 @@ addon:SetScript("OnEvent", function(self, event, ...)
         local unit = ...
         if unit == "player" then
             self:UpdateStatusWidget()
-            if DB.voice.situational and UnitExists and UnitExists("pet") then
-                self:TryVoiceComment("petSummon")
+            if DB.voice.situational and UnitExists then
+                local ok, rawExists = pcall(UnitExists, "pet")
+                local exists = GetAccessibleBooleanFromCall(ok, rawExists)
+                if exists == true then
+                    self:TryVoiceComment("petSummon")
+                end
             end
         end
     elseif event == "UNIT_INVENTORY_CHANGED" then
@@ -6987,6 +9707,7 @@ addon:SetScript("OnEvent", function(self, event, ...)
         end
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
         local unit = ...
+        InvalidateCooldownManagerProfileCache()
         if not unit or unit == "player" then
             if specializationPickerFrame then
                 specializationPickerFrame:Hide()
@@ -6995,7 +9716,10 @@ addon:SetScript("OnEvent", function(self, event, ...)
             self:ScheduleUpdate(true)
             C_Timer.After(1, function()
                 if addon.active then
-                    if not InCombatLockdown() then addon:RefreshCooldownViewerBuffMirrors() end
+                    if not InCombatLockdown() and not (buffFrame and buffFrame.managedAuraContainer) then
+                        addon:RefreshCooldownViewerBuffMirrors()
+                    end
+                    addon:RefreshManagedDKBuffFilter()
                     addon:TryAutoSwitchLoadout("specialization")
                     addon:TryAutoSwitchEquipment("specialization")
                 end
@@ -7033,6 +9757,20 @@ addon:SetScript("OnUpdate", function(self, elapsed)
         buffRefreshElapsed = 0
         if self:ShouldShowCombatBar(DB.buffBar) then
             self:UpdateBuffBar()
+        elseif buffFrame then
+            buffFrame:Hide()
+        end
+
+        -- Ability/external/debuff bars do not need a full 120 ms refresh, but
+        -- their visibility must still follow the combat latch if an event/UI
+        -- refresh is delayed.
+        if self.hudPreviewMode ~= true and DB.combatBarsOnlyInCombat == true and not self:IsPlayerInCombat() then
+            if buffFrame then buffFrame:Hide() end
+            if externalBuffFrame then externalBuffFrame:Hide() end
+            if debuffFrame then debuffFrame:Hide() end
+            if abilityFrame then abilityFrame:Hide() end
+            if resourceFrame then resourceFrame:Hide() end
+            if interruptFrame then interruptFrame:Hide() end
         end
     end
 

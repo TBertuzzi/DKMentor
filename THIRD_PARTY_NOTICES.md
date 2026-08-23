@@ -1,6 +1,12 @@
 # Third-party notices
 
-DK Mentor 1.0.9 does not bundle third-party Lua libraries, copied addon code, third-party talent import strings, external artwork, music, or sound files.
+DK Mentor 1.1.2 does not bundle third-party Lua libraries, copied addon code, third-party talent import strings, external artwork, music, or sound files.
+
+## IceHUD
+
+The optional **DK Arcs** layout was designed after reviewing the public IceHUD project by parnic (https://github.com/parnic/ice-hud), which is released under the MIT License. DK Mentor follows the general HUD concept of texture-driven vertical bars placed around the player, but uses original DK Mentor Lua code, original layout decisions, and original arc texture assets generated for this project. No IceHUD texture or Lua file is bundled.
+
+IceHUD is a third-party project and DK Mentor is not affiliated with or endorsed by its authors.
 
 ## Wowhead
 

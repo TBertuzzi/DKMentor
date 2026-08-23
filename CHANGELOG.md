@@ -1,5 +1,198 @@
 # Changelog
 
+## 1.1.9 - 2026-08-23
+
+- Fixed the language picker opening behind the main DK Mentor settings window. It now uses `FULLSCREEN_DIALOG`, a high frame level, and explicit mouse interaction so all language buttons are clickable.
+- Removed the automatic `ReloadUI` call after choosing a language because Retail can block it as a protected `Reload()` action and raise `ADDON_ACTION_BLOCKED`.
+- Language selection is now saved immediately and DK Mentor asks the player to type `/reload` manually to apply the language across the full interface.
+
+## 1.1.8 - 2026-08-23
+
+- Added a **DK Mentor language selector** in Settings.
+- Default remains **Automatic (WoW)**: ptBR clients use Portuguese; other currently unsupported client locales fall back to English.
+- Added explicit **Português (Brasil)** and **English** overrides saved in `DKMentorDB`.
+- Selecting a language reloads the UI immediately outside combat so every window, tooltip, guide label, and HUD text is rebuilt consistently.
+- During combat, the preference is saved and DK Mentor asks the player to use `/reload` after combat.
+- Added `/dkm language auto|ptbr|en` plus aliases `/dkm lang` and `/dkm idioma`.
+
+## 1.1.7 - 2026-08-23
+- Hotfix: restored the DK Arcs Runic Power appearance exactly as intended in 1.1.5.
+- Root cause was packaging, not the Runic Power logic: the 1.1.6 ZIP omitted the three right-side arc textures (`DKArcFillRight`, `DKArcBGRight`, `DKArcGlowRight`), causing WoW to render the right StatusBar as a plain rectangle.
+- Fixed both release packaging scripts to always include the complete `Media` folder.
+- Added regression validation so left/right DK Arc assets cannot be omitted from future packages.
+- Kept the 1.1.6 <=30% red Health warning unchanged.
+
+## 1.1.6 - 2026-08-23
+- Fixed the DK Arc low-health warning so the Health arc now turns red at **30% HP or lower during combat**.
+- The threshold now uses DK Mentor's secret-safe `GetPlayerHealthPercent()` path instead of depending on raw `UnitHealth` / `UnitHealthMax` arithmetic, which can be inaccessible in Midnight combat.
+- No visual/layout changes to the 1.1.5 DK Arcs design.
+
+## 1.1.5 - 2026-08-23
+
+- Re-enabled **moving DK Arcs** while keeping the visual HUD completely clean: there is no `Arcos do DK / Mover` header anymore; when HUDs are unlocked or Preview is active, the invisible Arc HUD area can be dragged.
+- Added an independent saved position for **DK Arcs**, so switching back to the Classic resource HUD no longer overwrites the Arc placement.
+- Added configurable **Arc opening** from 65 to 165 units (shown as a relative percentage) so players can close the arcs toward the character or open them wider without changing overall HUD size.
+- Fixed the **Runic Power arc** by replacing runtime texture mirroring with dedicated right-side mirrored textures. Both Health and Runic Power now use their own correctly oriented StatusBar artwork.
+- Preserved the six centered Rune indicators and the <=30% Health red warning.
+
+## 1.1.4 - 2026-08-23
+- Hotfixed a reload-time Lua error introduced in 1.1.3: the Classic DK Resources constructor accidentally called the DK-Arcs centering helper before that local function existed.
+- Restored the Classic resource HUD to its normal saved-position path while keeping DK Arcs permanently auto-centered.
+- Added a regression validator that rejects future builds if the Classic constructor calls the later DK-Arcs helper again.
+- Low-health red coloring now updates even when numeric resource text is disabled.
+
+## 1.1.3 - 2026-08-23
+- Fixed the left DK Arc orientation so the Health arc now curves inward correctly and sits inside its dark track.
+- Removed the movable "DK Arcs / Drag" handle; the arc HUD is now auto-centered on the screen/player focus area and controlled only by size and opacity.
+- Added low-health feedback: when player health reaches 30% or lower, the Health arc and percentage text turn red.
+
+## 1.1.2 - 2026-08-23
+
+- Rebuilt **DK Arcs** from the ground up using an IceHUD-style architecture: true **vertical texture-driven StatusBars** rather than the previous fake segmented arc.
+- Added original `DKArcFill`, `DKArcBG`, and `DKArcGlow` textures created specifically for DK Mentor; no IceHUD art is bundled.
+- Fixed the previous invisible-arc problem by removing the broken texture path approach and using dedicated addon media textures.
+- **Health** now fills the left curved bar and **Runic Power** fills the right curved bar from bottom to top, matching the familiar IceHUD/Tibia HUD reading pattern.
+- Replaced the center Rune bars with six **Blizzard Death Knight rune glyphs** that refill vertically; rune color follows the active DK specialization (Blood red, Frost blue, Unholy green).
+- Kept **Classic** as an alternative style, plus scale, opacity, text toggle, Preview HUDs, HUD lock, combat-only visibility, and `/dkm resources style classic|arcs`.
+- Health and Runic Power use direct StatusBar value flow so the HUD remains compatible with Midnight secret-value restrictions; numeric text is shown only when the raw values are accessible.
+- Added IceHUD attribution/inspiration notes to third-party notices while keeping DK Mentor code and artwork original.
+
+## 1.1.1 - 2026-08-23
+
+- Reworked **DK Arcs** to be much closer to the **IceHUD/Tibia side-HUD feel** requested by the user.
+- Removed the large square panel from the arc style and replaced it with a **clean floating layout**.
+- Added a **small drag handle** that only appears while HUDs are unlocked or Preview HUDs is enabled.
+- Repositioned the UI so **Health stays on the left arc**, **Runic Power on the right arc**, and **Runes sit in the center**.
+- Kept the feature fully configurable by the player through the existing **DK Resources** controls.
+
+## 1.1.0 - 2026-08-23
+
+- Added a new **DK Arcs** resource style: an original side-HUD layout inspired by IceHUD readability, with **Health** on the left, **Runic Power** on the right, and **six Rune mini-bars** beside the resource arc.
+- Preserved the previous horizontal layout as **Classic**, so players can freely switch between **Classic** and **DK Arcs** without losing the same saved position, scale, opacity, combat-only behavior, or preview support.
+- Added a **Style** control to **HUD appearance...** for DK Resources, plus `/dkm resources style classic|arcs`.
+- DK Arcs reuses the same resource toggles (**Runes + Runic Power / Runes only / Runic Power only**), **Power text ON/OFF**, **Preview HUDs**, and **Restore DK Resources** workflow.
+- Added arc-style visual updates for Health and Runic Power while keeping Rune recharge logic spec-agnostic for Blood, Frost, and Unholy.
+- Kept the feature **identity-original**: this is a DK-focused implementation inspired by arc readability, not copied IceHUD code.
+
+## 1.0.21 - 2026-08-23
+
+- Added independent **30%-100% opacity** controls for DK Buffs, External Buffs, Debuffs, Abilities, and DK Resources.
+- Expanded the HUD appearance window with dedicated Size, Opacity, and Icons/Mode columns while preserving Preview and combat-lock protections.
+- Added **Runic Power text ON/OFF** so the resource bar can be used without labels/numeric text for a cleaner layout.
+- Added **Compact / Normal / Wide Rune spacing**; the six Rune segments and Runic Power bar resize together without changing resource logic.
+- Added **Restore DK Resources**, which resets only the resource HUD position/scale/opacity/mode/text/spacing while keeping its enabled/disabled state and leaving every other HUD untouched.
+- Added a compact DK Resources status summary in Settings and a live status line in the appearance dialog.
+- Renamed the Settings entry to **HUD appearance...** and added a global **Restore HUD appearance** action for size/opacity/icon-width defaults without moving HUD positions.
+- Preserved the native 12.1 AuraContainer path for DK Buffs, the interaction-only HUD lock, hard Preview override, and secret-safe Runic Power StatusBar behavior.
+- Added 1.0.21 validation guards for opacity persistence, resource text/spacing options, resource-only reset, and ptBR localization.
+
+## 1.0.20 - 2026-08-23
+
+- Added a movable **DK Resources** HUD with all six Rune recharge segments and a Runic Power bar for Blood, Frost, and Unholy.
+- Added independent resource display modes: **Runes + Runic Power**, **Runes only**, or **Runic Power only**.
+- Added independent 70%-160% scaling and saved positioning for the resource HUD, integrated with HUD lock/unlock, Preview, reset, and Combat only / Always visibility.
+- Added `/dkm resources on|off`, `/dkm resources runes on|off`, and `/dkm resources power on|off`.
+- Kept Rune tracking on the normal secondary-resource path while rendering potentially secret combat Runic Power through Blizzard's native `StatusBar` without branching or recommendations from the hidden value.
+- When Runic Power is secret, the visual fill stays available but the numeric `current / max` text is intentionally hidden.
+- Preview shows representative Rune recharge and Runic Power states so the HUD can be positioned without entering combat.
+- Blocked resource layout/mode changes, HUD Preview changes, and HUD position resets during combat to avoid re-anchoring a widget after it has received a secret primary-resource value.
+- Preserved the 1.0.16+ Blizzard `AuraContainer` DK Buffs path and the 1.0.19 interaction-only HUD lock behavior.
+- Added 1.0.20 release validation guards for resource APIs, secret-safe Runic Power rendering, combat layout protection, localization, and commands.
+
+## 1.0.19 - 2026-08-23
+
+- Fixed **HUDs: LOCKED** making Blizzard-managed aura bars look like they disappeared in combat. The lock state was incorrectly making the DK Buffs / External Buffs / Debuffs host frame fully transparent.
+- HUD locking is now **interaction-only**: it prevents dragging and mouse interception, but it no longer changes bar visibility, label visibility, background, border, AuraContainer state, or combat-only behavior.
+- **DK Buffs** keeps the same visible shell and native Blizzard `AuraContainer` whether HUDs are LOCKED or UNLOCKED; only the drag hint/mouse interaction changes.
+- Kept the 1.0.16 native proc/buff tracking path, the 1.0.17 configurable sizing/Preview behavior, and the 1.0.18 Lua-scope hotfix unchanged.
+- Added a regression guard that rejects a release if managed-aura HUD locking makes the host chrome transparent again.
+
+## 1.0.18 - 2026-08-23
+
+- Fixed the 1.0.17 **DK Buffs** regression caused by Lua local-function declaration order. `HideTrackingSlots` and `ShowManagedAuraPreview` were compiled before `ClearTrackingCooldown` existed in local scope, so both paths attempted to call a nil global.
+- Restored the normal Blizzard `AuraContainer` DK Buffs runtime path from 1.0.16 while keeping the 1.0.17 configurable sizing and Preview HUD features.
+- Fixed **Preview HUDs** throwing an error when creating DK Buffs / External Buffs / Debuffs placeholders.
+- Preview now cleanly hides the native aura container, shows movable placeholder icons, and restores the live native container as soon as Preview is disabled.
+- Added a release validation guard that fails packaging if the cooldown-reset helper is ever declared after the managed-aura preview/runtime helpers again.
+
+## 1.0.17 - 2026-08-23
+
+- Fixed **Preview HUDs** being immediately hidden by the out-of-combat heartbeat when **Bars only in combat** was enabled. Preview is now a hard layout override for DK Buffs, External Buffs, Debuffs, and Abilities.
+- Added visible preview placeholders for Blizzard-managed `AuraContainer` bars, so empty buff/debuff bars can still be seen, moved, and sized out of combat.
+- Added a new **Bar size...** configurator in Settings with independent controls for DK Buffs, External Buffs, Debuffs, and Abilities.
+- Each combat bar now supports independent **70%-160% scale** and a configurable **icons-per-row** value. Aura bars default to 5 per row; Abilities defaults to 11.
+- AuraContainer flow width is rebuilt safely when the icons-per-row setting changes while preserving upward wrapping.
+- Ability and compatibility/fallback aura renderers now respect the same configurable row width.
+- Added **Restore default sizes** without changing the user's saved HUD positions.
+- **Reset HUD positions** now resets position only; it no longer silently discards the user's custom combat-bar sizes.
+
+## 1.0.16 - 2026-08-23
+
+- Replaced the primary **DK Buffs** renderer on Retail 12.1 with Blizzard's native `AuraContainer` instead of trying to infer active auras from restricted `UnitAura`/Cooldown Viewer state.
+- The DK Buffs AuraGroup now uses `candidateFilters.includeSpellIDs`, letting Blizzard securely own presence, stacks, duration, expiration, and combat refreshes while DK Mentor controls only the whitelist and presentation.
+- Reworked AuraContainer initialization to the current live order: `SetUnit` -> `AddAuraGroup` -> `SetEnabled`, with `SetEnabled` last.
+- The DK whitelist is built from the spec's curated proc list plus spell/link/override IDs resolved from the researched Cooldown Manager profiles, including Frost **Max Buff Tracking**, Taeznak/Luxthos Unholy, and Luxthos/Quick Start Blood.
+- Increased the native DK Buffs capacity to 30 active auras with five icons per row and upward wrapping, matching the information density of Blizzard's filtered buff tracking without creating one long line.
+- Added live `SetAuraGroupCandidateFilters` refresh when Cooldown Manager data/hotfix overrides become available or the player changes specialization.
+- Added Blood Season 2 set tracking for **Blood Debt** and **Relentless Rider's Strength**.
+- Added **Icy Talons** to the Unholy important-buff fallback list.
+- Restored **Bars only in combat** as the migration/default behavior and bumped the settings schema so existing 1.0.15 installs are repaired automatically.
+- Hardened combat-exit visibility with stale-latch healing, world/zone resynchronization, immediate combat-end hiding, and delayed visibility rechecks.
+- The older manual aura/mirror/proc renderer remains only as a compatibility fallback if the Retail AuraContainer engine is unavailable.
+
+## 1.0.15 - 2026-08-23
+
+- Rebuilt DK proc/buff tracking around current Midnight 12.1 Cooldown Manager recommendations rather than a mostly static spell list.
+- Embedded the public Cooldown Manager ID selections from Wowhead's Frost Max Buff Tracking, Khazak Frost profile, Taeznak/Luxthos Unholy profiles, and Luxthos/Quick Start Blood profiles as read-only metadata.
+- Added a safe resolver that consumes Blizzard's already-built Cooldown Viewer provider cache for linked/override spell IDs; DK Mentor does not import, change, or call protected Cooldown Manager layout APIs.
+- Fixed a major mirror-state bug: Blizzard item `IsActive()` represents a configured cooldown entry, not an active aura. DK Mentor now requires materialized aura evidence (`auraInstanceID`, `wasSetFromAura`, `cooldownUseAuraDisplayTime`, or accessible cached aura data).
+- Expanded Frost tracking for Killing Machine, Rime, Frostbane, Freezing Tempest, Killing Streak, Bonegrinder, Icy Talons, Chosen of Frostbrood, Pillar of Frost, and Breath of Sindragosa.
+- Expanded Unholy tracking for Sudden Doom, Lesser Ghoul, Runic Corruption, Forbidden Knowledge, Vampiric Strike, Essence of the Blood Queen, Visceral Strength, and current Midnight Dark Transformation.
+- Expanded Blood tracking for Bone Shield, Hemostasis, Crimson Scourge, Boiling Point, Vampiric Strike, Essence of the Blood Queen, Visceral Strength, Dancing Rune Weapon, and Vampiric Blood.
+- Expanded important cooldown lists for all three specs, including current Midnight spell IDs and hero-talent cooldowns where applicable.
+- Added `COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED` handling so hotfix/talent override changes invalidate and rebuild the resolver cache.
+- Hardened direct player-aura reads against Midnight secret values.
+
+## 1.0.14 - 2026-08-23
+
+- Fixed combat-only DK buff and ability HUDs remaining visible after combat ended, especially after training-dummy/PvP transitions.
+- Added an authoritative combat-event latch based on PLAYER_REGEN_DISABLED / PLAYER_REGEN_ENABLED instead of relying only on unit combat booleans.
+- Clears stale proc-only fallback states at combat end, while preserving real buffs that are still active.
+- Added a heartbeat fail-safe that hides combat-only bars if a normal UI refresh is delayed.
+
+## 1.0.13 - 2026-08-23
+
+- Rebuilt **DK Buffs** as an active-only proc/buff HUD: inactive abilities no longer remain as dim/static placeholders during normal gameplay.
+- Polls Blizzard's Tracked Buffs/Tracked Bars viewer on each DK Buffs refresh instead of depending only on hook/event timing, preventing short or newly-added Midnight procs from being missed.
+- Uses Blizzard's materialized `auraSpellID` / `auraInstanceID` frame state first, so linked/override procs shown by the native Cooldown Manager can be mirrored without reading restricted aura identity directly.
+- Mirrors active tracked buffs dynamically even when the proc was not previously hard-coded in DK Mentor, improving resilience to talent changes and hotfixes across Blood, Frost, and Unholy.
+- Keeps proc-glow and known-aura tracking only as fallbacks when Blizzard's tracked-buff viewer is unavailable or the proc is not configured there.
+- Preview mode still shows sample icons solely for HUD positioning; outside Preview, zero active buffs means the DK Buffs frame hides completely.
+
+## 1.0.12 - 2026-08-23
+
+- Reworked DK proc tracking so active procs are always prioritized at the start of the DK Buffs bar instead of being pushed behind inactive placeholders.
+- Mirrors active entries from Blizzard's Tracked Buffs Cooldown Viewer when available, using its public frame state rather than restricted aura identities.
+- Maps Frost action-button proc glows back to their familiar proc icons for Killing Machine, Rime, and Frostbane.
+- Expanded Frost tracking with Frostbane, Icy Talons, Bonegrinder, and Killing Streak, while keeping the existing 5-icons-per-row layout.
+- Keeps the implementation visual-only: no automatic ability use, targeting, or protected combat action is performed.
+
+## 1.0.11 - 2026-08-23
+
+- Expanded the DK Buff Bar with transient Blizzard proc-glow tracking, so talent/spec procs that light an action button can appear even when their aura identity is restricted in combat.
+- Added Blood tracking for Crimson Scourge and Hemostasis, plus Unholy Runic Corruption tracking.
+- Changed the DK Buff Bar to wrap at five icons per row and allow up to three rows, preventing new proc icons from creating an excessively wide bar.
+- Added an optional movable **Mind Freeze interrupt alert**: an icon-only HUD appears when the current target is confirmed to be casting or channeling an interruptible spell.
+- The interrupt alert never casts Mind Freeze or reacts automatically. It only displays Blizzard-provided cast/interruptibility state and uses secret-value guards when the state is restricted.
+- Added `/dkm interrupt on|off` and a Settings toggle for the interrupt alert.
+
+## 1.0.10 - 2026-08-23
+
+- Fixed a Midnight 12.1 PvP crash caused by comparing the secret boolean returned by `UnitIsAFK("player")`.
+- Added a central accessible-boolean guard before reading boolean results from Unit APIs.
+- Applied the same guard to mounted state, combat state, pet existence/death, vehicle/taxi state, and optional voice triggers to prevent similar secret-value errors.
+- When a boolean is secret/inaccessible, DK Mentor now skips the optional check instead of attempting to inspect it.
+
 ## 1.0.9 - 2026-08-23
 
 - Removed the legacy runtime profile override completely: content detection is now always automatic.

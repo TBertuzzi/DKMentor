@@ -2,8 +2,35 @@ local ADDON_NAME, DKM = ...
 
 DKM = DKM or {}
 
-local locale = (GetLocale and GetLocale()) or "enUS"
+local clientLocale = (GetLocale and GetLocale()) or "enUS"
+local localeOverride = "auto"
+local locale = clientLocale
 local ptBR = {}
+
+local function NormalizeLanguageOverride(value)
+    value = tostring(value or "auto")
+    if value == "ptBR" then return "ptBR" end
+    if value == "enUS" or value == "enGB" or value == "en" then return "enUS" end
+    return "auto"
+end
+
+local function ResolveEffectiveLocale(override)
+    override = NormalizeLanguageOverride(override)
+    local resolved = override == "auto" and clientLocale or override
+    if resolved ~= "ptBR" then
+        resolved = "enUS"
+    end
+    return resolved, override
+end
+
+-- SavedVariables are normally available while the addon is loading. Reading the
+-- preference here means Data/Guides modules that localize static labels during
+-- file load also start in the user's selected DK Mentor language after /reload.
+if type(_G.DKMentorDB) == "table" then
+    locale, localeOverride = ResolveEffectiveLocale(_G.DKMentorDB.languageOverride)
+else
+    locale, localeOverride = ResolveEffectiveLocale("auto")
+end
 
 local function P(en, pt)
     ptBR[en] = pt
@@ -64,6 +91,8 @@ P("Buff bar: ON", "Barra de buffs: LIGADA")
 P("Buff bar: OFF", "Barra de buffs: DESLIGADA")
 P("Ability bar: ON", "Barra de habilidades: LIGADA")
 P("Ability bar: OFF", "Barra de habilidades: DESLIGADA")
+P("DK resources: ON", "Recursos do DK: LIGADOS")
+P("DK resources: OFF", "Recursos do DK: DESLIGADOS")
 P("External buffs: ON", "Buffs externos: LIGADOS")
 P("External buffs: OFF", "Buffs externos: DESLIGADOS")
 P("Debuffs: ON", "Debuffs: LIGADOS")
@@ -145,6 +174,8 @@ P("No tracked abilities", "Nenhuma habilidade monitorada")
 P("Buffs", "Buffs")
 P("Abilities", "Habilidades")
 P("DK Buffs", "Buffs do DK")
+P("DK Resources", "Recursos do DK")
+P("Runes", "Runas")
 P("External Buffs", "Buffs externos")
 P("Debuffs", "Debuffs")
 P("Aura", "Aura")
@@ -630,6 +661,9 @@ P("/dkm guide — open the beginner specialization guide", "/dkm guide — abrir
 P("/dkm settings — open HUD and commentary settings", "/dkm settings — abrir configurações de HUD e comentários")
 P("/dkm buffs on|off — show or hide the movable buff bar", "/dkm buffs on|off — mostrar ou esconder a barra móvel de buffs")
 P("/dkm abilities on|off — show or hide the ability availability bar", "/dkm abilities on|off — mostrar ou esconder a barra de disponibilidade de habilidades")
+P("/dkm resources on|off — show or hide the Runes + Runic Power HUD", "/dkm resources on|off — mostrar ou esconder o HUD de Runas + Poder Rúnico")
+P("/dkm resources runes on|off — show or hide Rune segments", "/dkm resources runes on|off — mostrar ou esconder os segmentos de Runas")
+P("/dkm resources power on|off — show or hide Runic Power", "/dkm resources power on|off — mostrar ou esconder o Poder Rúnico")
 
 -- Equipment/status selector strings
 P("Map an existing WoW Equipment Set to %s / %s. This mapping is used by Gear AUTO.", "Associe um conjunto de equipamento existente do WoW a %s / %s. Essa associação é usada pelo Equipamento AUTO.")
@@ -660,11 +694,57 @@ P("HUDs: LOCKED", "HUDs: BLOQUEADOS")
 P("HUDs: UNLOCKED", "HUDs: DESBLOQUEADOS")
 P("Preview HUDs: ON", "Prévia dos HUDs: LIGADA")
 P("Preview HUDs: OFF", "Prévia dos HUDs: DESLIGADA")
+P("Bar size...", "Tamanho das barras...")
+P("HUD size...", "Tamanho dos HUDs...")
+P("Combat bar size and layout", "Tamanho e layout das barras de combate")
+P("Combat HUD size and layout", "Tamanho e layout dos HUDs de combate")
+P("Adjust each combat bar independently. Size scales the whole HUD; icons per row changes its width before wrapping. Preview HUDs always overrides combat-only visibility while you arrange the interface.", "Ajuste cada barra de combate separadamente. Tamanho escala todo o HUD; ícones por linha altera a largura antes da quebra de linha. A Prévia dos HUDs sempre ignora a opção de exibir só em combate enquanto você organiza a interface.")
+P("Adjust each combat HUD independently. Size scales the whole HUD; aura/ability rows can change width, and the DK Resources row can switch between Runes, Runic Power, or both. Preview HUDs overrides combat-only visibility while you arrange the interface.", "Ajuste cada HUD de combate separadamente. O tamanho escala todo o HUD; as barras de aura/habilidades podem mudar de largura e o HUD de Recursos do DK pode exibir Runas, Poder Rúnico ou ambos. A Prévia dos HUDs ignora a opção de exibir só em combate enquanto você organiza a interface.")
+P("Bar", "Barra")
+P("Size", "Tamanho")
+P("Icons per row", "Ícones por linha")
+P("Icons / mode", "Ícones / modo")
+P("Runes + Runic Power", "Runas + Poder Rúnico")
+P("ON", "LIGADO")
+P("OFF", "DESLIGADO")
+P("Opacity", "Opacidade")
+P("HUD appearance...", "Aparência dos HUDs...")
+P("Adjust each combat HUD independently. Size scales the whole HUD, opacity controls transparency, aura/ability rows can change width, and DK Resources has its own text and Rune-spacing options. Preview HUDs overrides combat-only visibility while you arrange the interface.", "Ajuste cada HUD de combate separadamente. O tamanho escala todo o HUD, a opacidade controla a transparência, as barras de aura/habilidades podem mudar de largura e os Recursos do DK possuem opções próprias de texto e espaçamento das Runas. A Prévia dos HUDs ignora a opção de exibir só em combate enquanto você organiza a interface.")
+P("DK Resources appearance", "Aparência dos Recursos do DK")
+P("Adjust each combat HUD independently. Size scales the whole HUD, opacity controls transparency, aura/ability rows can change width, and DK Resources has its own mode, style, text, Rune spacing, and Arc opening. Preview HUDs overrides combat-only visibility while you arrange the interface.", "Ajuste cada HUD de combate separadamente. O tamanho escala todo o HUD, a opacidade controla a transparência, as barras de aura/habilidades podem mudar de largura e os Recursos do DK possuem modo, estilo, texto, espaçamento das Runas e abertura dos arcos. A Prévia dos HUDs ignora a opção de exibir só em combate enquanto você organiza a interface.")
+P("Arc opening", "Abertura dos arcos")
+P("Close or open the two arcs around the character without changing their size.", "Feche ou abra os dois arcos ao redor do personagem sem alterar o tamanho deles.")
+P("Current DK Resources: %s • Style %s • Size %d%% • Opacity %d%% • Arc opening %s", "Recursos do DK atuais: %s • Estilo %s • Tamanho %d%% • Opacidade %d%% • Abertura %s")
+P("Power text: ON", "Texto do Poder: LIGADO")
+P("Power text: OFF", "Texto do Poder: DESLIGADO")
+P("Rune spacing: %s", "Espaçamento das Runas: %s")
+P("Compact", "Compacto")
+P("Wide", "Amplo")
+P("Restore DK Resources", "Restaurar Recursos do DK")
+P("Restore HUD appearance", "Restaurar aparência dos HUDs")
+P("Current DK Resources: %s • Size %d%% • Opacity %d%%", "Recursos do DK atuais: %s • Tamanho %d%% • Opacidade %d%%")
+P("Resources: %s • Text: %s • Rune spacing: %s", "Recursos: %s • Texto: %s • Espaçamento: %s")
+P("HUD size and opacity restored to defaults.", "Tamanho e opacidade dos HUDs restaurados para o padrão.")
+P("DK Resources HUD restored to defaults.", "HUD de Recursos do DK restaurado para o padrão.")
+P("Runes only", "Só Runas")
+P("Runic Power only", "Só Poder Rúnico")
+P("Resources hidden", "Recursos ocultos")
+P("Restore default sizes", "Restaurar tamanhos padrão")
+P("Close", "Fechar")
+P("Bar layout cannot be changed during combat.", "O tamanho e o layout das barras não podem ser alterados durante o combate.")
+P("HUD preview cannot be changed during combat.", "A prévia dos HUDs não pode ser alterada durante o combate.")
+P("HUD positions cannot be changed during combat.", "As posições dos HUDs não podem ser alteradas durante o combate.")
+P("Combat bar sizes restored to defaults.", "Os tamanhos das barras de combate foram restaurados para o padrão.")
 P("Reset HUD positions", "Restaurar posições dos HUDs")
 P("Locked — unlock HUDs in Settings", "Bloqueado — desbloqueie os HUDs em Configurações")
 P("HUDs are locked. Unlock them in Settings to move this panel.", "Os HUDs estão bloqueados. Desbloqueie em Configurações para mover este painel.")
 P("Combat HUDs locked.", "HUDs de combate bloqueados.")
 P("Combat HUDs unlocked. Drag them to arrange the interface.", "HUDs de combate desbloqueados. Arraste-os para organizar a interface.")
+P("Shows all six Runes plus Runic Power in a compact movable Death Knight resource HUD.", "Mostra as seis Runas e o Poder Rúnico em um HUD compacto e móvel de recursos do Cavaleiro da Morte.")
+P("Tracks all six Death Knight Runes and Runic Power in one compact HUD.", "Monitora as seis Runas do Cavaleiro da Morte e o Poder Rúnico em um único HUD compacto.")
+P("Runes fill as they recharge. Runic Power uses Blizzard's native StatusBar so primary-power secret values can be displayed safely during combat.", "As Runas vão preenchendo conforme recarregam. O Poder Rúnico usa a StatusBar nativa da Blizzard para exibir com segurança valores primários secretos durante o combate.")
+P("DK resource HUD enabled.", "HUD de recursos do DK ativado.")
+P("DK resource HUD disabled.", "HUD de recursos do DK desativado.")
 P("/dkm hud lock|unlock|preview — arrange combat HUDs", "/dkm hud lock|unlock|preview — organizar os HUDs de combate")
 P("Combat HUD positions restored.", "Posições dos HUDs de combate restauradas.")
 P("Aura/ability bars: COMBAT ONLY", "Barras de aura/habilidades: SÓ EM COMBATE")
@@ -673,8 +753,26 @@ P("Bars only in combat: ON", "Barras só em combate: LIGADO")
 P("Bars only in combat: OFF", "Barras só em combate: DESLIGADO")
 P("Aura and ability bars now show only in combat.", "As barras de aura e habilidades agora aparecem apenas em combate.")
 P("Aura and ability bars can now show outside combat.", "As barras de aura e habilidades agora também podem aparecer fora de combate.")
+P("Combat bars and resources now show only in combat.", "As barras e os recursos de combate agora aparecem apenas em combate.")
+P("Combat bars and resources can now show outside combat.", "As barras e os recursos de combate agora também podem aparecer fora de combate.")
 P("/dkm combatbars combat|always - control aura/ability bar visibility", "/dkm combatbars combat|always - controlar a visibilidade das barras de aura/habilidades")
 P("/dkm combatbars combat|always - show aura/ability bars only in combat or always", "/dkm combatbars combat|always - mostrar as barras de aura/habilidades apenas em combate ou sempre")
+
+-- Addon language
+P("Language", "Idioma")
+P("Addon language", "Idioma do addon")
+P("Choose language...", "Escolher idioma...")
+P("Choose the DK Mentor language. Automatic follows the WoW client language; unsupported client languages use English.", "Escolha o idioma do DK Mentor. Automático segue o idioma do cliente do WoW; idiomas ainda não traduzidos usam inglês.")
+P("Automatic (WoW)", "Automático (WoW)")
+P("Portuguese (Brazil)", "Português (Brasil)")
+P("English", "English")
+P("Current: %s", "Atual: %s")
+P("Language: %s", "Idioma: %s")
+P("Language changed to %s. Reloading the interface...", "Idioma alterado para %s. Recarregando a interface...")
+P("Language saved as %s. Use /reload to apply it after combat.", "Idioma salvo como %s. Use /reload para aplicar após o combate.")
+P("Language saved as %s. Type /reload to apply it.", "Idioma salvo como %s. Digite /reload para aplicar.")
+P("Cancel", "Cancelar")
+P("/dkm language auto|ptbr|en — change DK Mentor language", "/dkm language auto|ptbr|en — alterar o idioma do DK Mentor")
 
 function DKM.T(key, ...)
     key = tostring(key or "")
@@ -691,8 +789,23 @@ function DKM.T(key, ...)
     return value
 end
 
-DKM.locale = (locale == "ptBR") and "ptBR" or "enUS"
-DKM.rawLocale = locale
+function DKM.SetLocaleOverride(value)
+    locale, localeOverride = ResolveEffectiveLocale(value)
+    DKM.locale = locale
+    DKM.rawLocale = clientLocale
+    DKM.languageOverride = localeOverride
+    return locale
+end
+
+function DKM.GetLocaleOverride()
+    return localeOverride
+end
+
+function DKM.GetClientLocale()
+    return clientLocale
+end
+
+DKM.SetLocaleOverride(localeOverride)
 
 P("Shows helpful effects on you that were applied by other players or NPCs.", "Mostra efeitos positivos em você que foram aplicados por outros jogadores ou NPCs.")
 P("Shows harmful effects currently affecting your character.", "Mostra efeitos negativos que estão afetando seu personagem no momento.")
@@ -705,3 +818,22 @@ P("/dkm externalbuffs on|off — show or hide buffs received from others", "/dkm
 P("/dkm debuffs on|off — show or hide harmful effects on yourself", "/dkm debuffs on|off — mostrar ou ocultar efeitos negativos em você")
 
 P("Content detection is automatic. DK Mentor follows the current game environment.", "A detecção de conteúdo é automática. O DK Mentor acompanha o ambiente atual do jogo.")
+
+-- 1.0.11 proc tracking and interrupt alert
+P("Interrupt alert: ON", "Alerta de interrupção: LIGADO")
+P("Interrupt alert: OFF", "Alerta de interrupção: DESLIGADO")
+P("Interrupt alert enabled.", "Alerta de interrupção ativado.")
+P("Interrupt alert disabled.", "Alerta de interrupção desativado.")
+P("Shows the Mind Freeze icon only when your current target has a confirmed interruptible cast or channel.", "Mostra o ícone de Congelar Mente somente quando seu alvo atual estiver lançando ou canalizando algo confirmado como interrompível.")
+P("Appears when your current target is confirmed to be casting or channeling an interruptible spell.", "Aparece quando seu alvo atual estiver lançando ou canalizando uma magia confirmada como interrompível.")
+P("/dkm interrupt on|off — show or hide the Mind Freeze interrupt alert", "/dkm interrupt on|off — exibe ou oculta o alerta de Congelar Mente")
+
+P("Active DK procs are prioritized first and mirrored from Blizzard tracked buffs when available.", "Procs ativos do DK têm prioridade e são espelhados dos buffs rastreados da Blizzard quando disponíveis.")
+
+-- 1.1.2 DK Arcs / IceHUD-inspired resource layout
+P("DK Arcs", "Arcos do DK")
+P("Classic", "Clássico")
+P("Style: %s", "Estilo: %s")
+P("Drag", "Mover")
+P("DK-focused side HUD inspired by IceHUD: Health on the left, Runic Power on the right, and six Runes centered below.", "HUD lateral focado em DK e inspirado no IceHUD: Vida à esquerda, Poder Rúnico à direita e seis Runas centralizadas abaixo.")
+P("/dkm resources style classic|arcs — choose the DK Resources visual style", "/dkm resources style classic|arcs — escolher o estilo visual dos Recursos do DK")

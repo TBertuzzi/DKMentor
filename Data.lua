@@ -5,9 +5,9 @@ local Data = DKM.Data
 local T = DKM.T or function(value) return value end
 
 Data.addonName = ADDON_NAME
-Data.version = "1.0.9"
+Data.version = "1.1.9"
 Data.interface = 120100
-Data.dataVersion = "2026-08-22"
+Data.dataVersion = "2026-08-23"
 Data.patch = "12.1.0"
 
 Data.specNames = {
@@ -244,6 +244,59 @@ Data.coach = {
 -- as aliases, but keep one canonical slot so the HUD layout stays stable.
 Data.buffAuraAliases = {
     [152279] = { 1249658 }, -- Breath of Sindragosa: current 12.1 spell/aura ID
+    [1229310] = { 1229311 }, -- Frostbane proc aura variants in 12.1
+    [434157] = { 434159, 461130 }, -- Visceral Strength: Unholy/Blood active aura variants
+    [1233448] = { 63560 }, -- Dark Transformation: Midnight current / legacy reference
+}
+
+-- Curated Cooldown Manager profile IDs from the current Midnight 12.1
+-- Wowhead imports. These are cooldown IDs (NOT spell IDs). DK Mentor never
+-- imports or changes the player's Blizzard layout; it only uses these IDs as
+-- a read-only allow-list against Blizzard's already-materialized CDM data.
+-- Category names mirror the player-facing Cooldown Manager concepts.
+Data.cooldownManagerProfiles = {
+    [250] = { -- Blood: Luxthos + Wowhead Quick Start
+        trackedBuffCooldownIDs = { 90603, 90611, 90606, 90610, 50002, 9039 },
+        trackedBarCooldownIDs = { 92535, 92533 },
+        essentialCooldownIDs = { 5868 },
+    },
+    [251] = { -- Frost: Wowhead Max Buff Tracking + Khazak tracked bar complement
+        trackedBuffCooldownIDs = {
+            92575, 86579, 92577, 86281, 50939, 27652, 86136,
+            105181, 86538, 140055, 99984, 86099, 92573, 27648,
+        },
+        trackedBarCooldownIDs = { 104640 },
+    },
+    [252] = { -- Unholy: Taeznak + Luxthos essential complement
+        trackedBuffCooldownIDs = { 90617 },
+        trackedBarCooldownIDs = { 92923, 70805, 70806, 103071, 70807 },
+        essentialCooldownIDs = { 70761 },
+    },
+}
+
+-- Blizzard proc-glow events report the action that should light up, not always
+-- the underlying aura that caused it. Map the action back to the high-value
+-- rotational state so DK Mentor can show the proc rather than a duplicate
+-- ability icon. These are visual-only mappings; no action is ever executed.
+Data.procGlowMappings = {
+    [250] = {
+        [43265] = 81141,   -- Death and Decay -> Crimson Scourge
+        [50842] = 1265790, -- Blood Boil -> Boiling Point
+        [206930] = 433895, -- Heart Strike -> Vampiric Strike availability
+    },
+    [251] = {
+        [49020] = 51124,    -- Obliterate -> Killing Machine
+        [207230] = 51124,   -- Frostscythe -> Killing Machine
+        [49184] = 59052,    -- Howling Blast -> Rime
+        [49143] = 1229310,  -- Frost Strike proc glow/override -> Frostbane
+        [1228433] = 1229310,
+        [1228436] = 1229310,
+        [1228443] = 1229310,
+    },
+    [252] = {
+        [47541] = 81340,   -- Death Coil -> Sudden Doom
+        [207317] = 81340,  -- Epidemic -> Sudden Doom
+    },
 }
 
 Data.buffRuntimeRules = {
@@ -258,33 +311,62 @@ Data.buffRuntimeRules = {
     [195292] = { buffSpellID = 195181, duration = 30 }, -- Death's Caress
 
     [51271] = { buffSpellID = 51271, duration = 12 }, -- Pillar of Frost
-    [152279] = { buffSpellID = 152279, duration = 8 }, -- Breath of Sindragosa legacy/base ID
-    [1249658] = { buffSpellID = 152279, duration = 8 }, -- Breath of Sindragosa current 12.1 cast/aura ID
+    [152279] = { buffSpellID = 152279, duration = 8 },
+    [1249658] = { buffSpellID = 152279, duration = 8 },
 
-    [63560] = { buffSpellID = 63560, duration = 15 }, -- Dark Transformation fallback
+    [1233448] = { buffSpellID = 1233448, duration = 15 }, -- Dark Transformation (Midnight)
+    [63560] = { buffSpellID = 1233448, duration = 15 }, -- legacy/reference fallback
 }
 
+-- Fallback spell IDs are intentionally curated around rotationally meaningful
+-- Midnight 12.1 states. The Cooldown Manager profile resolver below augments
+-- these dynamically with Blizzard's own linked/override spell data.
 Data.buffTracking = {
     general = {
+        53365,  -- Unholy Strength (Fallen Crusader runeforge proc)
+        101568, -- Dark Succor proc
         S.ANTI_MAGIC_SHELL,
         S.ICEBOUND_FORTITUDE,
         S.DEATHS_ADVANCE,
         S.LICHBORNE,
     },
     [250] = {
-        195181, -- Bone Shield
+        195181,  -- Bone Shield
+        81141,   -- Crimson Scourge
+        273947,  -- Hemostasis
+        1265790, -- Boiling Point
+        433895,  -- Vampiric Strike availability
+        433925,  -- Essence of the Blood Queen
+        434157,  -- Visceral Strength (aliases resolve Blood/Unholy aura variants)
+        1310372, -- Blood Debt (Midnight Season 2 set; stacks to 10)
+        1300369, -- Relentless Rider's Strength (10-sec Blood Debt payoff)
         S.VAMPIRIC_BLOOD,
-        81256,  -- Dancing Rune Weapon aura
+        81256,   -- Dancing Rune Weapon aura
     },
     [251] = {
-        51124,  -- Killing Machine
-        59052,  -- Rime
-        51271,  -- Pillar of Frost
-        152279, -- Breath of Sindragosa, when talented/active
+        51124,   -- Killing Machine
+        59052,   -- Rime
+        1229310, -- Frostbane
+        1297365, -- Freezing Tempest
+        194879,  -- Icy Talons
+        377101,  -- Bonegrinder stacks
+        377103,  -- Bonegrinder damage window
+        1230916, -- Killing Streak
+        1265630, -- Chosen of Frostbrood Haste window
+        1265639, -- Chosen of Frostbrood recall window
+        51271,   -- Pillar of Frost
+        152279,  -- Breath of Sindragosa canonical slot
     },
     [252] = {
-        81340,  -- Sudden Doom
-        63560,  -- Dark Transformation
+        81340,   -- Sudden Doom
+        1254252, -- Lesser Ghoul ready stack
+        51460,   -- Runic Corruption
+        194879,  -- Icy Talons (important Unholy attack-speed maintenance buff)
+        1242223, -- Forbidden Knowledge window
+        433895,  -- Vampiric Strike availability (San'layn)
+        433925,  -- Essence of the Blood Queen
+        434157,  -- Visceral Strength
+        1233448, -- Dark Transformation (Midnight)
     },
 }
 
@@ -301,20 +383,24 @@ Data.abilityTracking = {
     [250] = {
         S.VAMPIRIC_BLOOD,
         S.DANCING_RUNE_WEAPON,
+        439843, -- Reaper's Mark (Deathbringer)
         S.RUNE_TAP,
         S.GOREFIENDS_GRASP,
     },
     [251] = {
-        51271,  -- Pillar of Frost
-        279302, -- Frostwyrm's Fury
-        47568,  -- Empower Rune Weapon
-        152279, -- Breath of Sindragosa
+        51271,   -- Pillar of Frost
+        47568,   -- Empower Rune Weapon
+        196770,  -- Remorseless Winter
+        279302,  -- Frostwyrm's Fury
+        439843,  -- Reaper's Mark (Deathbringer)
+        1249658, -- Breath of Sindragosa (Midnight current)
     },
     [252] = {
-        63560,  -- Dark Transformation
-        275699, -- Apocalypse
-        42650,  -- Army of the Dead
-        46585,  -- Raise Dead
+        1233448, -- Dark Transformation (Midnight current)
+        1247378, -- Putrefy
+        42650,   -- Army of the Dead
+        343294,  -- Soul Reaper
+        46585,   -- Raise Dead
     },
 }
 

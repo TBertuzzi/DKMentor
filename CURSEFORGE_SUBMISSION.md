@@ -6,7 +6,7 @@
 - **Game version:** Retail / 12.1.x
 - **Primary category:** Combat
 - **License:** MIT
-- **Initial file:** `DKMentor-v1.0.9-CurseForge.zip`
+- **Initial file:** `DKMentor-v1.0.21-CurseForge.zip`
 - **Release type recommendation:** Beta for the first public upload after the planned multi-day live-client test; promote to Release after broader feedback.
 - **Description:** use `CURSEFORGE_DESCRIPTION.md`
 - **Logo:** `logo/DKMentor_Logo_512.png`

@@ -23,3 +23,8 @@ Optional Lich King commentary references numeric sound resources already install
 ## Trademarks
 
 World of Warcraft, Warcraft, the Lich King, and Blizzard Entertainment are trademarks or registered trademarks of Blizzard Entertainment, Inc. Wowhead and Icy Veins are third-party services. DK Mentor is not affiliated with or endorsed by Blizzard Entertainment, Wowhead, or Icy Veins.
+
+## DK resource HUD
+
+The DK Resources HUD is display-only. It uses the public six-Rune cooldown API for Rune recharge presentation. Runic Power is treated as a potentially secret primary resource during combat: DK Mentor forwards the value into Blizzard's native `StatusBar:SetValue` / `SetMinMaxValues` rendering path and does not compare, threshold, score, or select abilities from the hidden value. Resource layout changes and Preview/position resets are blocked during combat so a status bar that has received a secret value is not re-anchored while restricted.
+

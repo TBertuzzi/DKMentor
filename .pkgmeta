@@ -14,11 +14,14 @@ ignore:
   - PUBLISHING.md
   - POLICY_AND_SOURCES.md
   - README.md
-  - RELEASE_NOTES_v1.0.9.md
+  - RELEASE_NOTES_v1.0.11.md
+  - RELEASE_NOTES_v1.0.13.md
   - SECURITY.md
   - SUPPORT.md
-  - TESTING_v1.0.9.md
-  - VALIDATION_REPORT_v1.0.9.md
+  - TESTING_v1.0.11.md
+  - TESTING_v1.0.13.md
+  - VALIDATION_REPORT_v1.0.11.md
+  - VALIDATION_REPORT_v1.0.13.md
   - logo
   - screenshots
   - scripts

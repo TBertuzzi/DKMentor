@@ -1,0 +1,73 @@
+name: Bug report
+description: Report a reproducible DK Mentor problem.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: Thank you for helping improve DK Mentor. Do not include account credentials or private chat.
+  - type: input
+    id: version
+    attributes:
+      label: DK Mentor version
+      placeholder: 1.0.9
+    validations:
+      required: true
+  - type: input
+    id: game-build
+    attributes:
+      label: WoW patch and build
+      placeholder: 12.1.0 / build number
+    validations:
+      required: true
+  - type: dropdown
+    id: spec
+    attributes:
+      label: Specialization
+      options:
+        - Blood
+        - Frost
+        - Unholy
+    validations:
+      required: true
+  - type: dropdown
+    id: context
+    attributes:
+      label: Content
+      options:
+        - World
+        - Delve
+        - Dungeon
+        - Raid
+        - PvP
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: Describe the exact sequence that causes the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: Full Lua error
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Verification
+      options:
+        - label: I tested the latest release.
+          required: true
+        - label: I tested with other addons disabled when practical.
+          required: false

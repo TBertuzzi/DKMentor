@@ -1,0 +1,320 @@
+local ADDON_NAME, DKM = ...
+
+DKM.Data = DKM.Data or {}
+local Data = DKM.Data
+local T = DKM.T or function(value) return value end
+
+Data.addonName = ADDON_NAME
+Data.version = "1.0.9"
+Data.interface = 120100
+Data.dataVersion = "2026-08-22"
+Data.patch = "12.1.0"
+
+Data.specNames = {
+    [250] = T("Blood"),
+    [251] = T("Frost"),
+    [252] = T("Unholy"),
+}
+
+Data.contextOrder = { "world", "delve", "dungeon", "raid", "pvp" }
+Data.contextNames = {
+    auto = T("Auto"),
+    world = T("World"),
+    delve = T("Delve"),
+    dungeon = T("Dungeon"),
+    raid = T("Raid"),
+    pvp = T("PvP"),
+}
+
+-- Permanent Death Knight Runeforge enchant IDs used by Retail.
+-- These are read only from the player's own equipped weapon item links.
+Data.runeforges = {
+    [3368] = { spellID = 53344, fallbackName = T("Rune of the Fallen Crusader") },
+    [3370] = { spellID = 53343, fallbackName = T("Rune of Razorice") },
+    [3847] = { spellID = 62158, fallbackName = T("Rune of the Stoneskin Gargoyle") },
+    [6241] = { spellID = 326805, fallbackName = T("Rune of Sanguination") },
+    [6242] = { spellID = 326855, fallbackName = T("Rune of Spellwarding") },
+    [6243] = { spellID = 326911, fallbackName = T("Rune of Hysteria") },
+    [6244] = { spellID = 326977, fallbackName = T("Rune of Unending Thirst") },
+    [6245] = { spellID = 327082, fallbackName = T("Rune of the Apocalypse") },
+}
+
+-- Midnight 12.1 uses a new Raise Dead spell ID, while older clients/builds
+-- can still expose the legacy ID. The Ghoul Guard checks both safely.
+Data.raiseDeadSpellIDs = { 1242866, 46584 }
+
+Data.spells = {
+    DEATH_STRIKE = 49998,
+    ANTI_MAGIC_SHELL = 48707,
+    ICEBOUND_FORTITUDE = 48792,
+    DEATH_PACT = 48743,
+    ANTI_MAGIC_ZONE = 51052,
+    DEATHS_ADVANCE = 48265,
+    LICHBORNE = 49039,
+    MIND_FREEZE = 47528,
+    ASPHYXIATE = 221562,
+    BLINDING_SLEET = 207167,
+    DEATH_GRIP = 49576,
+    CHAINS_OF_ICE = 45524,
+    RAISE_ALLY = 61999,
+    VAMPIRIC_BLOOD = 55233,
+    DANCING_RUNE_WEAPON = 49028,
+    RUNE_TAP = 194679,
+    MARROWREND = 195182,
+    DEATH_AND_DECAY = 43265,
+    GOREFIENDS_GRASP = 108199,
+}
+
+local S = Data.spells
+
+local function Tip(spellID, tag, text, optional, fallbackName)
+    return {
+        spellID = spellID,
+        tag = T(tag),
+        text = T(text),
+        optional = optional == true,
+        fallbackName = fallbackName and T(fallbackName) or fallbackName,
+    }
+end
+
+Data.tips = {
+    general = {
+        world = {
+            Tip(S.DEATH_STRIKE, "HEAL", "Use after meaningful damage. Avoid spending all Runic Power when a dangerous fight is about to begin."),
+            Tip(S.ANTI_MAGIC_SHELL, "MAGIC", "Use shortly before predictable magic damage, a magic debuff, or magic crowd control."),
+            Tip(S.ICEBOUND_FORTITUDE, "EMERGENCY", "Use against very high damage, during a dangerous stun, or when remaining exposed would be lethal."),
+            Tip(S.DEATH_PACT, "STRONG HEAL", "Emergency healing when Death Strike will not be enough.", true),
+            Tip(S.MIND_FREEZE, "INTERRUPT", "Stopping a dangerous cast is usually better than taking the damage and spending a defensive cooldown."),
+            Tip(S.BLINDING_SLEET, "CONTROL", "Stop several enemies or a cast when your interrupt is unavailable.", true),
+        },
+        delve = {
+            Tip(S.DEATH_STRIKE, "HEAL", "Use after a heavy hit and preserve Runic Power before elites or large groups."),
+            Tip(S.ANTI_MAGIC_SHELL, "MAGIC", "Anticipate bursts and magic effects. Using it before the effect is usually more valuable than using it afterward."),
+            Tip(S.ICEBOUND_FORTITUDE, "EMERGENCY", "Use on large pulls, during dangerous stuns, or when your companion cannot stabilize the fight."),
+            Tip(S.DEATH_PACT, "PANIC BUTTON", "A final healing option to survive until the next Death Strike.", true),
+            Tip(S.MIND_FREEZE, "INTERRUPT", "Prioritize enemy heals, crowd control, and high-damage casts."),
+            Tip(S.DEATHS_ADVANCE, "POSITION", "Use against knockbacks, pulls, and slows, or to leave a dangerous area safely."),
+        },
+        dungeon = {
+            Tip(S.MIND_FREEZE, "INTERRUPT", "Stop the priority cast. Preventing damage reduces pressure on the healer."),
+            Tip(S.ANTI_MAGIC_SHELL, "PERSONAL", "Use before a targeted magic mechanic or a preventable magic debuff."),
+            Tip(S.ANTI_MAGIC_ZONE, "GROUP", "Use when several party members will take magic damage at the same time.", true),
+            Tip(S.ICEBOUND_FORTITUDE, "EMERGENCY", "Use during focused damage, a dangerous stun, or when the healer is under pressure."),
+            Tip(S.DEATH_STRIKE, "RECOVER", "Use after the damage spike. Avoid compromising your rotation when healing is not needed."),
+            Tip(S.BLINDING_SLEET, "STOP PACK", "Interrupt several enemy actions when Mind Freeze is on cooldown.", true),
+        },
+        raid = {
+            Tip(S.ANTI_MAGIC_SHELL, "MECHANIC", "Use before predictable magic damage or when the shield can prevent a debuff."),
+            Tip(S.ANTI_MAGIC_ZONE, "RAID", "Place it on the group before a major source of magic damage.", true),
+            Tip(S.ICEBOUND_FORTITUDE, "EMERGENCY", "Reserve it for a dangerous overlap, a stun, or potentially lethal damage."),
+            Tip(S.DEATH_STRIKE, "SELF-HEAL", "Recover after a spike to reduce pressure on healers."),
+            Tip(S.DEATHS_ADVANCE, "MOVEMENT", "Use to resist forced movement or cross a movement window safely."),
+            Tip(S.RAISE_ALLY, "UTILITY", "Use combat resurrection only when the group call justifies spending the charge."),
+        },
+        pvp = {
+            Tip(S.ANTI_MAGIC_SHELL, "MAGIC / CC", "Use before incoming magic crowd control or a caster burst window, not after the control has landed."),
+            Tip(S.ICEBOUND_FORTITUDE, "STUN / BURST", "Use during a dangerous stun or the enemy team's highest pressure window."),
+            Tip(S.DEATH_STRIKE, "SUSTAIN", "Use after heavy damage. Preserve Runic Power when you are likely to be the next target."),
+            Tip(S.DEATH_PACT, "PANIC BUTTON", "Use when you are in real danger and the next Death Strike will not arrive in time.", true),
+            Tip(S.LICHBORNE, "CONTROL", "Use according to the selected talent to deny the appropriate crowd-control effects.", true),
+            Tip(S.CHAINS_OF_ICE, "SURVIVE", "Reduce pressure by creating distance. Combine with Death Grip to protect yourself or an ally."),
+        },
+    },
+    [250] = {
+        world = {
+            Tip(S.MARROWREND, "PREPARE", "Enter combat with Bone Shield and refresh it before the stacks are exhausted."),
+            Tip(S.DEATH_STRIKE, "CORE", "Use after damage instead of merely because it is available. It is your primary active recovery tool."),
+            Tip(S.RUNE_TAP, "BEFORE", "Use before a heavy hit or before taking damage from several enemies.", true),
+            Tip(S.VAMPIRIC_BLOOD, "HEALTH / HEAL", "Activate before a dangerous window or to amplify recovery when your health begins to fall."),
+            Tip(S.DANCING_RUNE_WEAPON, "LARGE PACK", "Use early in a dangerous pull to gain control and stability."),
+            Tip(S.ANTI_MAGIC_SHELL, "MAGIC", "Anticipate important magic damage and magic effects."),
+        },
+        delve = {
+            Tip(S.MARROWREND, "BONE SHIELD", "Maintain stacks before engaging elites and large groups."),
+            Tip(S.DEATH_STRIKE, "AFTER DAMAGE", "Wait for the damage spike and convert Runic Power into recovery."),
+            Tip(S.RUNE_TAP, "BEFORE DAMAGE", "Reduce a telegraphed hit or the opening damage of a large pull.", true),
+            Tip(S.DANCING_RUNE_WEAPON, "OPEN PACK", "Use early in dangerous encounters. Holding it until you are almost dead wastes much of its value."),
+            Tip(S.VAMPIRIC_BLOOD, "EMERGENCY", "Use before or during a window that will require several consecutive heals."),
+            Tip(S.ANTI_MAGIC_SHELL, "MAGIC", "Protect yourself from predictable bursts, debuffs, and magic crowd control."),
+        },
+        dungeon = {
+            Tip(S.MARROWREND, "BONE SHIELD", "Do not begin an important pull unprepared. Keep your stacks stable."),
+            Tip(S.DEATH_STRIKE, "AFTER THE HIT", "Absorb the hit, then recover at the correct moment."),
+            Tip(S.RUNE_TAP, "TANK BUSTER", "Use before predictable physical damage or when entering a large pack.", true),
+            Tip(S.DANCING_RUNE_WEAPON, "HARD PULL", "Use at the beginning of pulls that truly threaten you, not as a late panic button."),
+            Tip(S.VAMPIRIC_BLOOD, "AMPLIFY", "Use when sustained damage will require more maximum health and stronger incoming healing."),
+            Tip(S.ANTI_MAGIC_ZONE, "GROUP", "Help the group during shared magic damage when positioning allows it.", true),
+        },
+        raid = {
+            Tip(S.MARROWREND, "BONE SHIELD", "Maintain mitigation before taking the boss or performing a tank swap."),
+            Tip(S.DEATH_STRIKE, "RECOVER", "Use after the heavy attack and plan Runic Power for each boss hit."),
+            Tip(S.RUNE_TAP, "BEFORE", "Reduce a predictable tank buster before it lands.", true),
+            Tip(S.VAMPIRIC_BLOOD, "PLANNED", "Pair it with a known hit or damage sequence instead of waiting only for low health."),
+            Tip(S.DANCING_RUNE_WEAPON, "STRONG WINDOW", "Use as a planned cooldown for tank damage and offensive generation."),
+            Tip(S.ANTI_MAGIC_SHELL, "MAGIC", "Anticipate magic damage and effects that can be absorbed."),
+        },
+        pvp = {
+            Tip(S.DEATH_STRIKE, "SUSTAIN", "Preserve Runic Power and use it after the enemy damage window."),
+            Tip(S.ANTI_MAGIC_SHELL, "MAGIC / CC", "Use before magic crowd control and burst."),
+            Tip(S.ICEBOUND_FORTITUDE, "STUN / BURST", "Use during the largest pressure window or a dangerous stun."),
+            Tip(S.VAMPIRIC_BLOOD, "AMPLIFY", "Buy time for several heals and support from your group."),
+            Tip(S.DEATH_PACT, "PANIC BUTTON", "Use as a last resort when normal recovery will not arrive in time.", true),
+            Tip(S.CHAINS_OF_ICE, "CONTROL", "Reduce pressure on yourself or an ally by limiting enemy mobility."),
+        },
+    },
+}
+
+local function Coach(spellID, title, when, optional, fallbackName)
+    return {
+        spellID = spellID,
+        title = T(title),
+        when = T(when),
+        optional = optional == true,
+        fallbackName = fallbackName and T(fallbackName) or fallbackName,
+    }
+end
+
+Data.coach = {
+    general = {
+        world = {
+            Coach(S.DEATH_STRIKE, "RECOVER", "after damage"),
+            Coach(S.ANTI_MAGIC_SHELL, "MAGIC", "before the effect"),
+            Coach(S.ICEBOUND_FORTITUDE, "EMERGENCY", "burst / stun"),
+        },
+        delve = {
+            Coach(S.DEATH_STRIKE, "HEAL", "after the hit"),
+            Coach(S.ANTI_MAGIC_SHELL, "MAGIC", "before the burst"),
+            Coach(S.ICEBOUND_FORTITUDE, "EMERGENCY", "large pack / stun"),
+        },
+        dungeon = {
+            Coach(S.MIND_FREEZE, "PREVENT", "interrupt first"),
+            Coach(S.ANTI_MAGIC_SHELL, "PERSONAL", "magic on you"),
+            Coach(S.DEATH_STRIKE, "RECOVER", "after the spike"),
+        },
+        raid = {
+            Coach(S.ANTI_MAGIC_SHELL, "PERSONAL", "before mechanic"),
+            Coach(S.ANTI_MAGIC_ZONE, "GROUP", "magic damage", true),
+            Coach(S.ICEBOUND_FORTITUDE, "EMERGENCY", "lethal overlap"),
+        },
+        pvp = {
+            Coach(S.ANTI_MAGIC_SHELL, "CC / MAGIC", "use before"),
+            Coach(S.ICEBOUND_FORTITUDE, "STUN / BURST", "use at peak"),
+            Coach(S.DEATH_STRIKE, "SUSTAIN", "after damage"),
+        },
+    },
+    [250] = {
+        world = {
+            Coach(S.RUNE_TAP, "MITIGATE", "before the hit", true),
+            Coach(S.VAMPIRIC_BLOOD, "MAX HEALTH", "dangerous window"),
+            Coach(S.DEATH_STRIKE, "RECOVER", "after damage"),
+        },
+        delve = {
+            Coach(S.DANCING_RUNE_WEAPON, "OPEN PACK", "use early"),
+            Coach(S.VAMPIRIC_BLOOD, "DANGER", "amplify healing"),
+            Coach(S.DEATH_STRIKE, "RECOVER", "after the hit"),
+        },
+        dungeon = {
+            Coach(S.RUNE_TAP, "BEFORE", "tank buster", true),
+            Coach(S.VAMPIRIC_BLOOD, "SEQUENCE", "sustained damage"),
+            Coach(S.DEATH_STRIKE, "AFTER", "recover the hit"),
+        },
+        raid = {
+            Coach(S.RUNE_TAP, "BEFORE", "predicted hit", true),
+            Coach(S.VAMPIRIC_BLOOD, "PLAN", "strong window"),
+            Coach(S.DEATH_STRIKE, "AFTER", "recover the hit"),
+        },
+        pvp = {
+            Coach(S.ANTI_MAGIC_SHELL, "CC / MAGIC", "use before"),
+            Coach(S.ICEBOUND_FORTITUDE, "STUN / BURST", "use at peak"),
+            Coach(S.DEATH_STRIKE, "SUSTAIN", "preserve resource"),
+        },
+    },
+}
+
+-- Compact HUD tracking lists. Spell names and icons come from the game client,
+-- so they automatically follow the player's WoW language. Unknown or
+-- untalented spells are hidden from the bars.
+-- Combat-safe fallback rules for buffs that are triggered by player casts.
+-- Midnight can hide exact aura identity/state from third-party addons in combat.
+-- These rules keep the visual tracker responsive using safe player spell events;
+-- direct aura data and Blizzard Cooldown Viewer mirrors remain authoritative when
+-- they are available.
+-- Some class abilities have received new spell IDs in Midnight while older
+-- IDs still resolve as base/legacy spell references. Track the current aura IDs
+-- as aliases, but keep one canonical slot so the HUD layout stays stable.
+Data.buffAuraAliases = {
+    [152279] = { 1249658 }, -- Breath of Sindragosa: current 12.1 spell/aura ID
+}
+
+Data.buffRuntimeRules = {
+    [S.ANTI_MAGIC_SHELL] = { buffSpellID = S.ANTI_MAGIC_SHELL, duration = 5 },
+    [S.ICEBOUND_FORTITUDE] = { buffSpellID = S.ICEBOUND_FORTITUDE, duration = 8 },
+    [S.DEATHS_ADVANCE] = { buffSpellID = S.DEATHS_ADVANCE, duration = 10 },
+    [S.LICHBORNE] = { buffSpellID = S.LICHBORNE, duration = 10 },
+
+    [S.VAMPIRIC_BLOOD] = { buffSpellID = S.VAMPIRIC_BLOOD, duration = 10 },
+    [S.DANCING_RUNE_WEAPON] = { buffSpellID = 81256, duration = 8 },
+    [S.MARROWREND] = { buffSpellID = 195181, duration = 30 },
+    [195292] = { buffSpellID = 195181, duration = 30 }, -- Death's Caress
+
+    [51271] = { buffSpellID = 51271, duration = 12 }, -- Pillar of Frost
+    [152279] = { buffSpellID = 152279, duration = 8 }, -- Breath of Sindragosa legacy/base ID
+    [1249658] = { buffSpellID = 152279, duration = 8 }, -- Breath of Sindragosa current 12.1 cast/aura ID
+
+    [63560] = { buffSpellID = 63560, duration = 15 }, -- Dark Transformation fallback
+}
+
+Data.buffTracking = {
+    general = {
+        S.ANTI_MAGIC_SHELL,
+        S.ICEBOUND_FORTITUDE,
+        S.DEATHS_ADVANCE,
+        S.LICHBORNE,
+    },
+    [250] = {
+        195181, -- Bone Shield
+        S.VAMPIRIC_BLOOD,
+        81256,  -- Dancing Rune Weapon aura
+    },
+    [251] = {
+        51124,  -- Killing Machine
+        59052,  -- Rime
+        51271,  -- Pillar of Frost
+        152279, -- Breath of Sindragosa, when talented/active
+    },
+    [252] = {
+        81340,  -- Sudden Doom
+        63560,  -- Dark Transformation
+    },
+}
+
+Data.abilityTracking = {
+    general = {
+        S.DEATH_STRIKE,
+        S.MIND_FREEZE,
+        S.DEATH_GRIP,
+        S.ANTI_MAGIC_SHELL,
+        S.ICEBOUND_FORTITUDE,
+        S.DEATHS_ADVANCE,
+        S.DEATH_PACT,
+    },
+    [250] = {
+        S.VAMPIRIC_BLOOD,
+        S.DANCING_RUNE_WEAPON,
+        S.RUNE_TAP,
+        S.GOREFIENDS_GRASP,
+    },
+    [251] = {
+        51271,  -- Pillar of Frost
+        279302, -- Frostwyrm's Fury
+        47568,  -- Empower Rune Weapon
+        152279, -- Breath of Sindragosa
+    },
+    [252] = {
+        63560,  -- Dark Transformation
+        275699, -- Apocalypse
+        42650,  -- Army of the Dead
+        46585,  -- Raise Dead
+    },
+}
+

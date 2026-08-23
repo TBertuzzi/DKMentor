@@ -1,0 +1,16 @@
+## Interface: 120100
+## Title: DK Mentor
+## Notes: Death Knight combat guidance, automatic talent and gear switching, DK Ready Check, Runeforge/Ghoul guards, survival coaching, contextual build recommendations, configurable HUDs, aura tracking, beginner guidance, and optional Lich King commentary.
+## Author: Thiago Bertuzzi
+## Version: 1.0.9
+## SavedVariables: DKMentorDB
+## X-Category: Combat
+## X-License: MIT
+## IconTexture: Interface\Icons\spell_deathknight_classicon
+
+Localization.lua
+Data.lua
+Builds.lua
+Guides.lua
+Voices.lua
+Core.lua

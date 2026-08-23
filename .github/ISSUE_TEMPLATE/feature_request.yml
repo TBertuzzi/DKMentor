@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest an improvement for DK Mentor.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: Explain the player problem this feature would solve.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe how the feature should work in game.
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Combat API and accessibility considerations
+      description: Mention whether the request depends on protected combat information or should remain usable with minimal visual clutter.

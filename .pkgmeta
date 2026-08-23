@@ -1,0 +1,26 @@
+package-as: DKMentor
+manual-changelog: CHANGELOG.md
+license-output: LICENSE.txt
+ignore:
+  - .editorconfig
+  - .github
+  - .gitignore
+  - .luacheckrc
+  - .pkgmeta
+  - CONTRIBUTING.md
+  - CURSEFORGE_DESCRIPTION.md
+  - CURSEFORGE_SUBMISSION.md
+  - LICENSE
+  - PUBLISHING.md
+  - POLICY_AND_SOURCES.md
+  - README.md
+  - RELEASE_NOTES_v1.0.9.md
+  - SECURITY.md
+  - SUPPORT.md
+  - TESTING_v1.0.9.md
+  - VALIDATION_REPORT_v1.0.9.md
+  - logo
+  - screenshots
+  - scripts
+  - tests
+  - tools

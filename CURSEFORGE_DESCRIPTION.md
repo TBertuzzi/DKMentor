@@ -2,7 +2,7 @@
 
 DK Mentor is a World of Warcraft Retail addon built specifically for **Blood, Frost, and Unholy Death Knights**.
 
-It combines Blizzard's native Assisted Combat highlighting with survival guidance, contextual talent/gear profiles, compact movable HUDs, a DK Ready Check with Runeforge/Ghoul guards, player aura tracking, a beginner guide, and optional immersive Lich King commentary.
+It combines Blizzard's native Assisted Combat highlighting with survival guidance, contextual specialization/talent/gear profiles with per-dungeon overrides, compact movable HUDs, a DK Ready Check with Runeforge/Ghoul guards, player aura tracking, a beginner guide, and optional immersive Lich King commentary.
 
 ## Features
 
@@ -12,9 +12,13 @@ It combines Blizzard's native Assisted Combat highlighting with survival guidanc
 - Survival Coach with contextual defensive/recovery priorities.
 - Existing WoW talent loadout mapping per specialization + content.
 - Existing WoW Equipment Set mapping per specialization + content.
-- Optional automatic talent/gear switching when WoW allows it.
-- Build HUD with specialization, context, loadout, and gear status.
-- DK Ready Check for mapped talents, mapped equipment, Death Knight Runeforge coverage, and the Unholy ghoul when applicable.
+- Optional specialization mapping for World, Delve, Dungeon, Raid, and PvP, including **Do not change**.
+- Independent **Spec AUTO**, **Talents AUTO**, and **Gear AUTO** switching when WoW allows it.
+- Dynamic **Dungeon Overrides** for specialization, talents, and gear, discovered from WoW runtime/Mythic+ data instead of a hardcoded seasonal list.
+- Partial overrides: inherit the Dungeon profile, keep the current value, or override only the component you choose.
+- Dungeon/Raid role protection skips automatic Tank <-> DPS specialization changes that conflict with the assigned group role.
+- Compact one-line Build HUD with specialization icon, context/dungeon, active loadout, gear, and DK READY; click the icon for manual Blood/Frost/Unholy switching.
+- DK Ready Check for specialization readiness, mapped talents, mapped equipment, Death Knight Runeforge coverage, and the Unholy ghoul when applicable.
 - Runeforge Guard validates a DK Runeforge on each equipped weapon without claiming one rune is always optimal.
 - Ghoul Guard warns Unholy Death Knights about a missing/dead permanent pet.
 - DK Buff Bar for important class buffs/procs.
@@ -28,7 +32,7 @@ It combines Blizzard's native Assisted Combat highlighting with survival guidanc
 - DK Resources appearance controls for Runic Power text, Compact/Normal/Wide Rune spacing, and resource-only reset.
 - Movable HUDs with lock/unlock, Preview override, and position reset.
 - Beginner Guide tab for Blood, Frost, and Unholy.
-- English and Brazilian Portuguese UI based on the WoW client locale.
+- English and Brazilian Portuguese UI with automatic WoW-client detection or a manual language override.
 - Optional Lich King commentary using sound resources already installed by WoW; no Blizzard audio files are bundled.
 
 ## Combat and Midnight 12.1

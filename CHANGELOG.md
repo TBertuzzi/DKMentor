@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.0 - 2026-08-24 - Loadouts 2.0
+
+- Added optional specialization mapping for World, Delve, Dungeon, Raid, and PvP profiles, with **Do not change** as the backward-compatible default.
+- Added **Spec AUTO** alongside Talents AUTO and Gear AUTO.
+- Added automatic specialization switching orchestration so talents and gear are applied only after the requested specialization becomes active.
+- Added Dungeon/Raid role protection that skips automatic Tank <-> DPS specialization changes when they conflict with the player's assigned group role.
+- Added dynamic **Dungeon Overrides** discovered from WoW Challenge Mode / Mythic+ data and visited instance IDs rather than a hardcoded seasonal dungeon list.
+- Dungeon overrides can independently inherit, keep current, or override specialization, talent loadout, and equipment set.
+- Updated DK READY to report specialization readiness and understand Keep-current dungeon overrides.
+- Updated the compact Build HUD to show the actual dungeon name when available while preserving manual specialization switching from the spec icon.
+- Preserved all existing 1.1.x mappings and settings through schema 28 migration.
+
 ## 1.1.10 - Compact Build HUD
 
 - Redesigned the Build HUD into a single compact horizontal row inspired by the LoadoutPilot presentation.

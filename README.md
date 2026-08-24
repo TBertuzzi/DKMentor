@@ -2,7 +2,7 @@
 
 # DK Mentor
 
-**DK Mentor** is a World of Warcraft Retail addon for Blood, Frost, and Unholy Death Knights. It combines Blizzard's native Assisted Combat highlighting with survival guidance, content-aware loadout and equipment mapping, compact combat HUDs, a DK Ready Check with Runeforge/Ghoul guards, aura tracking, beginner guidance, and optional Lich King commentary.
+**DK Mentor** is a World of Warcraft Retail addon for Blood, Frost, and Unholy Death Knights. It combines Blizzard's native Assisted Combat highlighting with survival guidance, content-aware specialization/talent/equipment profiles, dynamic per-dungeon overrides, compact combat HUDs, a DK Ready Check with Runeforge/Ghoul guards, aura tracking, beginner guidance, and optional Lich King commentary.
 
 The in-game UI automatically uses Brazilian Portuguese on `ptBR` clients and English on `enUS`/`enGB`; unsupported locales fall back to English.
 
@@ -12,8 +12,10 @@ The in-game UI automatically uses Brazilian Portuguese on `ptBR` clients and Eng
 - World, Delve, Dungeon, Raid, and PvP context detection with automatic runtime switching.
 - Blizzard Assisted Combat offensive highlighting; DK Mentor never casts abilities.
 - Health-aware Survival Coach for defensive, healing, control, and utility priorities.
-- Contextual talent-loadout and Equipment Set mapping with optional automatic switching when WoW permits it.
-- Movable Build HUD showing specialization, context, loadout, gear mapping, and automation state.
+- Contextual **specialization + talent loadout + Equipment Set** profiles with independent Spec AUTO / Talents AUTO / Gear AUTO switching when WoW permits it.
+- Dynamic **Dungeon Overrides** discovered from WoW Mythic+/Challenge Mode data and visited instances; each dungeon can inherit, keep current, or override specialization, talents, and gear independently.
+- Dungeon/Raid role protection skips automatic Tank <-> DPS specialization changes that conflict with the player's assigned group role.
+- Compact movable one-line Build HUD showing the specialization icon, detected content/dungeon, active build, associated gear, and DK READY; clicking the icon still opens manual spec switching.
 - **DK Ready Check** in the Build HUD for mapped talents, mapped equipment, Death Knight Runeforge coverage, and the Unholy ghoul when applicable.
 - **Runeforge Guard** validates a DK Runeforge on every equipped weapon without pretending one rune is universally best for all builds.
 - **Ghoul Guard** warns Unholy Death Knights when their permanent pet is missing/dead, with travel/vehicle suppression.
@@ -69,9 +71,17 @@ When the game does not expose a restricted value, DK Mentor avoids pretending th
 /dkm reset
 ```
 
-## Loadouts and equipment
+## Loadouts 2.0
 
-DK Mentor maps **existing** WoW talent loadouts and Equipment Sets to specialization + content profiles. The same PvE set can be reused for World, Delve, Dungeon, and Raid, while another set can be mapped to PvP. Automatic switching is optional and respects normal WoW combat/content restrictions.
+DK Mentor maps **existing** WoW talent loadouts and Equipment Sets to World, Delve, Dungeon, Raid, and PvP profiles. Each content profile can also choose Blood, Frost, Unholy, or **Do not change**. The three automation switches are independent: **Spec AUTO**, **Talents AUTO**, and **Gear AUTO**.
+
+The Dungeon profile has an additional **Dungeon Overrides** manager. Dungeon entries are discovered dynamically from WoW's Challenge Mode/Mythic+ APIs and from instances you visit, so the addon does not need a hardcoded seasonal dungeon list. For each dungeon, specialization, talents, and gear can independently:
+
+- inherit the normal Dungeon profile;
+- keep the current value; or
+- use an explicit override.
+
+When grouped in Dungeon or Raid content, DK Mentor protects the assigned group role: it skips automatic Tank <-> DPS specialization switches that would conflict with the role. This guard does not remove the normal manual specialization selector on the Build HUD.
 
 No third-party talent import strings are bundled. Build panels link to attributed public guide sources; players can store their own import strings locally in `DKMentorDB`.
 
@@ -112,7 +122,7 @@ The commentary feature is optional and disabled by default. It references numeri
 
 ## Publishing and project policy
 
-- [1.0 live test checklist](TESTING_v1.0.21.md)
+- [1.2.0 live test checklist](TESTING_v1.2.0.md)
 - [Publishing guide](PUBLISHING.md)
 - [Policy and sources](POLICY_AND_SOURCES.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)

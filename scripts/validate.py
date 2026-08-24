@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.1.10"
+VERSION = "1.2.0"
 INTERFACE = "120100"
 
 REQUIRED = [
@@ -180,7 +180,7 @@ def main() -> int:
             errors.append(f"Missing Midnight 12.1 proc/buff tracking ID {proc_id}")
 
     # 1.0.16 native AuraContainer + combat-exit regression guards.
-    if 'schema = 27' not in core or 'combatBarsOnlyInCombat = true' not in core:
+    if 'schema = 28' not in core or 'combatBarsOnlyInCombat = true' not in core:
         errors.append("Current settings schema/combat-only default is missing")
     if 'if previousSchema < 21 then' not in core or 'DB.combatBarsOnlyInCombat = true' not in core:
         errors.append("Existing installs are not migrated back to combat-only HUDs")
@@ -410,6 +410,52 @@ def main() -> int:
         if not (ROOT / rel).is_file():
             errors.append(f"DK Arcs package asset missing: {rel}")
 
+
+    # 1.2.0 Loadouts 2.0 regression guards.
+    for snippet in (
+        'specializationBindings = {}',
+        'dungeonOverrides = {}',
+        'knownDungeons = {}',
+        'autoSwitchSpecialization = true',
+        'function addon:ResolveRuntimeSpecializationTarget(context)',
+        'function addon:TryAutoSwitchSpecialization(reason)',
+        'function addon:ApplyAutomaticProfile(reason)',
+        'function addon:CanAutoSwitchSpecialization(targetSpecID, context)',
+        'UnitGroupRolesAssigned',
+        'if specID == 250 then return "TANK" end',
+        'function addon:GetCurrentSeasonDungeonCatalog()',
+        'C_ChallengeMode.GetMapScoreInfo',
+        'C_ChallengeMode.GetMapTable',
+        'C_ChallengeMode.GetMapUIInfo',
+        'function addon:GetActiveDungeonOverride()',
+        'function addon:FindDungeonOverrideForIdentity(identity, includeDisabled)',
+        'function addon:ApplyDungeonOverrideIfCurrent(key, reason)',
+        'SPECIALIZATION_CHANGE_CAST_FAILED',
+        'function addon:ResolveRuntimeLoadoutBinding(specID, context)',
+        'function addon:ResolveRuntimeEquipmentBinding(specID, context)',
+        'function addon:CreateDungeonOverridesFrame()',
+        'function addon:CreateDungeonOverrideEditorFrame()',
+        'function addon:CreateProfileSpecializationPickerFrame()',
+        'addon:ToggleSpecializationPicker()',
+        'Dungeon overrides...',
+    ):
+        if snippet not in core:
+            errors.append(f"1.2.0 Loadouts 2.0 regression guard missing: {snippet}")
+    for loc_snippet in (
+        'P("Spec AUTO: ON", "Spec AUTO: LIGADO")',
+        'P("Dungeon Overrides", "Overrides de Masmorra")',
+        'P("Do not change", "Não alterar")',
+        'P("Role protection: your group role is %s, but the target specialization is %s (%s). Automatic specialization switching was skipped."',
+    ):
+        if loc_snippet not in localization:
+            errors.append(f"1.2.0 Loadouts localization guard missing: {loc_snippet}")
+    if 'if previousSchema < 28 then' not in core:
+        errors.append("1.2.0 schema migration is missing")
+    if core.count('self:ApplyAutomaticProfile(') + core.count('addon:ApplyAutomaticProfile(') < 5:
+        errors.append("Automatic profile orchestration is not wired to enough runtime transitions")
+    for rel in ("RELEASE_NOTES_v1.2.0.md", "TESTING_v1.2.0.md"):
+        if not (ROOT / rel).is_file():
+            errors.append(f"Missing 1.2.0 release document: {rel}")
 
     # 1.1.9 language-picker layering + protected reload regression guards.
     for snippet in (

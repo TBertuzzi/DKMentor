@@ -6,7 +6,7 @@ $Out = Join-Path $Root "release"
 $Stage = Join-Path $Out "DKMentor"
 if (Test-Path $Out) { Remove-Item $Out -Recurse -Force }
 New-Item -ItemType Directory -Path $Stage | Out-Null
-$Files = @("DKMentor.toc","Localization.lua","Data.lua","Builds.lua","Guides.lua","Voices.lua","Core.lua","CHANGELOG.md","LICENSE","THIRD_PARTY_NOTICES.md")
+$Files = @("DKMentor.toc","Localization.lua","Data.lua","Builds.lua","Guides.lua","Voices.lua","Core.lua","LICENSE","THIRD_PARTY_NOTICES.md")
 foreach ($File in $Files) { Copy-Item (Join-Path $Root $File) (Join-Path $Stage $File) }
 $MediaSource = Join-Path $Root "Media"
 $MediaDest = Join-Path $Stage "Media"

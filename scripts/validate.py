@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.1.9"
+VERSION = "1.1.10"
 INTERFACE = "120100"
 
 REQUIRED = [

@@ -3695,7 +3695,7 @@ end
 
 local function CreateStatusWidget()
     local frame = CreateFrame("Frame", "DKMentorStatusWidget", UIParent, "BackdropTemplate")
-    frame:SetSize(286, 88)
+    frame:SetSize(500, 42)
     frame:SetFrameStrata("HIGH")
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
@@ -3711,9 +3711,11 @@ local function CreateStatusWidget()
         if DB and DB.hudLocked == false then SaveFramePosition(self, "statusWidget") end
     end)
 
+    -- The specialization icon doubles as the specialization picker button.
+    -- This keeps the compact one-line HUD while preserving manual spec switching.
     frame.icon = frame:CreateTexture(nil, "ARTWORK")
-    frame.icon:SetSize(42, 42)
-    frame.icon:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -9)
+    frame.icon:SetSize(32, 32)
+    frame.icon:SetPoint("LEFT", frame, "LEFT", 6, 0)
     frame.icon:SetTexture(QUESTION_MARK_ICON)
     frame.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
@@ -3731,31 +3733,30 @@ local function CreateStatusWidget()
     end)
     frame.specButton:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 
-    frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    frame.title:SetPoint("TOPLEFT", frame.icon, "TOPRIGHT", 8, -1)
-    frame.title:SetWidth(220)
+    frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.title:SetPoint("LEFT", frame.icon, "RIGHT", 10, 0)
     frame.title:SetJustifyH("LEFT")
     frame.title:SetTextColor(0.48, 0.87, 1)
+    frame.title:SetWordWrap(false)
 
     frame.build = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    frame.build:SetPoint("TOPLEFT", frame.title, "BOTTOMLEFT", 0, -3)
-    frame.build:SetWidth(220)
+    frame.build:SetPoint("LEFT", frame.title, "RIGHT", 18, 0)
     frame.build:SetJustifyH("LEFT")
+    frame.build:SetWordWrap(false)
 
     frame.gear = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    frame.gear:SetPoint("TOPLEFT", frame.build, "BOTTOMLEFT", 0, -2)
-    frame.gear:SetWidth(220)
+    frame.gear:SetPoint("LEFT", frame.build, "RIGHT", 18, 0)
     frame.gear:SetJustifyH("LEFT")
+    frame.gear:SetWordWrap(false)
 
     frame.ready = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    frame.ready:SetPoint("TOPLEFT", frame.gear, "BOTTOMLEFT", 0, -3)
-    frame.ready:SetWidth(220)
+    frame.ready:SetPoint("LEFT", frame.gear, "RIGHT", 18, 0)
     frame.ready:SetJustifyH("LEFT")
+    frame.ready:SetWordWrap(false)
 
+    -- Kept for compatibility with existing update paths, but hidden in compact mode.
     frame.auto = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    frame.auto:SetPoint("TOPLEFT", frame.ready, "BOTTOMLEFT", 0, -3)
-    frame.auto:SetWidth(220)
-    frame.auto:SetJustifyH("LEFT")
+    frame.auto:Hide()
 
     frame:SetScript("OnEnter", function(self)
         if not GameTooltip then return end
@@ -3792,49 +3793,32 @@ local function LayoutStatusWidget()
         return
     end
 
-    -- Width is content-aware, but capped so localized text cannot create a giant HUD.
-    local leftInset = 8 + 42 + 8
-    local rightInset = 10
-    local widest = 0
-    local regions = { statusWidget.title, statusWidget.build, statusWidget.gear, statusWidget.ready, statusWidget.auto }
-    for _, region in ipairs(regions) do
-        if region and region.GetStringWidth then
-            widest = math.max(widest, math.ceil(region:GetStringWidth() or 0))
-        end
-    end
-
-    local desiredWidth = math.max(240, math.min(380, leftInset + widest + rightInset))
-    local textWidth = desiredWidth - leftInset - rightInset
-
-    statusWidget:SetWidth(desiredWidth)
-    statusWidget.title:SetWidth(textWidth)
-    statusWidget.build:SetWidth(textWidth)
-    statusWidget.gear:SetWidth(textWidth)
-    statusWidget.ready:SetWidth(textWidth)
-    statusWidget.auto:SetWidth(textWidth)
-
-    -- Height follows the actual rendered text. This removes the unused bottom
-    -- space in the normal five-line state while still growing safely when a
-    -- localized label wraps or a warning becomes longer.
-    local gaps = { 0, 3, 2, 3, 3 }
-    local textHeight = 0
+    -- Compact LoadoutPilot-style line: spec icon | context | build | gear | ready.
+    local regions = { statusWidget.title, statusWidget.build, statusWidget.gear, statusWidget.ready }
+    local widths = {}
+    local textTotal = 0
     for index, region in ipairs(regions) do
-        local height = 0
-        if region and region.GetStringHeight then
-            height = math.ceil(region:GetStringHeight() or 0)
+        local width = 0
+        if region and region.GetStringWidth then
+            width = math.ceil(region:GetStringWidth() or 0)
         end
-        if height <= 0 then
-            height = (index == 1) and 14 or 12
-        end
-        textHeight = textHeight + gaps[index] + height
+        width = math.max(width, 24)
+        widths[index] = width
+        textTotal = textTotal + width
     end
 
-    local topPadding = 9
-    local bottomPadding = 6
-    local iconHeight = 42
-    local contentHeight = math.max(iconHeight, textHeight)
-    local desiredHeight = math.max(72, math.min(150, topPadding + contentHeight + bottomPadding))
-    statusWidget:SetHeight(desiredHeight)
+    local leftInset = 6 + 32 + 10
+    local gaps = 18 * (#regions - 1)
+    local rightInset = 10
+    local desiredWidth = math.max(360, math.min(760, leftInset + textTotal + gaps + rightInset))
+    statusWidget:SetSize(desiredWidth, 42)
+
+    -- Give every segment exactly the width it needs so labels stay on one line.
+    statusWidget.title:SetWidth(widths[1])
+    statusWidget.build:SetWidth(widths[2])
+    statusWidget.gear:SetWidth(widths[3])
+    statusWidget.ready:SetWidth(widths[4])
+    statusWidget.auto:SetWidth(1)
 end
 
 local function GetConfiguredBarColumns(dbKey, fallback, maximum)
@@ -6333,7 +6317,7 @@ function addon:UpdateStatusWidget()
     local equipmentBinding, equipmentInfo = self:ResolveEquipmentBinding(specID, context)
 
     statusWidget.icon:SetTexture(specIcon or QUESTION_MARK_ICON)
-    statusWidget.title:SetText(string.format("%s • %s", tostring(specName), tostring(contextName)))
+    statusWidget.title:SetText(tostring(contextName))
 
     local buildText
     if activeName and activeName ~= "" then
@@ -6366,15 +6350,8 @@ function addon:UpdateStatusWidget()
     end
     statusWidget.gear:SetText(gearText)
 
-    local talentAuto = DB.autoSwitchLoadouts and ("|cff66ff99" .. T("TALENTS AUTO") .. "|r") or T("TALENTS MANUAL")
-    local gearAuto = DB.autoSwitchEquipment and ("|cff66ff99" .. T("GEAR AUTO") .. "|r") or T("GEAR MANUAL")
-    if self.pendingLoadoutKey then
-        talentAuto = "|cffffcc55" .. T("TALENTS QUEUED") .. "|r"
-    end
-    if self.pendingEquipmentKey then
-        gearAuto = "|cffffcc55" .. T("GEAR QUEUED") .. "|r"
-    end
-    statusWidget.auto:SetText(talentAuto .. " • " .. gearAuto)
+    -- Auto-switch state remains available in Settings; the compact HUD omits it.
+    statusWidget.auto:SetText("")
 
     local readyStatus = self:GetReadyCheckStatus()
     if statusWidget.ready then

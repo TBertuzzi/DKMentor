@@ -21,4 +21,4 @@ jobs:
       - name: Build manual CurseForge package
         run: bash scripts/package.sh
       - name: Verify archive
-        run: unzip -t release/DKMentor-v1.0.9-CurseForge.zip
+        run: unzip -t release/DKMentor-v*-CurseForge.zip

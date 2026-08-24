@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.10 - Compact Build HUD
+
+- Redesigned the Build HUD into a single compact horizontal row inspired by the LoadoutPilot presentation.
+- The specialization name is no longer repeated as text; the specialization icon identifies the active DK spec.
+- Removed TALENTS AUTO / GEAR AUTO from the HUD; those states remain available in Settings.
+- Preserved content/context, active build, associated gear set, and DK READY status in the one-line HUD.
+- Preserved manual specialization switching: click the specialization icon to open the Blood/Frost/Unholy picker.
+
 ## 1.1.9 - 2026-08-23
 
 - Fixed the language picker opening behind the main DK Mentor settings window. It now uses `FULLSCREEN_DIALOG`, a high frame level, and explicit mouse interaction so all language buttons are clickable.

@@ -7,16 +7,19 @@ It combines Blizzard's native Assisted Combat highlighting with survival guidanc
 ## Features
 
 - Automatic Death Knight specialization detection.
-- World, Delve, Dungeon, Raid, and PvP context detection.
+- World, Delve, Dungeon, Mythic+, Raid, and PvP context detection.
 - Blizzard Assisted Combat offensive highlight.
 - Survival Coach with contextual defensive/recovery priorities.
 - Existing WoW talent loadout mapping per specialization + content.
 - Existing WoW Equipment Set mapping per specialization + content.
-- Optional specialization mapping for World, Delve, Dungeon, Raid, and PvP, including **Do not change**.
+- Optional specialization mapping for World, Delve, Dungeon, Mythic+, Raid, and PvP, including **Do not change**.
 - Independent **Spec AUTO**, **Talents AUTO**, and **Gear AUTO** switching when WoW allows it.
-- Dynamic **Dungeon Overrides** for specialization, talents, and gear, discovered from WoW runtime/Mythic+ data instead of a hardcoded seasonal list.
-- Partial overrides: inherit the Dungeon profile, keep the current value, or override only the component you choose.
-- Dungeon/Raid role protection skips automatic Tank <-> DPS specialization changes that conflict with the assigned group role.
+- A slotted Mythic Keystone is detected before the timer starts so the M+ profile can be prepared while WoW still permits changes.
+- Loot Spec supports No override, Current specialization, Blood, Frost, or Unholy and restores the previous Loot Spec when the dungeon override ends.
+- Dynamic **Dungeon Overrides** shared across Normal, Heroic, Mythic 0, and Mythic+, discovered from WoW runtime/Challenge Mode data instead of a hardcoded seasonal list.
+- Per-dungeon overrides can independently control playing specialization, **Loot Specialization**, talents, and gear; inherited fields follow the active Dungeon or Mythic+ default.
+- Dungeon/Mythic+/Raid/PvP role protection skips automatic Tank <-> DPS playing-spec changes that conflict with the assigned group role; Loot Spec remains independent.
+- Gear AUTO verifies the mapped Equipment Set is actually equipped and retries transient out-of-combat transition failures instead of clearing pending state too early.
 - Compact one-line Build HUD with specialization icon, context/dungeon, active loadout, gear, and DK READY; click the icon for manual Blood/Frost/Unholy switching.
 - DK Ready Check for specialization readiness, mapped talents, mapped equipment, Death Knight Runeforge coverage, and the Unholy ghoul when applicable.
 - Runeforge Guard validates a DK Runeforge on each equipped weapon without claiming one rune is always optimal.

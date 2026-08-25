@@ -9,13 +9,13 @@ The in-game UI automatically uses Brazilian Portuguese on `ptBR` clients and Eng
 ## Highlights
 
 - Blood, Frost, and Unholy specialization detection.
-- World, Delve, Dungeon, Raid, and PvP context detection with automatic runtime switching.
+- World, Delve, Dungeon, Mythic+, Raid, and PvP context detection with automatic runtime switching.
 - Blizzard Assisted Combat offensive highlighting; DK Mentor never casts abilities.
 - Health-aware Survival Coach for defensive, healing, control, and utility priorities.
 - Contextual **specialization + talent loadout + Equipment Set** profiles with independent Spec AUTO / Talents AUTO / Gear AUTO switching when WoW permits it.
-- Dynamic **Dungeon Overrides** discovered from WoW Mythic+/Challenge Mode data and visited instances; each dungeon can inherit, keep current, or override specialization, talents, and gear independently.
-- Dungeon/Raid role protection skips automatic Tank <-> DPS specialization changes that conflict with the player's assigned group role.
-- Compact movable one-line Build HUD showing the specialization icon, detected content/dungeon, active build, associated gear, and DK READY; clicking the icon still opens manual spec switching.
+- Dynamic **Dungeon Overrides** discovered from WoW Mythic+/Challenge Mode data and visited instances; one rule is shared across Normal/Heroic/Mythic 0/Mythic+ and can independently override specialization, **Loot Specialization**, talents, and gear.
+- Dungeon/Mythic+/Raid/PvP role protection skips automatic Tank <-> DPS playing-specialization changes that conflict with the player's assigned group role; Loot Specialization remains independent.
+- Compact movable one-line Build HUD showing the specialization icon, detected content/dungeon, active build, associated gear, and DK READY; left-click the icon for manual spec switching and right-click the HUD to open/close DK Mentor.
 - **DK Ready Check** in the Build HUD for mapped talents, mapped equipment, Death Knight Runeforge coverage, and the Unholy ghoul when applicable.
 - **Runeforge Guard** validates a DK Runeforge on every equipped weapon without pretending one rune is universally best for all builds.
 - **Ghoul Guard** warns Unholy Death Knights when their permanent pet is missing/dead, with travel/vehicle suppression.
@@ -52,7 +52,7 @@ When the game does not expose a restricted value, DK Mentor avoids pretending th
 ```text
 /dkm
 /dkm help
-/dkm mode auto|world|delve|dungeon|raid|pvp
+/dkm mode
 /dkm coach on|off
 /dkm build
 /dkm gear
@@ -71,20 +71,26 @@ When the game does not expose a restricted value, DK Mentor avoids pretending th
 /dkm reset
 ```
 
-## Loadouts 2.0
+## Loadouts 2.1
 
-DK Mentor maps **existing** WoW talent loadouts and Equipment Sets to World, Delve, Dungeon, Raid, and PvP profiles. Each content profile can also choose Blood, Frost, Unholy, or **Do not change**. The three automation switches are independent: **Spec AUTO**, **Talents AUTO**, and **Gear AUTO**.
+DK Mentor maps **existing** WoW talent loadouts and Equipment Sets to separate World, Delve, Dungeon, **Mythic+**, Raid, and PvP profiles. Each content profile can also choose Blood, Frost, Unholy, or **Do not change**. The three automation switches remain independent: **Spec AUTO**, **Talents AUTO**, and **Gear AUTO**.
 
-The Dungeon profile has an additional **Dungeon Overrides** manager. Dungeon entries are discovered dynamically from WoW's Challenge Mode/Mythic+ APIs and from instances you visit, so the addon does not need a hardcoded seasonal dungeon list. For each dungeon, specialization, talents, and gear can independently:
+**Dungeon Overrides** use one canonical dungeon rule shared across Normal, Heroic, Mythic 0, and Mythic+. The seasonal catalog comes from WoW's Challenge Mode data and visited instances; DK Mentor resolves Challenge Mode map data to a stable InstanceID whenever possible, so the same dungeon does not need duplicate M0/M+ configurations.
 
-- inherit the normal Dungeon profile;
-- keep the current value; or
-- use an explicit override.
+For each dungeon you can independently configure:
 
-When grouped in Dungeon or Raid content, DK Mentor protects the assigned group role: it skips automatic Tank <-> DPS specialization switches that would conflict with the role. This guard does not remove the normal manual specialization selector on the Build HUD.
+- playing specialization: inherit, keep current, Blood, Frost, or Unholy;
+- **Loot Specialization**: no override, current specialization, Blood, Frost, or Unholy;
+- talent loadout: inherit, keep current, or choose a saved WoW loadout;
+- equipment set: inherit, keep current, or choose a saved WoW set.
+
+Inherited fields follow the context you are actually playing: regular dungeon content uses the **Dungeon** default, while a slotted/active keystone uses the **Mythic+** default. A slotted keystone is detected before the timer starts so DK Mentor can prepare the requested setup while WoW still permits changes.
+
+Loot Specialization is independent from the playing role. A Frost/Unholy DPS can select Blood loot without becoming Blood. When a dungeon Loot Spec override ends, DK Mentor restores the Loot Specialization that was active before that override session.
+
+In Dungeon, Mythic+, Raid, and PvP, DK Mentor protects the assigned group role when **playing-spec** automation is used. Same-role Frost <-> Unholy switching remains allowed, while an automatic DPS <-> Tank switch is skipped when it conflicts with the protected role. This guard never removes the normal manual specialization selector on the Build HUD.
 
 No third-party talent import strings are bundled. Build panels link to attributed public guide sources; players can store their own import strings locally in `DKMentorDB`.
-
 
 ## DK Ready Check
 
@@ -122,7 +128,8 @@ The commentary feature is optional and disabled by default. It references numeri
 
 ## Publishing and project policy
 
-- [1.2.0 live test checklist](TESTING_v1.2.0.md)
+- [1.2.3 live test checklist](TESTING_v1.2.3.md)
+- [1.2.2 hotfix test checklist](TESTING_v1.2.2.md)
 - [Publishing guide](PUBLISHING.md)
 - [Policy and sources](POLICY_AND_SOURCES.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)

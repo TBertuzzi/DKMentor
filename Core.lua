@@ -56,6 +56,16 @@ local targetInterruptEventState = nil
 local runtimeBuffState = {}
 local buffRefreshElapsed = 0
 local contextPollElapsed = 0
+local lootSpecState = {
+    pendingID = nil,
+    pendingRuleKey = nil,
+    isRestore = false,
+    retryElapsed = 0,
+    lastError = nil,
+    activeOverrideKey = nil,
+    restoreID = nil,
+    equipmentRetryElapsed = 0,
+}
 
 local voiceHandle
 local voiceBusyUntil = 0
@@ -295,7 +305,7 @@ local function ApplyDefaults(target, defaults)
 end
 
 local DEFAULTS = {
-    schema = 28,
+    schema = 29,
     firstRun = true,
     languageOverride = "auto",
     modeOverride = "auto",
@@ -976,7 +986,7 @@ end
 function addon:GetAssignedGroupRole()
     if not UnitGroupRolesAssigned then return nil end
     local ok, role = pcall(UnitGroupRolesAssigned, "player")
-    if not ok or type(role) ~= "string" or role == "" or role == "NONE" then
+    if not ok or not IsAccessibleValue(role) or type(role) ~= "string" or role == "" or role == "NONE" then
         return nil
     end
     return role
@@ -1074,14 +1084,18 @@ function addon:SwitchSpecialization(index)
         return false
     end
 
-    local ok = false
-    if C_ClassTalents and C_ClassTalents.SwitchToSpecializationByIndex then
-        ok = pcall(C_ClassTalents.SwitchToSpecializationByIndex, index)
-    elseif C_SpecializationInfo and C_SpecializationInfo.SetSpecialization then
-        ok = pcall(C_SpecializationInfo.SetSpecialization, index)
+    local ok, result = false, nil
+    -- Match the proven Loadout Pilot path first. On current Retail,
+    -- C_SpecializationInfo.SetSpecialization delegates to the ClassTalents
+    -- specialization switch internally, but it also gives us a direct boolean
+    -- result when the request is rejected immediately.
+    if C_SpecializationInfo and C_SpecializationInfo.SetSpecialization then
+        ok, result = pcall(C_SpecializationInfo.SetSpecialization, index)
+    elseif C_ClassTalents and C_ClassTalents.SwitchToSpecializationByIndex then
+        ok, result = pcall(C_ClassTalents.SwitchToSpecializationByIndex, index)
     end
 
-    if not ok then
+    if not ok or result == false then
         Print(T("WoW did not allow the specialization change."))
         return false
     end
@@ -1093,8 +1107,9 @@ end
 
 function addon:DetectActualContext()
     if C_PartyInfo and C_PartyInfo.IsDelveInProgress then
-        local ok, inDelve = pcall(C_PartyInfo.IsDelveInProgress)
-        if ok and inDelve then
+        local ok, rawInDelve = pcall(C_PartyInfo.IsDelveInProgress)
+        local inDelve = GetAccessibleBooleanFromCall(ok, rawInDelve)
+        if inDelve == true then
             return "delve"
         end
     end
@@ -1106,6 +1121,30 @@ function addon:DetectActualContext()
         elseif instanceType == "raid" then
             return "raid"
         elseif instanceType == "party" then
+            local challengeActive
+            if C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive then
+                local ok, rawValue = pcall(C_ChallengeMode.IsChallengeModeActive)
+                challengeActive = GetAccessibleBooleanFromCall(ok, rawValue)
+            elseif C_PartyInfo and C_PartyInfo.IsChallengeModeActive then
+                local ok, rawValue = pcall(C_PartyInfo.IsChallengeModeActive)
+                challengeActive = GetAccessibleBooleanFromCall(ok, rawValue)
+            end
+
+            local keystoneSlotted
+            if C_ChallengeMode and C_ChallengeMode.HasSlottedKeystone then
+                local ok, rawValue = pcall(C_ChallengeMode.HasSlottedKeystone)
+                keystoneSlotted = GetAccessibleBooleanFromCall(ok, rawValue)
+            elseif C_ChallengeMode and C_ChallengeMode.GetSlottedKeystoneInfo then
+                local ok, mapID = pcall(C_ChallengeMode.GetSlottedKeystoneInfo)
+                keystoneSlotted = ok and IsAccessibleNumber(mapID) and mapID > 0 or false
+            end
+
+            -- Treat a slotted keystone as Mythic+ before the timer starts. This
+            -- is the useful preparation window where WoW can still permit spec,
+            -- talent and equipment changes.
+            if challengeActive == true or keystoneSlotted == true then
+                return "mythicplus"
+            end
             return "dungeon"
         end
     end
@@ -1120,195 +1159,267 @@ function addon:DetectContext()
     return self:DetectActualContext(), true
 end
 
-function addon:GetCurrentDungeonIdentity()
-    local ok, name, instanceType, _, _, _, _, _, instanceID = pcall(GetInstanceInfo)
-    if not ok or instanceType ~= "party" then
+function addon:GetMythicPlusMapID()
+    if not C_ChallengeMode then return nil end
+
+    if C_ChallengeMode.GetActiveChallengeMapID then
+        local ok, mapID = pcall(C_ChallengeMode.GetActiveChallengeMapID)
+        if ok and IsAccessibleNumber(mapID) and mapID > 0 then return mapID end
+    end
+
+    if C_ChallengeMode.GetSlottedKeystoneInfo then
+        local ok, mapID = pcall(C_ChallengeMode.GetSlottedKeystoneInfo)
+        if ok and IsAccessibleNumber(mapID) and mapID > 0 then return mapID end
+    end
+
+    return nil
+end
+
+function addon:FindChallengeMapIDByName(instanceName)
+    if not instanceName or not C_ChallengeMode or not C_ChallengeMode.GetMapTable or not C_ChallengeMode.GetMapUIInfo then
         return nil
     end
+    local ok, ids = pcall(C_ChallengeMode.GetMapTable)
+    if not ok or type(ids) ~= "table" then return nil end
+    for _, challengeMapID in ipairs(ids) do
+        local okInfo, name = pcall(C_ChallengeMode.GetMapUIInfo, challengeMapID)
+        if okInfo and name == instanceName then return tonumber(challengeMapID) end
+    end
+    return nil
+end
+
+function addon:GetChallengeDungeonIdentity(challengeMapID)
+    challengeMapID = tonumber(challengeMapID)
+    if not challengeMapID or not C_ChallengeMode or not C_ChallengeMode.GetMapUIInfo then return nil end
+
+    local okInfo, name, returnedID, _, _, _, uiMapID = pcall(C_ChallengeMode.GetMapUIInfo, challengeMapID)
+    if not okInfo then return nil end
 
     local identity = {
-        name = (type(name) == "string" and name ~= "") and name or T("Current dungeon"),
-        instanceID = tonumber(instanceID),
+        name = (type(name) == "string" and name ~= "") and name or T("Dungeon"),
+        challengeMapID = tonumber(returnedID) or challengeMapID,
+        uiMapID = tonumber(uiMapID),
+        seasonal = true,
+        supportsMythicPlus = true,
+        context = "mythicplus",
     }
 
-    if C_Map and C_Map.GetBestMapForUnit then
-        local okMap, uiMapID = pcall(C_Map.GetBestMapForUnit, "player")
-        if okMap and type(uiMapID) == "number" and uiMapID > 0 then
-            identity.uiMapID = uiMapID
-        end
-    end
-
-    if C_ChallengeMode and C_ChallengeMode.GetActiveChallengeMapID then
-        local okChallenge, challengeMapID = pcall(C_ChallengeMode.GetActiveChallengeMapID)
-        if okChallenge and type(challengeMapID) == "number" and challengeMapID > 0 then
-            identity.challengeMapID = challengeMapID
-            if C_ChallengeMode.GetMapUIInfo then
-                local okInfo, challengeName, _, _, _, _, challengeUIMapID = pcall(C_ChallengeMode.GetMapUIInfo, challengeMapID)
-                if okInfo then
-                    if type(challengeName) == "string" and challengeName ~= "" then
-                        identity.name = challengeName
-                    end
-                    if type(challengeUIMapID) == "number" and challengeUIMapID > 0 then
-                        identity.uiMapID = challengeUIMapID
-                    end
-                end
+    -- Retail exposes the dungeon UiMapID through Challenge Mode. Resolve it
+    -- through the Encounter Journal so Normal/Heroic/Mythic 0 and Mythic+
+    -- share one stable dungeon:<InstanceID> override.
+    if identity.uiMapID and EJ_GetInstanceForMap and EJ_GetInstanceInfo then
+        local okJournal, journalInstanceID = pcall(EJ_GetInstanceForMap, identity.uiMapID)
+        if okJournal and journalInstanceID then
+            local okJournalInfo, _, _, _, _, _, _, _, _, _, instanceMapID = pcall(EJ_GetInstanceInfo, journalInstanceID)
+            if okJournalInfo and tonumber(instanceMapID) and tonumber(instanceMapID) > 0 then
+                identity.instanceID = tonumber(instanceMapID)
             end
         end
     end
 
-    if identity.challengeMapID then
+    -- If the Encounter Journal path is temporarily unavailable, reuse a
+    -- visited dungeon record with the same localized name.
+    if not identity.instanceID and DB and type(DB.knownDungeons) == "table" then
+        for _, known in pairs(DB.knownDungeons) do
+            if type(known) == "table" and known.name == identity.name and tonumber(known.instanceID) then
+                identity.instanceID = tonumber(known.instanceID)
+                break
+            end
+        end
+    end
+
+    if identity.instanceID and identity.instanceID > 0 then
+        identity.key = "dungeon:" .. tostring(identity.instanceID)
+    else
         identity.key = "challenge:" .. tostring(identity.challengeMapID)
-    elseif identity.instanceID and identity.instanceID > 0 then
-        identity.key = "instance:" .. tostring(identity.instanceID)
+    end
+    return identity
+end
+
+function addon:GetCurrentDungeonIdentity()
+    local context = self:DetectActualContext()
+    if context ~= "dungeon" and context ~= "mythicplus" then return nil end
+
+    local ok, name, instanceType, difficultyID, difficultyName, _, _, _, instanceID = pcall(GetInstanceInfo)
+    if not ok or instanceType ~= "party" then return nil end
+
+    local identity = {
+        name = (type(name) == "string" and name ~= "") and name or T("Current dungeon"),
+        context = context,
+        instanceID = tonumber(instanceID),
+        difficultyID = tonumber(difficultyID),
+        difficultyName = difficultyName,
+    }
+
+    if C_Map and C_Map.GetBestMapForUnit then
+        local okMap, uiMapID = pcall(C_Map.GetBestMapForUnit, "player")
+        if okMap and IsAccessibleNumber(uiMapID) and uiMapID > 0 then identity.uiMapID = uiMapID end
+    end
+
+    local challengeMapID = self:GetMythicPlusMapID() or self:FindChallengeMapIDByName(identity.name)
+    if challengeMapID then
+        identity.challengeMapID = tonumber(challengeMapID)
+        identity.supportsMythicPlus = true
+        if C_ChallengeMode and C_ChallengeMode.GetMapUIInfo then
+            local okInfo, challengeName, _, _, _, _, challengeUIMapID = pcall(C_ChallengeMode.GetMapUIInfo, challengeMapID)
+            if okInfo then
+                if type(challengeName) == "string" and challengeName ~= "" then identity.name = challengeName end
+                if IsAccessibleNumber(challengeUIMapID) and challengeUIMapID > 0 then identity.uiMapID = challengeUIMapID end
+            end
+        end
+    end
+
+    -- InstanceID is the canonical identity across all dungeon difficulties.
+    if identity.instanceID and identity.instanceID > 0 then
+        identity.key = "dungeon:" .. tostring(identity.instanceID)
+    elseif identity.challengeMapID then
+        identity.key = "challenge:" .. tostring(identity.challengeMapID)
     elseif identity.uiMapID and identity.uiMapID > 0 then
         identity.key = "map:" .. tostring(identity.uiMapID)
     else
         identity.key = "name:" .. tostring(identity.name)
     end
 
+    if self.MigrateDungeonOverrideIdentity and identity.instanceID then
+        self:MigrateDungeonOverrideIdentity(nil, identity.key, identity)
+    end
     return identity
 end
 
 function addon:RememberDungeonIdentity(identity)
-    if not DB or type(DB.knownDungeons) ~= "table" or type(identity) ~= "table" or not identity.key then
-        return
-    end
-
-    DB.knownDungeons[identity.key] = {
-        key = identity.key,
+    if not DB or type(DB.knownDungeons) ~= "table" or type(identity) ~= "table" or not identity.key then return end
+    local key = identity.instanceID and ("dungeon:" .. tostring(identity.instanceID)) or identity.key
+    DB.knownDungeons[key] = {
+        key = key,
         name = identity.name,
+        context = identity.context,
         instanceID = identity.instanceID,
         challengeMapID = identity.challengeMapID,
         uiMapID = identity.uiMapID,
+        seasonal = identity.seasonal,
+        supportsMythicPlus = identity.supportsMythicPlus,
     }
 end
 
 function addon:RememberCurrentDungeon()
     local identity = self:GetCurrentDungeonIdentity()
-    if identity then
-        self:RememberDungeonIdentity(identity)
-    end
+    if identity then self:RememberDungeonIdentity(identity) end
     return identity
 end
 
 function addon:GetCurrentSeasonDungeonCatalog()
     local result = {}
     local seen = {}
-    if not C_ChallengeMode or not C_ChallengeMode.GetMapUIInfo then
-        return result
-    end
+    if not C_ChallengeMode or not C_ChallengeMode.GetMapUIInfo then return result end
 
+    -- GetMapTable is the stable Challenge Mode catalog used by Loadout Pilot.
+    -- Prefer it so every seasonal dungeon is available even before the player
+    -- has a score for that map. Keep GetMapScoreInfo only as a compatibility
+    -- fallback for clients where the catalog is temporarily unavailable.
     local ids = {}
-    if C_ChallengeMode.GetMapScoreInfo then
-        local okScores, scores = pcall(C_ChallengeMode.GetMapScoreInfo)
-        if okScores and type(scores) == "table" then
-            for _, scoreInfo in ipairs(scores) do
-                local id = type(scoreInfo) == "table" and tonumber(scoreInfo.mapChallengeModeID) or nil
-                if id and id > 0 and not seen[id] then
-                    seen[id] = true
-                    table.insert(ids, id)
-                end
-            end
-        end
-    end
-
-    if #ids == 0 and C_ChallengeMode.GetMapTable then
+    if C_ChallengeMode.GetMapTable then
         local okIDs, mapIDs = pcall(C_ChallengeMode.GetMapTable)
         if okIDs and type(mapIDs) == "table" then
             for _, id in ipairs(mapIDs) do
                 id = tonumber(id)
-                if id and id > 0 and not seen[id] then
-                    seen[id] = true
-                    table.insert(ids, id)
-                end
+                if id and id > 0 and not seen[id] then seen[id] = true; table.insert(ids, id) end
+            end
+        end
+    end
+    if #ids == 0 and C_ChallengeMode.GetMapScoreInfo then
+        local okScores, scores = pcall(C_ChallengeMode.GetMapScoreInfo)
+        if okScores and type(scores) == "table" then
+            for _, scoreInfo in ipairs(scores) do
+                local id = type(scoreInfo) == "table" and tonumber(scoreInfo.mapChallengeModeID) or nil
+                if id and id > 0 and not seen[id] then seen[id] = true; table.insert(ids, id) end
             end
         end
     end
 
     for _, challengeMapID in ipairs(ids) do
-        local okInfo, name, _, _, _, _, uiMapID = pcall(C_ChallengeMode.GetMapUIInfo, challengeMapID)
-        if okInfo and type(name) == "string" and name ~= "" then
-            table.insert(result, {
-                key = "challenge:" .. tostring(challengeMapID),
-                name = name,
-                challengeMapID = challengeMapID,
-                uiMapID = type(uiMapID) == "number" and uiMapID or nil,
-                seasonal = true,
-            })
-        end
+        local identity = self:GetChallengeDungeonIdentity(challengeMapID)
+        if identity and identity.name then table.insert(result, identity) end
     end
-
     return result
 end
 
 function addon:GetDungeonCatalog()
-    local merged = {}
-    local order = {}
-
+    local merged, order = {}, {}
     local function Add(info)
         if type(info) ~= "table" or not info.key then return end
-        local existing = merged[info.key]
+        local canonicalKey = (tonumber(info.instanceID) and tonumber(info.instanceID) > 0)
+            and ("dungeon:" .. tostring(tonumber(info.instanceID))) or info.key
+        local existing = merged[canonicalKey]
         if not existing then
-            existing = {}
-            merged[info.key] = existing
-            table.insert(order, info.key)
+            existing = { key = canonicalKey }
+            merged[canonicalKey] = existing
+            table.insert(order, canonicalKey)
         end
-        for key, value in pairs(info) do
-            if value ~= nil then existing[key] = value end
-        end
+        for field, value in pairs(info) do if value ~= nil then existing[field] = value end end
+        existing.key = canonicalKey
+        existing.supportsMythicPlus = existing.supportsMythicPlus or info.supportsMythicPlus or info.seasonal
     end
 
     for _, info in ipairs(self:GetCurrentSeasonDungeonCatalog()) do Add(info) end
     for _, info in pairs(DB and DB.knownDungeons or {}) do Add(info) end
 
+    -- Keep configured legacy dungeons visible even before they are encountered
+    -- again after upgrading from 1.2.0.
+    for key, override in pairs(DB and DB.dungeonOverrides or {}) do
+        if type(override) == "table" then
+            local info = {
+                key = key,
+                name = override.name or T("Dungeon override"),
+                instanceID = tonumber(override.instanceID),
+                challengeMapID = tonumber(override.challengeMapID),
+                uiMapID = tonumber(override.uiMapID),
+            }
+            if info.challengeMapID then info.supportsMythicPlus = true end
+            Add(info)
+        end
+    end
+
     local current = self:GetCurrentDungeonIdentity()
     if current then
         self:RememberDungeonIdentity(current)
+        current.isCurrent = true
         Add(current)
     end
 
-    -- If a visited dungeon and a seasonal Challenge Mode entry share the same
-    -- UiMapID, fold them into one row. Prefer a key that already owns an
-    -- override; otherwise prefer the seasonal Challenge Mode entry. This keeps
-    -- existing user configuration stable without hardcoding seasonal IDs.
-    local byUIMap = {}
-    for _, key in ipairs(order) do
-        local info = merged[key]
-        if info and info.uiMapID then
-            local preferred = byUIMap[info.uiMapID]
-            if not preferred then
-                byUIMap[info.uiMapID] = info
-            else
-                local preferredHasOverride = self:GetDungeonOverride(preferred.key) ~= nil
-                local candidateHasOverride = self:GetDungeonOverride(info.key) ~= nil
-                if (candidateHasOverride and not preferredHasOverride)
-                    or (candidateHasOverride == preferredHasOverride and info.seasonal and not preferred.seasonal) then
-                    byUIMap[info.uiMapID] = info
-                end
-            end
-        end
-    end
-    for _, key in ipairs(order) do
-        local info = merged[key]
-        local preferred = info and info.uiMapID and byUIMap[info.uiMapID] or nil
-        if preferred and preferred ~= info then
-            preferred.instanceID = preferred.instanceID or info.instanceID
-            preferred.challengeMapID = preferred.challengeMapID or info.challengeMapID
-            preferred.uiMapID = preferred.uiMapID or info.uiMapID
-            preferred.seasonal = preferred.seasonal or info.seasonal
-            if info.seasonal and info.name then preferred.name = info.name end
-            merged[key] = nil
-        end
-    end
-
     local result = {}
-    for _, key in ipairs(order) do
-        if merged[key] then table.insert(result, merged[key]) end
-    end
+    for _, key in ipairs(order) do if merged[key] then table.insert(result, merged[key]) end end
     table.sort(result, function(a, b)
         return string.lower(tostring(a.name or a.key)) < string.lower(tostring(b.name or b.key))
     end)
     return result
+end
+
+function addon:GetDungeonCatalogEntry(key)
+    if not key then return nil end
+    for _, entry in ipairs(self:GetDungeonCatalog()) do if entry.key == key then return entry end end
+
+    local instanceID = tostring(key):match("^instance:(%d+)$") or tostring(key):match("^dungeon:(%d+)$")
+    if instanceID then
+        local canonical = "dungeon:" .. tostring(instanceID)
+        for _, entry in ipairs(self:GetDungeonCatalog()) do if entry.key == canonical then return entry end end
+    end
+    local challengeMapID = tostring(key):match("^challenge:(%d+)$") or tostring(key):match("^mplus:(%d+)$")
+    if challengeMapID then
+        local identity = self:GetChallengeDungeonIdentity(tonumber(challengeMapID))
+        if identity and identity.instanceID then
+            local canonical = "dungeon:" .. tostring(identity.instanceID)
+            for _, entry in ipairs(self:GetDungeonCatalog()) do if entry.key == canonical then return entry end end
+        end
+    end
+    return nil
+end
+
+function addon:GetDungeonFallbackContext(entry)
+    if not entry then return "dungeon" end
+    local current = self:GetCurrentDungeonIdentity()
+    if current and current.key == entry.key then return current.context or "dungeon" end
+    if entry.supportsMythicPlus or entry.seasonal or entry.context == "mythicplus" then return "mythicplus" end
+    return "dungeon"
 end
 
 function addon:GetDungeonOverride(key)
@@ -1331,6 +1442,10 @@ function addon:EnsureDungeonOverride(key, dungeonInfo)
         DB.dungeonOverrides[key] = override
     end
 
+    override.enabled = override.enabled ~= false
+    override.specMode = override.specMode or "inherit"
+    override.loadoutMode = override.loadoutMode or "inherit"
+    override.equipmentMode = override.equipmentMode or "inherit"
     if type(dungeonInfo) == "table" then
         override.name = dungeonInfo.name or override.name
         override.instanceID = dungeonInfo.instanceID or override.instanceID
@@ -1341,33 +1456,272 @@ function addon:EnsureDungeonOverride(key, dungeonInfo)
     return override
 end
 
-function addon:FindDungeonOverrideForIdentity(identity, includeDisabled)
-    if not DB or type(DB.dungeonOverrides) ~= "table" or type(identity) ~= "table" then
-        return nil, nil
+local function MergeDKDungeonOverrideRecord(target, source, sourceWins)
+    if type(target) ~= "table" then target = {} end
+    if type(source) ~= "table" then return target end
+    local fields = {
+        "enabled", "specMode", "specID", "loadoutMode", "loadout",
+        "equipmentMode", "equipment", "lootSpecID", "name", "instanceID",
+        "challengeMapID", "uiMapID",
+    }
+    for _, field in ipairs(fields) do
+        if source[field] ~= nil and (sourceWins or target[field] == nil) then target[field] = source[field] end
+    end
+    return target
+end
+
+function addon:MigrateDungeonOverrideIdentity(oldKey, newKey, info)
+    if not DB or type(DB.dungeonOverrides) ~= "table" or not newKey then return false end
+    local sourceKeys = {}
+    if oldKey then table.insert(sourceKeys, oldKey) end
+    if type(info) == "table" then
+        if info.instanceID then
+            table.insert(sourceKeys, "instance:" .. tostring(info.instanceID))
+            table.insert(sourceKeys, "dungeon:" .. tostring(info.instanceID))
+        end
+        if info.challengeMapID then
+            table.insert(sourceKeys, "challenge:" .. tostring(info.challengeMapID))
+            table.insert(sourceKeys, "mplus:" .. tostring(info.challengeMapID))
+        end
+        if info.uiMapID then table.insert(sourceKeys, "map:" .. tostring(info.uiMapID)) end
+        if info.name then table.insert(sourceKeys, "name:" .. tostring(info.name)) end
     end
 
-    local directKeys = {}
-    if identity.challengeMapID then table.insert(directKeys, "challenge:" .. tostring(identity.challengeMapID)) end
-    if identity.instanceID then table.insert(directKeys, "instance:" .. tostring(identity.instanceID)) end
-    if identity.uiMapID then table.insert(directKeys, "map:" .. tostring(identity.uiMapID)) end
-    if identity.key then table.insert(directKeys, identity.key) end
+    local target = DB.dungeonOverrides[newKey]
+    local changed = false
+    local seen = {}
+    for _, key in ipairs(sourceKeys) do
+        if key and not seen[key] then
+            seen[key] = true
+            local legacy = DB.dungeonOverrides[key]
+            if type(legacy) == "table" and key ~= newKey then
+                target = MergeDKDungeonOverrideRecord(target, legacy, true)
+                DB.dungeonOverrides[key] = nil
+                changed = true
+            end
+        end
+    end
+    if type(target) == "table" then
+        if type(info) == "table" then
+            target.name = info.name or target.name
+            target.instanceID = info.instanceID or target.instanceID
+            target.challengeMapID = info.challengeMapID or target.challengeMapID
+            target.uiMapID = info.uiMapID or target.uiMapID
+        end
+        DB.dungeonOverrides[newKey] = target
+    end
+    return changed
+end
 
+function addon:MigrateUnifiedDungeonOverrides()
+    if not DB or type(DB.dungeonOverrides) ~= "table" then return end
+    local moves = {}
+    for key, override in pairs(DB.dungeonOverrides) do
+        if type(override) == "table" then
+            local instanceID = tostring(key):match("^instance:(%d+)$") or tostring(key):match("^dungeon:(%d+)$") or tonumber(override.instanceID)
+            local challengeMapID = tostring(key):match("^challenge:(%d+)$") or tostring(key):match("^mplus:(%d+)$") or tonumber(override.challengeMapID)
+            local info
+            if challengeMapID then info = self:GetChallengeDungeonIdentity(tonumber(challengeMapID)) end
+            if not instanceID and info then instanceID = info.instanceID end
+            if instanceID and tonumber(instanceID) and tonumber(instanceID) > 0 then
+                info = info or {}
+                info.instanceID = tonumber(instanceID)
+                info.name = info.name or override.name
+                info.challengeMapID = info.challengeMapID or tonumber(challengeMapID)
+                info.uiMapID = info.uiMapID or tonumber(override.uiMapID)
+                table.insert(moves, { oldKey = key, newKey = "dungeon:" .. tostring(tonumber(instanceID)), info = info })
+            end
+        end
+    end
+    for _, move in ipairs(moves) do self:MigrateDungeonOverrideIdentity(move.oldKey, move.newKey, move.info) end
+
+    -- Canonicalize remembered dungeon metadata too.
+    if type(DB.knownDungeons) == "table" then
+        local knownMoves = {}
+        for key, info in pairs(DB.knownDungeons) do
+            if type(info) == "table" and tonumber(info.instanceID) and tonumber(info.instanceID) > 0 then
+                local newKey = "dungeon:" .. tostring(tonumber(info.instanceID))
+                if key ~= newKey then table.insert(knownMoves, { oldKey = key, newKey = newKey, info = info }) end
+            end
+        end
+        for _, move in ipairs(knownMoves) do
+            local existing = DB.knownDungeons[move.newKey] or {}
+            for field, value in pairs(move.info) do if value ~= nil then existing[field] = value end end
+            existing.key = move.newKey
+            DB.knownDungeons[move.newKey] = existing
+            DB.knownDungeons[move.oldKey] = nil
+        end
+    end
+end
+
+function addon:GetLootSpecializationID()
+    if not GetLootSpecialization then return nil end
+    local ok, specID = pcall(GetLootSpecialization)
+    if not ok or not IsAccessibleValue(specID) then return nil end
+    specID = tonumber(specID)
+    if specID == nil or specID < 0 then return nil end
+    return specID
+end
+
+function addon:GetLootSpecDisplayName(specID)
+    specID = tonumber(specID)
+    if specID == nil then return T("No override") end
+    if specID == 0 then
+        local _, currentName = self:GetSpecInfo()
+        return T("Current specialization (%s)", tostring(currentName or T("Unknown")))
+    end
+    local index = self:GetSpecializationIndexByID(specID)
+    local _, name = self:GetSpecializationInfoByIndex(index)
+    return name or tostring((Data.specNames and Data.specNames[specID]) or specID)
+end
+
+function addon:ClearPendingLootSpecChange()
+    lootSpecState.pendingID = nil
+    lootSpecState.pendingRuleKey = nil
+    lootSpecState.isRestore = false
+    lootSpecState.retryElapsed = 0
+    lootSpecState.lastError = nil
+end
+
+function addon:RequestLootSpecialization(targetSpecID, ruleKey, isRestore, reason)
+    targetSpecID = tonumber(targetSpecID)
+    if targetSpecID == nil then return true end
+    if not GetLootSpecialization or not SetLootSpecialization then
+        self:ClearPendingLootSpecChange()
+        lootSpecState.lastError = T("Loot specialization is unavailable on this client.")
+        return false
+    end
+
+    local current = self:GetLootSpecializationID()
+    if current == targetSpecID then
+        self:ClearPendingLootSpecChange()
+        return true
+    end
+
+    lootSpecState.pendingID = targetSpecID
+    lootSpecState.pendingRuleKey = ruleKey
+    lootSpecState.isRestore = isRestore == true
+    lootSpecState.retryElapsed = 0
+
+    local ok = pcall(SetLootSpecialization, targetSpecID)
+    if not ok then
+        lootSpecState.lastError = T("WoW did not allow the loot specialization change yet.")
+        return false
+    end
+
+    local updated = self:GetLootSpecializationID()
+    if updated == targetSpecID then
+        local label = self:GetLootSpecDisplayName(targetSpecID)
+        local restored = lootSpecState.isRestore
+        self:ClearPendingLootSpecChange()
+        Print(restored and T("Loot specialization restored to %s.", label) or T("Loot specialization changed to %s.", label))
+        return true
+    end
+
+    lootSpecState.lastError = T("Applying loot specialization...")
+    return false
+end
+
+function addon:UpdatePendingLootSpecState()
+    if lootSpecState.pendingID == nil then return false end
+    local current = self:GetLootSpecializationID()
+    if current ~= lootSpecState.pendingID then return false end
+    local label = self:GetLootSpecDisplayName(lootSpecState.pendingID)
+    local restored = lootSpecState.isRestore
+    self:ClearPendingLootSpecChange()
+    Print(restored and T("Loot specialization restored to %s.", label) or T("Loot specialization changed to %s.", label))
+    if restored then
+        lootSpecState.activeOverrideKey = nil
+        lootSpecState.restoreID = nil
+    end
+    self:UpdateStatusWidget()
+    return true
+end
+
+function addon:SyncDungeonLootSpecialization(reason)
+    local override, key, identity = self:GetActiveDungeonOverride()
+    local hasLootOverride = type(override) == "table" and override.lootSpecID ~= nil and identity ~= nil
+
+    if hasLootOverride then
+        if not lootSpecState.activeOverrideKey then lootSpecState.restoreID = self:GetLootSpecializationID() end
+        lootSpecState.activeOverrideKey = identity.key or key
+        return self:RequestLootSpecialization(override.lootSpecID, tostring(identity.key or key), false, reason)
+    end
+
+    if lootSpecState.activeOverrideKey then
+        local restoreID = lootSpecState.restoreID
+        if restoreID == nil then
+            lootSpecState.activeOverrideKey = nil
+            self:ClearPendingLootSpecChange()
+            return true
+        end
+        local restored = self:RequestLootSpecialization(restoreID, "restore:" .. tostring(lootSpecState.activeOverrideKey), true, reason)
+        if restored then
+            lootSpecState.activeOverrideKey = nil
+            lootSpecState.restoreID = nil
+        end
+        return restored
+    end
+
+    self:ClearPendingLootSpecChange()
+    return true
+end
+
+function addon:SetDungeonOverrideLootSpec(key, specID)
+    local override = self:EnsureDungeonOverride(key)
+    if not override then return end
+    if specID == nil then
+        override.lootSpecID = nil
+    else
+        specID = tonumber(specID)
+        if specID ~= 0 and specID ~= 250 and specID ~= 251 and specID ~= 252 then return end
+        override.lootSpecID = specID
+    end
+    self:UpdateDungeonOverrideEditor()
+    self:UpdateDungeonOverridesFrame()
+    self:ApplyDungeonOverrideIfCurrent(key, "loot-spec-mapping")
+end
+
+function addon:FindDungeonOverrideForIdentity(identity, includeDisabled)
+    if not DB or type(DB.dungeonOverrides) ~= "table" or type(identity) ~= "table" then return nil, nil end
+
+    local canonicalKey = identity.instanceID and ("dungeon:" .. tostring(identity.instanceID)) or identity.key
+    local directKeys = {}
+    if canonicalKey then table.insert(directKeys, canonicalKey) end
+    if identity.key and identity.key ~= canonicalKey then table.insert(directKeys, identity.key) end
+    if identity.instanceID then table.insert(directKeys, "instance:" .. tostring(identity.instanceID)) end
+    if identity.challengeMapID then
+        table.insert(directKeys, "challenge:" .. tostring(identity.challengeMapID))
+        table.insert(directKeys, "mplus:" .. tostring(identity.challengeMapID))
+    end
+    if identity.uiMapID then table.insert(directKeys, "map:" .. tostring(identity.uiMapID)) end
+
+    local seen = {}
     for _, key in ipairs(directKeys) do
-        local override = self:GetDungeonOverride(key)
-        if override and (includeDisabled or override.enabled ~= false) then
-            return override, key
+        if key and not seen[key] then
+            seen[key] = true
+            local override = self:GetDungeonOverride(key)
+            if override and (includeDisabled or override.enabled ~= false) then
+                if canonicalKey and key ~= canonicalKey then
+                    self:MigrateDungeonOverrideIdentity(key, canonicalKey, identity)
+                    override = self:GetDungeonOverride(canonicalKey) or override
+                    key = canonicalKey
+                end
+                return override, key
+            end
         end
     end
 
     for key, override in pairs(DB.dungeonOverrides) do
         if type(override) == "table" and (includeDisabled or override.enabled ~= false) then
-            if identity.challengeMapID and tonumber(override.challengeMapID) == identity.challengeMapID then
-                return override, key
-            end
-            if identity.instanceID and tonumber(override.instanceID) == identity.instanceID then
-                return override, key
-            end
-            if identity.uiMapID and tonumber(override.uiMapID) == identity.uiMapID then
+            local matches = (identity.challengeMapID and tonumber(override.challengeMapID) == identity.challengeMapID)
+                or (identity.instanceID and tonumber(override.instanceID) == identity.instanceID)
+                or (identity.uiMapID and tonumber(override.uiMapID) == identity.uiMapID)
+            if matches then
+                if canonicalKey and key ~= canonicalKey then
+                    self:MigrateDungeonOverrideIdentity(key, canonicalKey, identity)
+                    return self:GetDungeonOverride(canonicalKey) or override, canonicalKey
+                end
                 return override, key
             end
         end
@@ -1376,7 +1730,8 @@ function addon:FindDungeonOverrideForIdentity(identity, includeDisabled)
 end
 
 function addon:GetActiveDungeonOverride()
-    if self:DetectActualContext() ~= "dungeon" then return nil, nil, nil end
+    local context = self:DetectActualContext()
+    if context ~= "dungeon" and context ~= "mythicplus" then return nil, nil, nil end
     local identity = self:GetCurrentDungeonIdentity()
     if not identity then return nil, nil, nil end
     local override, key = self:FindDungeonOverrideForIdentity(identity)
@@ -1385,9 +1740,14 @@ end
 
 function addon:GetDungeonOverrideEffectiveSpecID(key)
     local override = self:GetDungeonOverride(key)
+    local info = self:GetDungeonCatalogEntry(key)
+    if type(override) ~= "table" and info then
+        override = select(1, self:FindDungeonOverrideForIdentity(info, true))
+    end
     local currentSpecID = select(1, self:GetSpecInfo())
+    local fallbackContext = self:GetDungeonFallbackContext(info or { key = key })
     if type(override) ~= "table" then
-        return self:GetContentSpecializationBinding("dungeon") or currentSpecID
+        return self:GetContentSpecializationBinding(fallbackContext) or currentSpecID
     end
 
     if override.specMode == "spec" then
@@ -1396,15 +1756,17 @@ function addon:GetDungeonOverrideEffectiveSpecID(key)
     elseif override.specMode == "keep" then
         return currentSpecID
     end
-    return self:GetContentSpecializationBinding("dungeon") or currentSpecID
+    return self:GetContentSpecializationBinding(fallbackContext) or currentSpecID
 end
 
 function addon:ApplyDungeonOverrideIfCurrent(key, reason)
-    if not key or self:DetectActualContext() ~= "dungeon" then return end
+    if not key then return end
+    local context = self:DetectActualContext()
+    if context ~= "dungeon" and context ~= "mythicplus" then return end
     local identity = self:GetCurrentDungeonIdentity()
     if not identity then return end
     local _, matchingKey = self:FindDungeonOverrideForIdentity(identity, true)
-    if matchingKey == key then
+    if matchingKey == key or (identity.key and matchingKey == identity.key) then
         self:ApplyAutomaticProfile(reason or "mapping")
     end
 end
@@ -1496,7 +1858,8 @@ end
 function addon:DeleteDungeonOverride(key)
     if not DB or not key then return end
     local wasCurrent = false
-    if self:DetectActualContext() == "dungeon" then
+    local deleteContext = self:DetectActualContext()
+    if deleteContext == "dungeon" or deleteContext == "mythicplus" then
         local identity = self:GetCurrentDungeonIdentity()
         if identity then
             local _, matchingKey = self:FindDungeonOverrideForIdentity(identity, true)
@@ -1513,7 +1876,7 @@ end
 
 function addon:ResolveRuntimeSpecializationTarget(context)
     context = context or self:DetectActualContext()
-    if context == "dungeon" then
+    if context == "dungeon" or context == "mythicplus" then
         local override = select(1, self:GetActiveDungeonOverride())
         if type(override) == "table" then
             if override.specMode == "keep" then
@@ -1531,7 +1894,7 @@ end
 
 function addon:GetRuntimeContextLabel(context)
     context = context or self:DetectActualContext()
-    if context == "dungeon" then
+    if context == "dungeon" or context == "mythicplus" then
         local override, _, identity = self:GetActiveDungeonOverride()
         if type(override) == "table" and override.name then return override.name end
         if identity and identity.name then return identity.name end
@@ -1583,6 +1946,9 @@ function addon:GetBuildProfiles(specID, context)
         return {}
     end
 
+    if context == "mythicplus" then
+        return specBuilds.mythicplus or specBuilds.dungeon or specBuilds.world or {}
+    end
     return specBuilds[context] or specBuilds.world or {}
 end
 
@@ -1717,6 +2083,7 @@ function addon:GetManagedLoadoutName(context)
         world = "DKM World",
         delve = "DKM Delve",
         dungeon = "DKM Dungeon",
+        mythicplus = "DKM Mythic+",
         raid = "DKM Raid",
         pvp = "DKM PvP",
     }
@@ -1864,7 +2231,7 @@ end
 
 function addon:ResolveRuntimeLoadoutBinding(specID, context)
     context = context or self:DetectActualContext()
-    if context == "dungeon" then
+    if context == "dungeon" or context == "mythicplus" then
         local override, key = self:GetActiveDungeonOverride()
         if type(override) == "table" then
             if override.loadoutMode == "keep" then
@@ -2142,9 +2509,9 @@ function addon:CanAutoSwitchSpecialization(targetSpecID, context)
         grouped = ok and value == true
     end
 
-    if grouped and (context == "dungeon" or context == "raid") then
+    if context == "dungeon" or context == "mythicplus" or context == "raid" or context == "pvp" then
         local targetRole = self:GetSpecializationRoleByIDSafe(targetSpecID)
-        local assignedRole = self:GetAssignedGroupRole()
+        local assignedRole = grouped and self:GetAssignedGroupRole() or nil
         if targetRole and assignedRole and targetRole ~= assignedRole then
             return false, T(
                 "Role protection: your group role is %s, but the target specialization is %s (%s). Automatic specialization switching was skipped.",
@@ -2175,6 +2542,28 @@ function addon:ClearPendingSpecializationSwitch()
     self.pendingSpecializationTargetSpecID = nil
     self.pendingSpecializationContext = nil
     self.pendingSpecializationSwitchStartedAt = nil
+    self.pendingSpecializationRetryScheduled = nil
+end
+
+function addon:SchedulePendingSpecializationRetry(targetSpecID, delay)
+    if not targetSpecID or not C_Timer or not C_Timer.After then return end
+    if self.pendingSpecializationRetryScheduled == targetSpecID then return end
+    self.pendingSpecializationRetryScheduled = targetSpecID
+    C_Timer.After(tonumber(delay) or 2.0, function()
+        if addon.pendingSpecializationRetryScheduled == targetSpecID then
+            addon.pendingSpecializationRetryScheduled = nil
+        end
+        if not addon.active or not DB or not DB.autoSwitchSpecialization then return end
+        if addon.pendingSpecializationTargetSpecID ~= targetSpecID then return end
+        if InCombatLockdown and InCombatLockdown() then return end
+        local currentSpecID = select(1, addon:GetSpecInfo())
+        if currentSpecID == targetSpecID then
+            addon:ClearPendingSpecializationSwitch()
+            return
+        end
+        if addon.pendingSpecializationSwitchStartedAt then return end
+        addon:TryAutoSwitchSpecialization("specialization-retry")
+    end)
 end
 
 function addon:StartPendingSpecializationWatch(targetSpecID, attemptsRemaining)
@@ -2194,10 +2583,13 @@ function addon:StartPendingSpecializationWatch(targetSpecID, attemptsRemaining)
         if attemptsRemaining > 1 then
             addon:StartPendingSpecializationWatch(targetSpecID, attemptsRemaining - 1)
         else
-            addon:ClearPendingSpecializationSwitch()
+            -- Keep the target pending and retry like Loadout Pilot instead of
+            -- abandoning the mapping after one transient client rejection.
+            addon.pendingSpecializationSwitchStartedAt = nil
             addon.lastSpecializationSwitchError = T("WoW did not allow the automatic specialization change.")
             addon:UpdateBuildSection()
             addon:UpdateStatusWidget()
+            addon:SchedulePendingSpecializationRetry(targetSpecID, 2.0)
         end
     end)
 end
@@ -2243,7 +2635,7 @@ function addon:TryAutoSwitchSpecialization(reason)
     local now = GetNow()
     if self.lastSpecializationSwitchAttemptTarget == targetSpecID
         and self.lastSpecializationSwitchAttemptAt
-        and (now - self.lastSpecializationSwitchAttemptAt) < 4 then
+        and (now - self.lastSpecializationSwitchAttemptAt) < 2 then
         return false
     end
 
@@ -2254,20 +2646,25 @@ function addon:TryAutoSwitchSpecialization(reason)
     end
 
     local ok, result = false, nil
-    if C_ClassTalents and C_ClassTalents.SwitchToSpecializationByIndex then
-        ok, result = pcall(C_ClassTalents.SwitchToSpecializationByIndex, specIndex)
-    elseif C_SpecializationInfo and C_SpecializationInfo.SetSpecialization then
+    -- Keep the same request path that proved reliable in Loadout Pilot.
+    -- Retail currently routes this into the ClassTalents switch internally.
+    if C_SpecializationInfo and C_SpecializationInfo.SetSpecialization then
         ok, result = pcall(C_SpecializationInfo.SetSpecialization, specIndex)
+    elseif C_ClassTalents and C_ClassTalents.SwitchToSpecializationByIndex then
+        ok, result = pcall(C_ClassTalents.SwitchToSpecializationByIndex, specIndex)
     end
 
     self.lastSpecializationSwitchAttemptTarget = targetSpecID
     self.lastSpecializationSwitchAttemptAt = now
 
     if not ok or result == false then
-        self:ClearPendingSpecializationSwitch()
+        self.pendingSpecializationTargetSpecID = targetSpecID
+        self.pendingSpecializationContext = context
+        self.pendingSpecializationSwitchStartedAt = nil
         self.lastSpecializationSwitchError = T("WoW did not allow the automatic specialization change.")
         self:UpdateBuildSection()
         self:UpdateStatusWidget()
+        self:SchedulePendingSpecializationRetry(targetSpecID, 2.0)
         return false
     end
 
@@ -2291,9 +2688,14 @@ function addon:ApplyAutomaticProfile(reason)
     local context = self:DetectActualContext()
     local targetSpecID = select(1, self:ResolveRuntimeSpecializationTarget(context))
     local currentSpecID = select(1, self:GetSpecInfo())
-    if targetSpecID and currentSpecID ~= targetSpecID then
-        return false
-    end
+
+    -- Loot specialization is deliberately independent from the specialization
+    -- used to play the dungeon. Apply/restore it even when a playing-spec
+    -- switch is still pending or was blocked by role protection. This lets a
+    -- Frost/Unholy DPS intentionally select Blood loot without becoming Tank.
+    self:SyncDungeonLootSpecialization(reason)
+
+    if targetSpecID and currentSpecID ~= targetSpecID then return false end
     self:TryAutoSwitchLoadout(reason)
     self:TryAutoSwitchEquipment(reason)
     return true
@@ -2567,6 +2969,7 @@ function addon:GetManagedEquipmentSetName(specID, context)
         world = "World",
         delve = "Delve",
         dungeon = "Dng",
+        mythicplus = "M+",
         raid = "Raid",
         pvp = "PvP",
     }
@@ -2708,7 +3111,7 @@ end
 
 function addon:ResolveRuntimeEquipmentBinding(specID, context)
     context = context or self:DetectActualContext()
-    if context == "dungeon" then
+    if context == "dungeon" or context == "mythicplus" then
         local override, key = self:GetActiveDungeonOverride()
         if type(override) == "table" then
             if override.equipmentMode == "keep" then
@@ -2826,6 +3229,28 @@ function addon:ToggleAutoSwitchEquipment()
     self:SetAutoSwitchEquipment(not DB.autoSwitchEquipment)
 end
 
+function addon:SyncPendingEquipmentState(announce)
+    if not self.pendingEquipmentKey then return false end
+
+    local specID = select(1, self:GetSpecInfo())
+    local context = self:DetectActualContext()
+    local targetSpecID = select(1, self:ResolveRuntimeSpecializationTarget(context))
+    if targetSpecID and targetSpecID ~= specID then return false end
+
+    local binding, info = self:ResolveRuntimeEquipmentBinding(specID, context)
+    if info and info.isEquipped then
+        self.pendingEquipmentKey = nil
+        lootSpecState.equipmentRetryElapsed = 0
+        if announce and type(binding) == "table" then
+            Print(T("Auto-equipping '%s' for %s.", tostring(binding.name or binding.setID), tostring(self:GetRuntimeContextLabel(context))))
+        end
+        self:UpdateBuildSection()
+        self:UpdateStatusWidget()
+        return true
+    end
+    return false
+end
+
 function addon:TryAutoSwitchEquipment(reason)
     if not DB or not DB.autoSwitchEquipment or not self.active then
         return false
@@ -2839,12 +3264,14 @@ function addon:TryAutoSwitchEquipment(reason)
     local targetSpecID = select(1, self:ResolveRuntimeSpecializationTarget(context))
     if targetSpecID and targetSpecID ~= specID then
         self.pendingEquipmentKey = nil
+        lootSpecState.equipmentRetryElapsed = 0
         return false
     end
 
     local binding, info, mode, _, overrideKey = self:ResolveRuntimeEquipmentBinding(specID, context)
     if mode == "keep" then
         self.pendingEquipmentKey = nil
+        lootSpecState.equipmentRetryElapsed = 0
         self:UpdateStatusWidget()
         return true
     end
@@ -2853,6 +3280,7 @@ function addon:TryAutoSwitchEquipment(reason)
         or self:GetEquipmentBindingKey(specID, context)
     if type(binding) ~= "table" then
         self.pendingEquipmentKey = nil
+        lootSpecState.equipmentRetryElapsed = 0
         return false
     end
 
@@ -2864,45 +3292,41 @@ function addon:TryAutoSwitchEquipment(reason)
 
     if info.isEquipped then
         self.pendingEquipmentKey = nil
+        lootSpecState.equipmentRetryElapsed = 0
         self:UpdateStatusWidget()
         return true
     end
 
+    self.pendingEquipmentKey = key
+
     if InCombatLockdown and InCombatLockdown() then
-        self.pendingEquipmentKey = key
         self:UpdateStatusWidget()
         return false
     end
 
     if C_EquipmentSet and C_EquipmentSet.CanUseEquipmentSets then
         local okCan, canUse = pcall(C_EquipmentSet.CanUseEquipmentSets)
-        if okCan and canUse == false then
-            self.pendingEquipmentKey = key
+        local canUseAccessible = okCan and GetAccessibleBoolean(canUse) or nil
+        if canUseAccessible == false then
+            self:UpdateStatusWidget()
             return false
         end
     end
 
     if C_EquipmentSet and C_EquipmentSet.UseEquipmentSet then
-        local okUse, equipped = pcall(C_EquipmentSet.UseEquipmentSet, binding.setID)
-        if okUse and equipped then
-            self.pendingEquipmentKey = nil
-            Print(T("Auto-equipping '%s' for %s.", tostring(binding.name or binding.setID), tostring(self:GetRuntimeContextLabel(context))))
-            if C_Timer and C_Timer.After then
-                C_Timer.After(0.35, function()
-                    if addon.active then
-                        addon:UpdateBuildSection()
-                        addon:UpdateStatusWidget()
-                    end
-                end)
-            else
-                self:UpdateBuildSection()
-                self:UpdateStatusWidget()
-            end
+        local okUse, rawEquipped = pcall(C_EquipmentSet.UseEquipmentSet, binding.setID)
+        local requestAccepted = okUse and GetAccessibleBoolean(rawEquipped)
+        if requestAccepted == true then
+            -- Do not clear the pending target just because the request was
+            -- accepted. Retail can report success before the equipment-set
+            -- state has caught up during transitions. Finalize only after the
+            -- mapped set is actually reported as equipped.
+            if self:SyncPendingEquipmentState(true) then return true end
+            self:UpdateStatusWidget()
             return true
         end
     end
 
-    self.pendingEquipmentKey = key
     self:UpdateStatusWidget()
     return false
 end
@@ -3844,9 +4268,10 @@ function addon:CreateProfileSpecializationPickerFrame()
     local frame = CreateFrame("Frame", "DKMentorProfileSpecializationPicker", UIParent, "BackdropTemplate")
     frame:SetSize(285, 162)
     frame:SetFrameStrata("FULLSCREEN_DIALOG")
-    frame:SetFrameLevel(220)
+    frame:SetFrameLevel(1200)
     frame:SetClampedToScreen(true)
     frame:EnableMouse(true)
+    if frame.SetToplevel then frame:SetToplevel(true) end
     ApplyBackdrop(frame, 0.99)
 
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -3902,7 +4327,7 @@ function addon:UpdateProfileSpecializationPicker()
     local context = self:GetBuildConfigContext()
     local selected = self:GetContentSpecializationBinding(context)
     for index, row in ipairs(frame.rows or {}) do
-        if index == 1 then
+        if row.specID == nil then
             row.icon:SetTexture(QUESTION_MARK_ICON)
             row.name:SetText(T("Do not change"))
         else
@@ -3936,39 +4361,128 @@ function addon:ToggleProfileSpecializationPicker()
     frame:Raise()
 end
 
-function addon:GetDungeonOverrideSummary(info)
-    if type(info) ~= "table" then return T("Uses Dungeon profile") end
-    local override = self:GetDungeonOverride(info.key)
-    if type(override) ~= "table" then
-        override = select(1, self:FindDungeonOverrideForIdentity(info, true))
+function addon:CreateLootSpecializationPickerFrame()
+    local frame = CreateFrame("Frame", "DKMentorLootSpecializationPicker", UIParent, "BackdropTemplate")
+    frame:SetSize(330, 196)
+    frame:SetFrameStrata("FULLSCREEN_DIALOG")
+    frame:SetFrameLevel(1200)
+    frame:SetClampedToScreen(true)
+    frame:EnableMouse(true)
+    if frame.SetToplevel then frame:SetToplevel(true) end
+    ApplyBackdrop(frame, 0.995)
+
+    frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    frame.title:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -11)
+    frame.title:SetText(T("Loot specialization"))
+    frame.title:SetTextColor(0.52, 0.88, 1)
+
+    frame.rows = {}
+    local values = { false, 0, 250, 251, 252 }
+    for index, value in ipairs(values) do
+        local row = CreateFrame("Button", nil, frame, "BackdropTemplate")
+        row:SetSize(306, 27)
+        row:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -31 - ((index - 1) * 29))
+        row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
+        row:SetBackdropColor(0.035, 0.09, 0.12, 0.94)
+        row:SetBackdropBorderColor(0.12, 0.34, 0.42, 0.9)
+        row.noLootOverride = value == false
+        row.lootSpecID = row.noLootOverride and nil or value
+
+        row.icon = row:CreateTexture(nil, "ARTWORK")
+        row.icon:SetSize(21, 21)
+        row.icon:SetPoint("LEFT", row, "LEFT", 5, 0)
+        row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        row.name:SetPoint("LEFT", row.icon, "RIGHT", 8, 0)
+        row.name:SetWidth(205)
+        row.name:SetJustifyH("LEFT")
+        row.state = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        row.state:SetPoint("RIGHT", row, "RIGHT", -7, 0)
+        row.state:SetWidth(62)
+        row.state:SetJustifyH("RIGHT")
+        row:SetScript("OnEnter", function(self) self:SetBackdropColor(0.055, 0.18, 0.23, 0.98) end)
+        row:SetScript("OnLeave", function() addon:UpdateLootSpecializationPicker() end)
+        row:SetScript("OnClick", function(self)
+            if addon.activeDungeonOverrideKey then addon:SetDungeonOverrideLootSpec(addon.activeDungeonOverrideKey, self.lootSpecID) end
+            frame:Hide()
+        end)
+        frame.rows[index] = row
     end
-    if type(override) ~= "table" then return T("Uses Dungeon profile") end
+    frame:Hide()
+    return frame
+end
+
+function addon:UpdateLootSpecializationPicker()
+    local frame = self.lootSpecializationPickerFrame
+    local key = self.activeDungeonOverrideKey
+    if not frame or not key then return end
+    local override = self:GetDungeonOverride(key)
+    local selected = type(override) == "table" and override.lootSpecID or nil
+    for index, row in ipairs(frame.rows or {}) do
+        if index == 1 then
+            row.icon:SetTexture(QUESTION_MARK_ICON)
+            row.name:SetText(T("No override"))
+        elseif row.lootSpecID == 0 then
+            local currentSpecID = select(1, self:GetSpecInfo())
+            local specIndex = self:GetSpecializationIndexByID(currentSpecID)
+            local _, currentName, icon = self:GetSpecializationInfoByIndex(specIndex)
+            row.icon:SetTexture(icon or QUESTION_MARK_ICON)
+            row.name:SetText(T("Current specialization (%s)", tostring(currentName or T("Unknown"))))
+        else
+            local specIndex = self:GetSpecializationIndexByID(row.lootSpecID)
+            local _, name, icon = self:GetSpecializationInfoByIndex(specIndex)
+            row.icon:SetTexture(icon or QUESTION_MARK_ICON)
+            row.name:SetText(name or tostring((Data.specNames and Data.specNames[row.lootSpecID]) or row.lootSpecID))
+        end
+        local isSelected = (row.noLootOverride and selected == nil) or (not row.noLootOverride and selected == row.lootSpecID)
+        if isSelected then
+            row.state:SetText(T("SELECTED"))
+            row.state:SetTextColor(0.45, 1.0, 0.65)
+            row:SetBackdropColor(0.045, 0.18, 0.13, 0.98)
+            row:SetBackdropBorderColor(0.30, 0.78, 0.50, 1)
+        else
+            row.state:SetText("")
+            row:SetBackdropColor(0.035, 0.09, 0.12, 0.94)
+            row:SetBackdropBorderColor(0.12, 0.34, 0.42, 0.9)
+        end
+    end
+end
+
+function addon:ToggleLootSpecializationPicker()
+    local frame = self.lootSpecializationPickerFrame
+    local editor = self.dungeonOverrideEditorFrame
+    if not frame or not editor or not editor.lootSpecButton then return end
+    if frame:IsShown() then frame:Hide(); return end
+    self:UpdateLootSpecializationPicker()
+    frame:ClearAllPoints()
+    frame:SetPoint("TOPLEFT", editor.lootSpecButton, "BOTTOMLEFT", 0, -4)
+    frame:Show()
+    frame:Raise()
+end
+
+function addon:GetDungeonOverrideSummary(info)
+    if type(info) ~= "table" then return T("Uses Dungeon/Mythic+ profile") end
+    local override = self:GetDungeonOverride(info.key)
+    if type(override) ~= "table" then override = select(1, self:FindDungeonOverrideForIdentity(info, true)) end
+    if type(override) ~= "table" then return T("Uses Dungeon/Mythic+ profile") end
     if override.enabled == false then return T("Override disabled") end
 
+    local fallbackContext = self:GetDungeonFallbackContext(info)
+    local fallbackName = tostring((Data.contextNames and Data.contextNames[fallbackContext]) or fallbackContext)
     local specText
-    if override.specMode == "keep" then
-        specText = T("Keep current")
-    elseif override.specMode == "spec" and override.specID then
-        specText = tostring((Data.specNames and Data.specNames[tonumber(override.specID)]) or override.specID)
-    else
-        specText = T("Dungeon default")
-    end
+    if override.specMode == "keep" then specText = T("Keep current")
+    elseif override.specMode == "spec" and override.specID then specText = tostring((Data.specNames and Data.specNames[tonumber(override.specID)]) or override.specID)
+    else specText = fallbackName end
 
-    local talentText = T("Dungeon default")
-    if override.loadoutMode == "keep" then
-        talentText = T("Keep current")
-    elseif override.loadoutMode == "override" and type(override.loadout) == "table" then
-        talentText = tostring(override.loadout.name or T("Custom"))
-    end
+    local lootText = self:GetLootSpecDisplayName(override.lootSpecID)
+    local talentText = fallbackName
+    if override.loadoutMode == "keep" then talentText = T("Keep current")
+    elseif override.loadoutMode == "override" and type(override.loadout) == "table" then talentText = tostring(override.loadout.name or T("Custom")) end
+    local gearText = fallbackName
+    if override.equipmentMode == "keep" then gearText = T("Keep current")
+    elseif override.equipmentMode == "override" and type(override.equipment) == "table" then gearText = tostring(override.equipment.name or T("Custom")) end
 
-    local gearText = T("Dungeon default")
-    if override.equipmentMode == "keep" then
-        gearText = T("Keep current")
-    elseif override.equipmentMode == "override" and type(override.equipment) == "table" then
-        gearText = tostring(override.equipment.name or T("Custom"))
-    end
-
-    return T("Spec: %s • Talents: %s • Gear: %s", specText, talentText, gearText)
+    return T("Spec: %s • Loot: %s • Talents: %s • Gear: %s", specText, lootText, talentText, gearText)
 end
 
 function addon:CreateDungeonOverridesFrame()
@@ -4001,7 +4515,7 @@ function addon:CreateDungeonOverridesFrame()
     frame.subtitle:SetPoint("TOPLEFT", frame.title, "BOTTOMLEFT", 0, -6)
     frame.subtitle:SetWidth(650)
     frame.subtitle:SetJustifyH("LEFT")
-    frame.subtitle:SetText(T("Override specialization, talents, or gear for individual dungeons. Anything left on Dungeon default inherits your normal Dungeon profile."))
+    frame.subtitle:SetText(T("One override per dungeon is shared across Normal, Heroic, Mythic 0, and Mythic+. Spec, talents, and gear can inherit the active Dungeon/Mythic+ profile; Loot Spec is independent."))
 
     frame.closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     frame.closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -4)
@@ -4023,7 +4537,7 @@ function addon:CreateDungeonOverridesFrame()
 
         row.summary = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
         row.summary:SetPoint("TOPLEFT", row, "TOPLEFT", 9, -21)
-        row.summary:SetWidth(555)
+        row.summary:SetWidth(600)
         row.summary:SetJustifyH("LEFT")
 
         row.action = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -4145,17 +4659,23 @@ end
 
 function addon:CreateDungeonOverrideEditorFrame()
     local frame = CreateFrame("Frame", "DKMentorDungeonOverrideEditorFrame", UIParent, "BackdropTemplate")
-    frame:SetSize(640, 405)
+    frame:SetSize(640, 485)
     frame:SetFrameStrata("FULLSCREEN_DIALOG")
-    frame:SetFrameLevel(230)
+    frame:SetFrameLevel(900)
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
     frame:EnableMouse(true)
+    if frame.SetToplevel then frame:SetToplevel(true) end
     frame:RegisterForDrag("LeftButton")
     ApplyBackdrop(frame, 0.995)
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     frame:SetScript("OnDragStart", function(self) if not InCombatLockdown() then self:StartMoving() end end)
     frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    frame:SetScript("OnHide", function()
+        if addon.lootSpecializationPickerFrame then addon.lootSpecializationPickerFrame:Hide() end
+        if loadoutPickerFrame then loadoutPickerFrame:Hide() end
+        if equipmentPickerFrame then equipmentPickerFrame:Hide() end
+    end)
 
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     frame.title:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -15)
@@ -4167,7 +4687,6 @@ function addon:CreateDungeonOverrideEditorFrame()
 
     frame.closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     frame.closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -4)
-
     frame.enableButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     frame.enableButton:SetSize(210, 28)
     frame.enableButton:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -68)
@@ -4178,23 +4697,36 @@ function addon:CreateDungeonOverrideEditorFrame()
     end)
 
     frame.specLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    frame.specLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -118)
-    frame.specLabel:SetText(T("Specialization"))
+    frame.specLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -116)
+    frame.specLabel:SetText(T("Playing specialization"))
     frame.specButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     frame.specButton:SetSize(290, 28)
-    frame.specButton:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -140)
+    frame.specButton:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -138)
     frame.specButton:SetScript("OnClick", function() if addon.activeDungeonOverrideKey then addon:CycleDungeonOverrideSpecMode(addon.activeDungeonOverrideKey) end end)
     frame.specHint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     frame.specHint:SetPoint("LEFT", frame.specButton, "RIGHT", 12, 0)
     frame.specHint:SetWidth(295)
     frame.specHint:SetJustifyH("LEFT")
 
+    frame.lootSpecLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    frame.lootSpecLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -186)
+    frame.lootSpecLabel:SetText(T("Loot specialization"))
+    frame.lootSpecButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.lootSpecButton:SetSize(290, 28)
+    frame.lootSpecButton:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -208)
+    frame.lootSpecButton:SetScript("OnClick", function() addon:ToggleLootSpecializationPicker() end)
+    frame.lootSpecHint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    frame.lootSpecHint:SetPoint("LEFT", frame.lootSpecButton, "RIGHT", 12, 0)
+    frame.lootSpecHint:SetWidth(295)
+    frame.lootSpecHint:SetJustifyH("LEFT")
+    frame.lootSpecHint:SetText(T("Changes only the loot table preference; it never changes the role you are playing."))
+
     frame.talentLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    frame.talentLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -190)
+    frame.talentLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -256)
     frame.talentLabel:SetText(T("Talent loadout"))
     frame.talentModeButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     frame.talentModeButton:SetSize(290, 28)
-    frame.talentModeButton:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -212)
+    frame.talentModeButton:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -278)
     frame.talentModeButton:SetScript("OnClick", function() if addon.activeDungeonOverrideKey then addon:CycleDungeonOverrideLoadoutMode(addon.activeDungeonOverrideKey) end end)
     frame.talentChooseButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     frame.talentChooseButton:SetSize(180, 28)
@@ -4205,11 +4737,11 @@ function addon:CreateDungeonOverrideEditorFrame()
     end)
 
     frame.gearLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    frame.gearLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -262)
+    frame.gearLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -326)
     frame.gearLabel:SetText(T("Equipment set"))
     frame.gearModeButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     frame.gearModeButton:SetSize(290, 28)
-    frame.gearModeButton:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -284)
+    frame.gearModeButton:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -348)
     frame.gearModeButton:SetScript("OnClick", function() if addon.activeDungeonOverrideKey then addon:CycleDungeonOverrideEquipmentMode(addon.activeDungeonOverrideKey) end end)
     frame.gearChooseButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     frame.gearChooseButton:SetSize(180, 28)
@@ -4220,12 +4752,12 @@ function addon:CreateDungeonOverrideEditorFrame()
     end)
 
     frame.hint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    frame.hint:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -330)
+    frame.hint:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -396)
     frame.hint:SetWidth(595)
     frame.hint:SetHeight(35)
     frame.hint:SetJustifyH("LEFT")
     frame.hint:SetJustifyV("TOP")
-    frame.hint:SetText(T("Inherit keeps the normal Dungeon profile. Keep current prevents DK Mentor from changing only that component. Choosing an explicit value overrides only that component."))
+    frame.hint:SetText(T("Inherit follows the active Dungeon or Mythic+ profile. Keep current prevents DK Mentor from changing that component. Loot Spec uses No override when DK Mentor should leave it alone."))
 
     frame.deleteButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     frame.deleteButton:SetSize(180, 27)
@@ -4258,38 +4790,35 @@ function addon:UpdateDungeonOverrideEditor()
     if not frame or not key or not DB then return end
     local override = self:GetDungeonOverride(key)
     if type(override) ~= "table" then return end
+    local info = self:GetDungeonCatalogEntry(key) or {
+        key = key, name = override.name, instanceID = override.instanceID,
+        challengeMapID = override.challengeMapID, uiMapID = override.uiMapID,
+        supportsMythicPlus = override.challengeMapID ~= nil,
+    }
+    local fallbackContext = self:GetDungeonFallbackContext(info)
+    local fallbackName = tostring((Data.contextNames and Data.contextNames[fallbackContext]) or fallbackContext)
 
     frame.title:SetText(T("Dungeon Override — %s", tostring(override.name or T("Dungeon"))))
-    frame.subtitle:SetText(T("This override is matched by WoW dungeon IDs discovered at runtime; it does not depend on a hardcoded season list."))
+    frame.subtitle:SetText(T("One dungeon rule is reused across Normal, Heroic, Mythic 0, and Mythic+. Inherited fields follow the active Dungeon/Mythic+ profile."))
     frame.enableButton:SetText(T(override.enabled == false and "Override: DISABLED" or "Override: ENABLED"))
 
     local specText
-    if override.specMode == "keep" then
-        specText = T("Spec: Keep current")
-    elseif override.specMode == "spec" and override.specID then
-        specText = T("Spec: %s", tostring((Data.specNames and Data.specNames[tonumber(override.specID)]) or override.specID))
-    else
-        specText = T("Spec: Use Dungeon default")
-    end
+    if override.specMode == "keep" then specText = T("Spec: Keep current")
+    elseif override.specMode == "spec" and override.specID then specText = T("Spec: %s", tostring((Data.specNames and Data.specNames[tonumber(override.specID)]) or override.specID))
+    else specText = T("Spec: Use %s default", fallbackName) end
     frame.specButton:SetText(specText)
     local effectiveSpecID = self:GetDungeonOverrideEffectiveSpecID(key)
     frame.specHint:SetText(T("Effective specialization for talent selection: %s", tostring((Data.specNames and Data.specNames[effectiveSpecID]) or effectiveSpecID)))
 
-    if override.loadoutMode == "keep" then
-        frame.talentModeButton:SetText(T("Talents: Keep current"))
-    elseif override.loadoutMode == "override" and type(override.loadout) == "table" then
-        frame.talentModeButton:SetText(T("Talents: %s", tostring(override.loadout.name or T("Custom"))))
-    else
-        frame.talentModeButton:SetText(T("Talents: Use Dungeon default"))
-    end
+    frame.lootSpecButton:SetText(T("Loot: %s", self:GetLootSpecDisplayName(override.lootSpecID)))
 
-    if override.equipmentMode == "keep" then
-        frame.gearModeButton:SetText(T("Gear: Keep current"))
-    elseif override.equipmentMode == "override" and type(override.equipment) == "table" then
-        frame.gearModeButton:SetText(T("Gear: %s", tostring(override.equipment.name or T("Custom"))))
-    else
-        frame.gearModeButton:SetText(T("Gear: Use Dungeon default"))
-    end
+    if override.loadoutMode == "keep" then frame.talentModeButton:SetText(T("Talents: Keep current"))
+    elseif override.loadoutMode == "override" and type(override.loadout) == "table" then frame.talentModeButton:SetText(T("Talents: %s", tostring(override.loadout.name or T("Custom"))))
+    else frame.talentModeButton:SetText(T("Talents: Use %s default", fallbackName)) end
+
+    if override.equipmentMode == "keep" then frame.gearModeButton:SetText(T("Gear: Keep current"))
+    elseif override.equipmentMode == "override" and type(override.equipment) == "table" then frame.gearModeButton:SetText(T("Gear: %s", tostring(override.equipment.name or T("Custom"))))
+    else frame.gearModeButton:SetText(T("Gear: Use %s default", fallbackName)) end
 end
 
 local function CreateMainFrame()
@@ -4374,7 +4903,7 @@ local function CreateMainFrame()
 
     -- COMBAT TAB -----------------------------------------------------------
     frame.combatContextBar = CreateContextSelector(combatPage, T("Detected content:"), {
-        contexts = { "world", "delve", "dungeon", "raid", "pvp" },
+        contexts = { "world", "delve", "dungeon", "mythicplus", "raid", "pvp" },
         labelWidth = 145,
         buttonWidth = 96,
         getSelectedContext = function() return addon:DetectActualContext() end,
@@ -4468,7 +4997,7 @@ local function CreateMainFrame()
 
     -- LOADOUTS TAB ---------------------------------------------------------
     frame.loadoutContextBar = CreateContextSelector(buildsPage, T("Configure loadout for:"), {
-        contexts = { "world", "delve", "dungeon", "raid", "pvp" },
+        contexts = { "world", "delve", "dungeon", "mythicplus", "raid", "pvp" },
         labelWidth = 180,
         buttonWidth = 92,
         getSelectedContext = function() return addon:GetBuildConfigContext() end,
@@ -5174,6 +5703,11 @@ local function CreateStatusWidget()
         self:StopMovingOrSizing()
         if DB and DB.hudLocked == false then SaveFramePosition(self, "statusWidget") end
     end)
+    frame:SetScript("OnMouseUp", function(_, mouseButton)
+        if mouseButton == "RightButton" then
+            addon:ToggleMainFrame()
+        end
+    end)
 
     -- The specialization icon doubles as the specialization picker button.
     -- This keeps the compact one-line HUD while preserving manual spec switching.
@@ -5185,13 +5719,20 @@ local function CreateStatusWidget()
 
     frame.specButton = CreateFrame("Button", nil, frame)
     frame.specButton:SetAllPoints(frame.icon)
-    frame.specButton:RegisterForClicks("LeftButtonUp")
-    frame.specButton:SetScript("OnClick", function() addon:ToggleSpecializationPicker() end)
+    frame.specButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    frame.specButton:SetScript("OnClick", function(_, mouseButton)
+        if mouseButton == "RightButton" then
+            addon:ToggleMainFrame()
+        else
+            addon:ToggleSpecializationPicker()
+        end
+    end)
     frame.specButton:SetScript("OnEnter", function(self)
         if GameTooltip then
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:AddLine(T("Change specialization"))
             GameTooltip:AddLine(T("Click to choose Blood, Frost, or Unholy manually. Automatic specialization switching can be configured in Loadouts."), 1, 1, 1, true)
+            GameTooltip:AddLine(T("Right-click: open or close DK Mentor"), 0.72, 0.86, 1.0, true)
             GameTooltip:Show()
         end
     end)
@@ -5229,6 +5770,25 @@ local function CreateStatusWidget()
         GameTooltip:AddLine(T("Shows your Death Knight specialization, detected content, active WoW talent loadout, and associated equipment set."), 1, 1, 1, true)
 
         local status = addon:GetReadyCheckStatus()
+        local context = addon:DetectActualContext()
+        local contextLabel = (Data.contextNames and Data.contextNames[context]) or context
+        local currentSpecID, currentSpecName = addon:GetSpecInfo()
+        local targetSpecID = select(1, addon:ResolveRuntimeSpecializationTarget(context))
+        local assignedRole = addon:GetAssignedGroupRole()
+        local currentRole = addon:GetSpecializationRoleByIDSafe(currentSpecID)
+        local lootSpecID = addon:GetLootSpecializationID()
+        local activeOverride, _, dungeonIdentity = addon:GetActiveDungeonOverride()
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine(T("Loadout status"), 0.45, 0.85, 1)
+        GameTooltip:AddLine(T("Content: %s", tostring(contextLabel)), 1, 1, 1)
+        if dungeonIdentity and dungeonIdentity.name then GameTooltip:AddLine(T("Dungeon: %s", tostring(dungeonIdentity.name)), 1, 1, 1) end
+        GameTooltip:AddLine(T("Current specialization: %s (%s)", tostring(currentSpecName or currentSpecID), addon:GetRoleDisplayName(currentRole)), 1, 1, 1)
+        if targetSpecID then GameTooltip:AddLine(T("Target specialization: %s", tostring((Data.specNames and Data.specNames[targetSpecID]) or targetSpecID)), 1, 1, 1) end
+        if assignedRole then GameTooltip:AddLine(T("Assigned group role: %s", addon:GetRoleDisplayName(assignedRole)), 1, 1, 1) end
+        GameTooltip:AddLine(T("Loot specialization: %s", addon:GetLootSpecDisplayName(lootSpecID)), 1, 1, 1)
+        if activeOverride then GameTooltip:AddLine(T("Dungeon override: ACTIVE"), 0.45, 1.0, 0.65) end
+        if lootSpecState.pendingID ~= nil or lootSpecState.lastError then GameTooltip:AddLine(tostring(lootSpecState.lastError or T("Applying loot specialization...")), 1.0, 0.82, 0.35, true) end
+
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine(T("DK Ready Check"), 0.45, 0.85, 1)
         if status.targetSpecID then
@@ -5244,6 +5804,7 @@ local function CreateStatusWidget()
 
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine(DB and DB.hudLocked and T("HUDs are locked. Unlock them in Settings to move this panel.") or T("Drag to move. Toggle it from Settings or with /dkm hud."), 0.65, 0.8, 0.9, true)
+        GameTooltip:AddLine(T("Right-click: open or close DK Mentor"), 0.72, 0.86, 1.0, true)
         GameTooltip:Show()
     end)
     frame:SetScript("OnLeave", function()
@@ -6810,10 +7371,12 @@ end
 local function CreateBarLayoutFrame()
     local frame = CreateFrame("Frame", "DKMentorBarLayoutFrame", UIParent, "BackdropTemplate")
     frame:SetSize(820, 560)
-    frame:SetFrameStrata("DIALOG")
+    frame:SetFrameStrata("FULLSCREEN_DIALOG")
+    frame:SetFrameLevel(1200)
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
     frame:EnableMouse(true)
+    if frame.SetToplevel then frame:SetToplevel(true) end
     frame:RegisterForDrag("LeftButton")
     ApplyBackdrop(frame, 0.98)
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
@@ -7133,10 +7696,12 @@ end
 local function CreateLoadoutPickerFrame()
     local frame = CreateFrame("Frame", "DKMentorLoadoutPickerFrame", UIParent, "BackdropTemplate")
     frame:SetSize(520, 455)
-    frame:SetFrameStrata("DIALOG")
+    frame:SetFrameStrata("FULLSCREEN_DIALOG")
+    frame:SetFrameLevel(1200)
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
     frame:EnableMouse(true)
+    if frame.SetToplevel then frame:SetToplevel(true) end
     frame:RegisterForDrag("LeftButton")
     ApplyBackdrop(frame, 0.98)
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
@@ -7234,10 +7799,12 @@ end
 local function CreateEquipmentPickerFrame()
     local frame = CreateFrame("Frame", "DKMentorEquipmentPickerFrame", UIParent, "BackdropTemplate")
     frame:SetSize(520, 455)
-    frame:SetFrameStrata("DIALOG")
+    frame:SetFrameStrata("FULLSCREEN_DIALOG")
+    frame:SetFrameLevel(1200)
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
     frame:EnableMouse(true)
+    if frame.SetToplevel then frame:SetToplevel(true) end
     frame:RegisterForDrag("LeftButton")
     ApplyBackdrop(frame, 0.98)
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
@@ -8017,7 +8584,7 @@ function addon:UpdateBuildSection()
     if build.autoSpecButton then build.autoSpecButton:SetText(T(DB.autoSwitchSpecialization and "Spec AUTO: ON" or "Spec AUTO: OFF")) end
     build.autoSwitchButton:SetText(T(DB.autoSwitchLoadouts and "Talents AUTO: ON" or "Talents AUTO: OFF"))
     build.autoEquipmentButton:SetText(T(DB.autoSwitchEquipment and "Gear AUTO: ON" or "Gear AUTO: OFF"))
-    build.autoHint:SetText(T("This profile is specific to %s / %s. DK Mentor can switch specialization, talents, and equipment automatically when their AUTO options are enabled. Dungeon overrides can replace only the values you choose.", tostring(specName), tostring(contextName)))
+    build.autoHint:SetText(T("This profile is specific to %s / %s. DK Mentor can switch specialization, talents, and equipment automatically when their AUTO options are enabled. Dungeon overrides can also set Loot Spec independently.", tostring(specName), tostring(contextName)))
     if build.hudButton then build.hudButton:SetText(T(DB.statusWidget.enabled and "Build HUD: ON" or "Build HUD: OFF")) end
     if mainFrame.loadoutContextBar and mainFrame.loadoutContextBar.RefreshSelection then
         mainFrame.loadoutContextBar:RefreshSelection()
@@ -10352,7 +10919,7 @@ function addon:HandleSlashCommand(message)
     if command == "help" then
         self:ShowHelp()
     elseif command == "mode" then
-        local map = { auto = "auto", world = "world", delve = "delve", dungeon = "dungeon", raid = "raid", pvp = "pvp" }
+        local map = { auto = "auto", world = "world", delve = "delve", dungeon = "dungeon", mplus = "mythicplus", mythicplus = "mythicplus", raid = "raid", pvp = "pvp" }
         self:SetMode(map[string.lower(rest)] or rest)
     elseif command == "guide" then
         mainFrame:Show()
@@ -10590,7 +11157,7 @@ function addon:InitializeDatabase()
     -- 1.0.8 deliberately removes the experimental War Mode profile/button.
     -- Clean only state introduced by those experimental builds so the proven
     -- World/Delve/Dungeon/Raid/PvP mappings remain untouched.
-    local validBuildModes = { world = true, delve = true, dungeon = true, raid = true, pvp = true }
+    local validBuildModes = { world = true, delve = true, dungeon = true, mythicplus = true, raid = true, pvp = true }
 
     -- Manual runtime overrides were removed. Always migrate them back to Auto
     -- while preserving the independent Loadouts configuration selection.
@@ -10624,6 +11191,43 @@ function addon:InitializeDatabase()
         if DB.autoSwitchSpecialization == nil then DB.autoSwitchSpecialization = true end
     end
 
+    -- 1.2.1 adopts the proven Loadout Pilot dungeon model: separate Dungeon
+    -- and Mythic+ defaults, one InstanceID-based override shared by all
+    -- difficulties, and an independent per-dungeon Loot Specialization.
+    if previousSchema < 29 then
+        DB.specializationBindings = type(DB.specializationBindings) == "table" and DB.specializationBindings or {}
+        DB.dungeonOverrides = type(DB.dungeonOverrides) == "table" and DB.dungeonOverrides or {}
+        DB.knownDungeons = type(DB.knownDungeons) == "table" and DB.knownDungeons or {}
+
+        -- Existing 1.2.0 users used Dungeon for both regular dungeons and M+.
+        -- Seed the new Mythic+ defaults from those mappings once so upgrading
+        -- never makes an established M+ setup suddenly look unconfigured.
+        if DB.specializationBindings.mythicplus == nil then
+            DB.specializationBindings.mythicplus = DB.specializationBindings.dungeon
+        end
+        for _, specID in ipairs({ 250, 251, 252 }) do
+            local dungeonKey = tostring(specID) .. ":dungeon"
+            local mythicKey = tostring(specID) .. ":mythicplus"
+            if DB.loadoutBindings[mythicKey] == nil and DB.loadoutBindings[dungeonKey] ~= nil then
+                DB.loadoutBindings[mythicKey] = DeepCopy(DB.loadoutBindings[dungeonKey])
+            end
+            if DB.equipmentBindings[mythicKey] == nil and DB.equipmentBindings[dungeonKey] ~= nil then
+                DB.equipmentBindings[mythicKey] = DeepCopy(DB.equipmentBindings[dungeonKey])
+            end
+            if DB.selectedBuild[mythicKey] == nil and DB.selectedBuild[dungeonKey] ~= nil then
+                DB.selectedBuild[mythicKey] = DB.selectedBuild[dungeonKey]
+            end
+            for profileIndex = 1, 8 do
+                local oldCodeKey = dungeonKey .. ":" .. tostring(profileIndex)
+                local newCodeKey = mythicKey .. ":" .. tostring(profileIndex)
+                if DB.personalBuildCodes[newCodeKey] == nil and DB.personalBuildCodes[oldCodeKey] ~= nil then
+                    DB.personalBuildCodes[newCodeKey] = DB.personalBuildCodes[oldCodeKey]
+                end
+            end
+        end
+        self:MigrateUnifiedDungeonOverrides()
+    end
+
     DB.schema = DEFAULTS.schema
 end
 
@@ -10643,6 +11247,7 @@ function addon:CreateUI()
     loadoutPickerFrame = CreateLoadoutPickerFrame()
     equipmentPickerFrame = CreateEquipmentPickerFrame()
     self.profileSpecializationPickerFrame = self:CreateProfileSpecializationPickerFrame()
+    self.lootSpecializationPickerFrame = self:CreateLootSpecializationPickerFrame()
     self.dungeonOverridesFrame = self:CreateDungeonOverridesFrame()
     self.dungeonOverrideEditorFrame = self:CreateDungeonOverrideEditorFrame()
     voiceConfigFrame = CreateVoiceConfigFrame()
@@ -10717,6 +11322,11 @@ function addon:RegisterRuntimeEvents()
         "ITEM_DATA_LOAD_RESULT",
         "NEW_MOUNT_ADDED",
         "PVP_MATCH_COMPLETE",
+        "UPDATE_BATTLEFIELD_STATUS",
+        "PLAYER_ROLES_ASSIGNED",
+        "PLAYER_LOOT_SPEC_UPDATED",
+        "CHALLENGE_MODE_KEYSTONE_SLOTTED",
+        "CHALLENGE_MODE_RESET",
         "CVAR_UPDATE",
         "PVP_MATCH_ACTIVE",
         "PLAYER_PVP_TALENT_UPDATE",
@@ -11020,10 +11630,12 @@ addon:SetScript("OnEvent", function(self, event, ...)
         self:UpdateStatusWidget()
     elseif event == "SPECIALIZATION_CHANGE_CAST_FAILED" then
         if self.pendingSpecializationTargetSpecID then
-            self:ClearPendingSpecializationSwitch()
+            local retryTargetSpecID = self.pendingSpecializationTargetSpecID
+            self.pendingSpecializationSwitchStartedAt = nil
             self.lastSpecializationSwitchError = T("WoW did not allow the automatic specialization change.")
             self:UpdateBuildSection()
             self:UpdateStatusWidget()
+            self:SchedulePendingSpecializationRetry(retryTargetSpecID, 2.0)
         end
     elseif event == "PLAYER_ENTERING_BATTLEGROUND" then
         -- Try during the battleground preparation window, before PVP_MATCH_ACTIVE.
@@ -11045,9 +11657,18 @@ addon:SetScript("OnEvent", function(self, event, ...)
         end
         self:ScheduleUpdate(false)
     elseif event == "EQUIPMENT_SWAP_FINISHED" then
-        local result, setID = ...
-        if result then
-            self.pendingEquipmentKey = nil
+        local result = ...
+        local swapSucceeded = GetAccessibleBoolean(result)
+        local completed = self:SyncPendingEquipmentState(true)
+        if not completed and self.pendingEquipmentKey and swapSucceeded == false then
+            lootSpecState.equipmentRetryElapsed = 1.0
+        end
+        if self.pendingEquipmentKey and C_Timer and C_Timer.After then
+            C_Timer.After(0.25, function()
+                if addon.active and addon.pendingEquipmentKey and (not InCombatLockdown or not InCombatLockdown()) then
+                    addon:TryAutoSwitchEquipment("equipment-swap-finished")
+                end
+            end)
         end
         self:UpdateBuildSection()
         self:UpdateStatusWidget()
@@ -11134,7 +11755,26 @@ addon:SetScript("OnEvent", function(self, event, ...)
         self:SyncCombatEventState()
         self:RefreshCombatHUDVisibility()
         self:ScheduleUpdate(false)
-        -- Delay non-essential work until the loading transition has settled.
+
+        -- Loadout Pilot applies its context rule shortly after the loading
+        -- transition. Do the same here instead of making the first automatic
+        -- specialization/loadout wait for the heavier four-second cache pass.
+        if C_Timer and C_Timer.After then
+            C_Timer.After(1.0, function()
+                if addon.active then
+                    addon.worldReady = true
+                    addon:RememberCurrentDungeon()
+                    addon:ApplyAutomaticProfile("world-ready")
+                end
+            end)
+        else
+            self.worldReady = true
+            self:RememberCurrentDungeon()
+            self:ApplyAutomaticProfile("world-ready")
+        end
+
+        -- Delay non-essential aura/voice/cache work until the loading transition
+        -- has fully settled. Loadout automation no longer depends on this pass.
         C_Timer.After(4, function()
             if addon.active then
                 addon.worldReady = true
@@ -11197,7 +11837,7 @@ addon:SetScript("OnEvent", function(self, event, ...)
         if unit == "player" then
             self:UpdateStatusWidget()
         end
-    elseif event == "CHALLENGE_MODE_START" or event == "PVP_MATCH_ACTIVE" then
+    elseif event == "CHALLENGE_MODE_START" or event == "CHALLENGE_MODE_KEYSTONE_SLOTTED" or event == "CHALLENGE_MODE_RESET" or event == "UPDATE_BATTLEFIELD_STATUS" or event == "PVP_MATCH_ACTIVE" then
         self:ScheduleUpdate(false)
         if C_Timer and C_Timer.After then
             C_Timer.After(0.75, function()
@@ -11212,6 +11852,14 @@ addon:SetScript("OnEvent", function(self, event, ...)
         if cvarName == "assistedCombatHighlight" or cvarName == "ASSISTEDCOMBATHIGHLIGHT" then
             self:UpdateAssistedCombatSection()
         end
+    elseif event == "PLAYER_LOOT_SPEC_UPDATED" then
+        self:UpdatePendingLootSpecState()
+        if C_Timer and C_Timer.After then
+            C_Timer.After(0.20, function() if addon.active then addon:ApplyAutomaticProfile("loot-spec-updated") end end)
+        end
+    elseif event == "PLAYER_ROLES_ASSIGNED" then
+        self:ApplyAutomaticProfile("role-assigned")
+        self:UpdateStatusWidget()
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
         local unit = ...
         InvalidateCooldownManagerProfileCache()
@@ -11226,7 +11874,7 @@ addon:SetScript("OnEvent", function(self, event, ...)
                 self.lastSpecializationSwitchError = nil
             end
             self:ScheduleUpdate(true)
-            C_Timer.After(1, function()
+            C_Timer.After(0.5, function()
                 if addon.active then
                     if not InCombatLockdown() and not (buffFrame and buffFrame.managedAuraContainer) then
                         addon:RefreshCooldownViewerBuffMirrors()
@@ -11292,7 +11940,7 @@ addon:SetScript("OnUpdate", function(self, elapsed)
     if contextPollElapsed >= 0.50 then
         contextPollElapsed = 0
         local detectedContext = self:DetectActualContext()
-        local dungeonIdentity = detectedContext == "dungeon" and self:GetCurrentDungeonIdentity() or nil
+        local dungeonIdentity = (detectedContext == "dungeon" or detectedContext == "mythicplus") and self:GetCurrentDungeonIdentity() or nil
         local dungeonKey = dungeonIdentity and dungeonIdentity.key or nil
         if detectedContext ~= self.currentContext or dungeonKey ~= self.currentDungeonKey then
             self.currentContext = detectedContext
@@ -11303,6 +11951,32 @@ addon:SetScript("OnUpdate", function(self, elapsed)
                 self:ApplyAutomaticProfile("context-detected")
             end
         end
+    end
+
+    if lootSpecState.pendingID ~= nil then
+        self:UpdatePendingLootSpecState()
+        if lootSpecState.pendingID ~= nil then
+            lootSpecState.retryElapsed = lootSpecState.retryElapsed + delta
+            if lootSpecState.retryElapsed >= 1.0 then
+                lootSpecState.retryElapsed = 0
+                self:SyncDungeonLootSpecialization("pending-loot-spec-retry")
+            end
+        end
+    else
+        lootSpecState.retryElapsed = 0
+    end
+
+    if self.pendingEquipmentKey then
+        self:SyncPendingEquipmentState(true)
+        if self.pendingEquipmentKey and (not InCombatLockdown or not InCombatLockdown()) then
+            lootSpecState.equipmentRetryElapsed = lootSpecState.equipmentRetryElapsed + delta
+            if lootSpecState.equipmentRetryElapsed >= 1.0 then
+                lootSpecState.equipmentRetryElapsed = 0
+                self:TryAutoSwitchEquipment("pending-equipment-retry")
+            end
+        end
+    else
+        lootSpecState.equipmentRetryElapsed = 0
     end
 
     if not DB.voice or not DB.voice.enabled or DB.voice.situational == false then

@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.2.3 - 2026-08-25 - Faster specialization response and HUD shortcut
+
+- Matched the Loadout Pilot specialization request path by preferring `C_SpecializationInfo.SetSpecialization`, with the ClassTalents API kept as a fallback.
+- Reduced the duplicate automatic specialization-attempt guard from 4 seconds to 2 seconds.
+- Added retry handling for transient specialization-switch failures instead of abandoning the pending target after one rejected attempt.
+- The first automatic profile after entering the world is now attempted after about 1 second instead of waiting for the heavier 4-second aura/voice cache refresh.
+- Reduced the post-specialization follow-up delay from 1.0 second to 0.5 second so talents, gear, Loot Spec, and HUD state can settle sooner after the spec change is confirmed.
+- Added **right-click on the compact Build HUD** to open/close the DK Mentor main window, matching Loadout Pilot behavior.
+- Left-click on the specialization icon continues to open the manual Blood/Frost/Unholy specialization picker.
+
+## 1.2.2 - 2026-08-25 - Loadouts 2.0 migration hotfix
+
+- Fixed a login/reload Lua error while upgrading an existing DK Mentor database from schema 28 to 29.
+- The 1.2.1 migration accidentally called a nonexistent `CopyTableDeep()` helper while copying Dungeon talent/gear mappings into the new Mythic+ profile.
+- The migration now uses DK Mentor's existing `DeepCopy()` helper, so existing Dungeon mappings can seed Mythic+ without aborting `InitializeDatabase`.
+- Added regression validation that rejects future builds if the undefined helper returns or if the schema-29 migration stops using the declared copy helper.
+- No behavior or UI changes beyond the hotfix; Dungeon Overrides, Loot Spec, unified dungeon identity, role protection, compact HUD, and manual spec switching remain unchanged.
+
+## 1.2.1 - 2026-08-24 - Dungeon Overrides parity
+
+- Fixed Dungeon Overrides talent/equipment/Loot Spec pickers so they always render above the override editor instead of behind it.
+- Added a dedicated **Mythic+** content profile, while preserving the separate regular Dungeon profile.
+- Existing 1.2.0 Dungeon mappings are copied to the new Mythic+ profile once during upgrade so established setups are not lost.
+- Added per-dungeon **Loot Specialization** overrides, including **No override**, **Current specialization**, Blood, Frost, and Unholy. Loot Spec remains independent from the specialization/role used to play the dungeon.
+- Added Loot Spec restoration: when a dungeon loot override ends, DK Mentor restores the loot specialization that was active before the override session.
+- Unified dungeon-specific overrides around a stable `dungeon:<InstanceID>` identity so the same rule is reused across Normal, Heroic, Mythic 0, and Mythic+.
+- Added migration for older Challenge Mode / instance / map dungeon keys and lazy migration when a stable InstanceID becomes known after entering a dungeon.
+- Mythic+ is detected while a keystone is slotted, before the timer starts, so the M+ profile can be prepared while WoW still permits changes.
+- Dungeon-specific fields left on Inherit now follow the active **Dungeon** or **Mythic+** fallback profile automatically.
+- Extended role-safe automatic specialization switching to Dungeon, Mythic+, Raid, and PvP; same-role Frost <-> Unholy changes remain allowed.
+- Added role/loot/override details to the compact Build HUD tooltip without changing its one-line presentation or manual specialization selector.
+- Added transition refresh handling for role assignment, Loot Spec updates, keystone slot/reset, and battleground-status changes.
+- Ported Loadout Pilot's verified equipment retry behavior: a gear swap stays pending until the mapped WoW Equipment Set is actually reported as equipped, and transient out-of-combat failures are retried.
+
 ## 1.2.0 - 2026-08-24 - Loadouts 2.0
 
 - Added optional specialization mapping for World, Delve, Dungeon, Raid, and PvP profiles, with **Do not change** as the backward-compatible default.

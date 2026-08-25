@@ -1,21 +1,19 @@
-# Publishing DK Mentor 1.2.0
+# Publishing DK Mentor 1.2.3
 
-Release focus: **Loadouts 2.0**.
+Release focus: **faster specialization/profile response + Build HUD right-click shortcut**.
 
 ## CurseForge
 
-Upload the clean CurseForge ZIP as a **Release** for WoW Retail 12.1.0.
+Upload the clean CurseForge ZIP as a **Release** for WoW Retail 12.1.0 after the live 1.2.3 checklist passes.
 
-Suggested display name: `DK Mentor 1.2.0`
+Suggested display name: `DK Mentor 1.2.3`
 
 Suggested changelog:
 
-- Added specialization mapping to World, Delve, Dungeon, Raid, and PvP loadout profiles.
-- Added Spec AUTO with Dungeon/Raid role protection for Tank/DPS changes.
-- Added dynamic per-dungeon overrides for specialization, talent loadout, and Equipment Set.
-- Overrides can inherit the Dungeon profile or keep individual components unchanged.
-- Dungeon discovery uses WoW runtime/Mythic+ data instead of a hardcoded seasonal list.
-- DK Ready Check now includes specialization readiness.
-- Preserved the compact one-line Build HUD and manual spec switching from its specialization icon.
+- Improved specialization/profile responsiveness using the proven Loadout Pilot request path and shorter DK Mentor-side waits.
+- Added retry handling for transient automatic specialization-switch failures.
+- The first automatic profile is now attempted sooner after entering the world.
+- Added right-click on the compact Build HUD to open/close DK Mentor.
+- Preserved left-click manual spec selection, role protection, Dungeon/Mythic+ overrides, Loot Spec, and DK READY.
 
 The CurseForge package must remain clean: one `DKMentor/` root folder containing only runtime addon files, `LICENSE`, `THIRD_PARTY_NOTICES.md`, and the complete `Media/` folder.

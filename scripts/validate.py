@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.2.0"
+VERSION = "1.2.3"
 INTERFACE = "120100"
 
 REQUIRED = [
@@ -109,8 +109,8 @@ def main() -> int:
         errors.append("Automatic-only runtime context detection is missing")
     if 'DB.modeOverride = "auto"' not in core:
         errors.append("Legacy modeOverride migration is missing")
-    if 'contexts = { "world", "delve", "dungeon", "raid", "pvp" }' not in core:
-        errors.append("Expected World/Delve/Dungeon/Raid/PvP selector set is missing")
+    if 'contexts = { "world", "delve", "dungeon", "mythicplus", "raid", "pvp" }' not in core:
+        errors.append("Expected World/Delve/Dungeon/Mythic+/Raid/PvP selector set is missing")
     for forbidden_warmode in ("UpdateWarModeButton", "ToggleWarMode", "SetWarModeDesired", "warModeButton", "warmode ="):
         if forbidden_warmode in core:
             errors.append(f"Experimental War Mode logic must not be present: {forbidden_warmode}")
@@ -180,7 +180,7 @@ def main() -> int:
             errors.append(f"Missing Midnight 12.1 proc/buff tracking ID {proc_id}")
 
     # 1.0.16 native AuraContainer + combat-exit regression guards.
-    if 'schema = 28' not in core or 'combatBarsOnlyInCombat = true' not in core:
+    if 'schema = 29' not in core or 'combatBarsOnlyInCombat = true' not in core:
         errors.append("Current settings schema/combat-only default is missing")
     if 'if previousSchema < 21 then' not in core or 'DB.combatBarsOnlyInCombat = true' not in core:
         errors.append("Existing installs are not migrated back to combat-only HUDs")
@@ -456,6 +456,145 @@ def main() -> int:
     for rel in ("RELEASE_NOTES_v1.2.0.md", "TESTING_v1.2.0.md"):
         if not (ROOT / rel).is_file():
             errors.append(f"Missing 1.2.0 release document: {rel}")
+
+    # 1.2.1 Loadout Pilot parity: Mythic+ defaults, unified dungeon identity,
+    # independent Loot Specialization, and override-picker layering.
+    for snippet in (
+        'schema = 29',
+        'if previousSchema < 29 then',
+        'DB.specializationBindings.mythicplus = DB.specializationBindings.dungeon',
+        'function addon:GetMythicPlusMapID()',
+        'C_ChallengeMode.HasSlottedKeystone',
+        'C_ChallengeMode.GetSlottedKeystoneInfo',
+        'function addon:GetChallengeDungeonIdentity(challengeMapID)',
+        'EJ_GetInstanceForMap',
+        'EJ_GetInstanceInfo',
+        '"dungeon:" .. tostring',
+        'function addon:MigrateDungeonOverrideIdentity(oldKey, newKey, info)',
+        'function addon:MigrateUnifiedDungeonOverrides()',
+        'function addon:GetDungeonFallbackContext(entry)',
+        'function addon:GetLootSpecializationID()',
+        'SetLootSpecialization',
+        'function addon:SyncDungeonLootSpecialization(reason)',
+        'function addon:SetDungeonOverrideLootSpec(key, specID)',
+        'function addon:SyncPendingEquipmentState(announce)',
+        'pending-equipment-retry',
+        'equipment-swap-finished',
+        'function addon:CreateLootSpecializationPickerFrame()',
+        'PLAYER_LOOT_SPEC_UPDATED',
+        'PLAYER_ROLES_ASSIGNED',
+        'UPDATE_BATTLEFIELD_STATUS',
+        'CHALLENGE_MODE_KEYSTONE_SLOTTED',
+        'CHALLENGE_MODE_RESET',
+    ):
+        if snippet not in core:
+            errors.append(f"1.2.1 dungeon/loadout regression guard missing: {snippet}")
+
+    if 'Data.contextOrder = { "world", "delve", "dungeon", "mythicplus", "raid", "pvp" }' not in data:
+        errors.append("1.2.1 Data.contextOrder must expose a separate Mythic+ profile")
+
+    # 1.2.2 hotfix regression guard: the schema-29 migration must use the
+    # existing DeepCopy helper. 1.2.1 accidentally referenced a nonexistent
+    # CopyTableDeep global and crashed InitializeDatabase before the UI loaded.
+    if 'CopyTableDeep(' in core:
+        errors.append("1.2.2 migration must not reference undefined CopyTableDeep")
+    migration_start = core.find('if previousSchema < 29 then')
+    migration_end = core.find('DB.schema = DEFAULTS.schema', migration_start)
+    migration_body = core[migration_start:migration_end] if migration_start >= 0 and migration_end > migration_start else ''
+    if 'DeepCopy(DB.loadoutBindings[dungeonKey])' not in migration_body:
+        errors.append("1.2.2 Mythic+ talent migration must use DeepCopy")
+    if 'DeepCopy(DB.equipmentBindings[dungeonKey])' not in migration_body:
+        errors.append("1.2.2 Mythic+ equipment migration must use DeepCopy")
+    if core.find('local function DeepCopy(value)') < 0 or core.find('local function DeepCopy(value)') > core.find('function addon:InitializeDatabase()'):
+        errors.append("1.2.2 DeepCopy helper must be declared before InitializeDatabase")
+    if 'if result then\n            self.pendingEquipmentKey = nil' in core:
+        errors.append("Gear pending state must not clear blindly on EQUIPMENT_SWAP_FINISHED")
+
+    # Verify the requested sequence without requiring Loot Spec to wait for a
+    # role-blocked playing-spec switch. Loot Spec is intentionally independent.
+    apply_start = core.find('function addon:ApplyAutomaticProfile(reason)')
+    apply_end = core.find('function addon:SetAutoSwitchLoadouts', apply_start)
+    apply_body = core[apply_start:apply_end] if apply_start >= 0 and apply_end > apply_start else ''
+    spec_pos = apply_body.find('self:TryAutoSwitchSpecialization(reason)')
+    loot_pos = apply_body.find('self:SyncDungeonLootSpecialization(reason)')
+    talent_pos = apply_body.find('self:TryAutoSwitchLoadout(reason)')
+    gear_pos = apply_body.find('self:TryAutoSwitchEquipment(reason)')
+    if min(spec_pos, loot_pos, talent_pos, gear_pos) < 0 or not (spec_pos < loot_pos < talent_pos < gear_pos):
+        errors.append("1.2.1 apply order must be playing spec -> loot spec -> talents -> equipment")
+    mismatch_guard_pos = apply_body.find('if targetSpecID and currentSpecID ~= targetSpecID then return false end')
+    if mismatch_guard_pos < 0 or loot_pos > mismatch_guard_pos:
+        errors.append("Loot Spec must be applied even if playing-spec automation is pending/role-blocked")
+
+    # The community-reported UI bug was caused by child pickers rendering
+    # behind the Dungeon Override editor. Check each picker constructor.
+    picker_markers = (
+        ('function addon:CreateProfileSpecializationPickerFrame()', 'function addon:UpdateProfileSpecializationPicker'),
+        ('function addon:CreateLootSpecializationPickerFrame()', 'function addon:UpdateLootSpecializationPicker'),
+        ('local function CreateLoadoutPickerFrame()', 'local function CreateEquipmentPickerFrame()'),
+        ('local function CreateEquipmentPickerFrame()', 'local function CreateVoiceConfigFrame()'),
+    )
+    for start_marker, end_marker in picker_markers:
+        start = core.find(start_marker)
+        end = core.find(end_marker, start + 1)
+        body = core[start:end] if start >= 0 and end > start else ''
+        if 'SetFrameStrata("FULLSCREEN_DIALOG")' not in body or 'SetFrameLevel(1200)' not in body:
+            errors.append(f"1.2.1 picker must render above Dungeon Overrides: {start_marker}")
+
+    editor_start = core.find('function addon:CreateDungeonOverrideEditorFrame()')
+    editor_end = core.find('function addon:OpenDungeonOverrideEditor', editor_start)
+    editor_body = core[editor_start:editor_end] if editor_start >= 0 and editor_end > editor_start else ''
+    if 'SetFrameStrata("FULLSCREEN_DIALOG")' not in editor_body or 'SetFrameLevel(900)' not in editor_body:
+        errors.append("Dungeon Override editor must remain below its pickers")
+
+    for loc_snippet in (
+        'P("Mythic+", "Mítica+")',
+        'P("Loot specialization", "Especialização de saque")',
+        'P("No override", "Sem override")',
+        'P("Current specialization (%s)", "Especialização atual (%s)")',
+        'P("Dungeon override: ACTIVE", "Override de masmorra: ATIVO")',
+    ):
+        if loc_snippet not in localization:
+            errors.append(f"1.2.1 localization guard missing: {loc_snippet}")
+
+    for rel in ("RELEASE_NOTES_v1.2.1.md", "TESTING_v1.2.1.md"):
+        if not (ROOT / rel).is_file():
+            errors.append(f"Missing 1.2.1 release document: {rel}")
+
+    for rel in ("RELEASE_NOTES_v1.2.2.md", "TESTING_v1.2.2.md"):
+        if not (ROOT / rel).is_file():
+            errors.append(f"Missing 1.2.2 hotfix document: {rel}")
+
+
+    # 1.2.3 Loadout Pilot responsiveness + compact HUD shortcut guards.
+    manual_spec_start = core.find('function addon:SwitchSpecialization(index)')
+    manual_spec_end = core.find('function addon:DetectActualContext()', manual_spec_start)
+    manual_spec_body = core[manual_spec_start:manual_spec_end] if manual_spec_start >= 0 and manual_spec_end > manual_spec_start else ''
+    auto_spec_start = core.find('function addon:TryAutoSwitchSpecialization(reason)')
+    auto_spec_end = core.find('function addon:ApplyAutomaticProfile(reason)', auto_spec_start)
+    auto_spec_body = core[auto_spec_start:auto_spec_end] if auto_spec_start >= 0 and auto_spec_end > auto_spec_start else ''
+    if manual_spec_body.find('C_SpecializationInfo.SetSpecialization') < 0 or manual_spec_body.find('C_SpecializationInfo.SetSpecialization') > manual_spec_body.find('C_ClassTalents.SwitchToSpecializationByIndex'):
+        errors.append("1.2.3 manual spec switching must prefer the Loadout Pilot SetSpecialization path")
+    if auto_spec_body.find('C_SpecializationInfo.SetSpecialization') < 0 or auto_spec_body.find('C_SpecializationInfo.SetSpecialization') > auto_spec_body.find('C_ClassTalents.SwitchToSpecializationByIndex'):
+        errors.append("1.2.3 automatic spec switching must prefer the Loadout Pilot SetSpecialization path")
+    if '(now - self.lastSpecializationSwitchAttemptAt) < 2 then' not in auto_spec_body:
+        errors.append("1.2.3 automatic specialization retry throttle must be 2 seconds")
+    for snippet in (
+        'function addon:SchedulePendingSpecializationRetry(targetSpecID, delay)',
+        'addon:SchedulePendingSpecializationRetry(targetSpecID, 2.0)',
+        'self:SchedulePendingSpecializationRetry(targetSpecID, 2.0)',
+        'addon:ApplyAutomaticProfile("world-ready")',
+        'C_Timer.After(1.0, function()',
+        'C_Timer.After(0.5, function()',
+        'frame:SetScript("OnMouseUp", function(_, mouseButton)',
+        'frame.specButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")',
+        'addon:ToggleMainFrame()',
+        'Right-click: open or close DK Mentor',
+    ):
+        if snippet not in core and snippet not in localization:
+            errors.append(f"1.2.3 responsiveness/HUD regression guard missing: {snippet}")
+    for rel in ("RELEASE_NOTES_v1.2.3.md", "TESTING_v1.2.3.md"):
+        if not (ROOT / rel).is_file():
+            errors.append(f"Missing 1.2.3 release document: {rel}")
 
     # 1.1.9 language-picker layering + protected reload regression guards.
     for snippet in (

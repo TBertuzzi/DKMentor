@@ -5,7 +5,7 @@ local Data = DKM.Data
 local T = DKM.T or function(value) return value end
 
 Data.addonName = ADDON_NAME
-Data.version = "1.2.0"
+Data.version = "1.2.3"
 Data.interface = 120100
 Data.dataVersion = "2026-08-24"
 Data.patch = "12.1.0"
@@ -16,12 +16,13 @@ Data.specNames = {
     [252] = T("Unholy"),
 }
 
-Data.contextOrder = { "world", "delve", "dungeon", "raid", "pvp" }
+Data.contextOrder = { "world", "delve", "dungeon", "mythicplus", "raid", "pvp" }
 Data.contextNames = {
     auto = T("Auto"),
     world = T("World"),
     delve = T("Delve"),
     dungeon = T("Dungeon"),
+    mythicplus = T("Mythic+"),
     raid = T("Raid"),
     pvp = T("PvP"),
 }
@@ -278,6 +279,14 @@ Data.cooldownManagerProfiles = {
 -- the underlying aura that caused it. Map the action back to the high-value
 -- rotational state so DK Mentor can show the proc rather than a duplicate
 -- ability icon. These are visual-only mappings; no action is ever executed.
+-- Mythic+ uses the dungeon survival guidance unless a spec receives a dedicated
+-- Mythic+ set later. Loadout mappings themselves remain fully independent.
+for _, contextTips in pairs(Data.tips or {}) do
+    if type(contextTips) == "table" and contextTips.dungeon and not contextTips.mythicplus then
+        contextTips.mythicplus = contextTips.dungeon
+    end
+end
+
 Data.procGlowMappings = {
     [250] = {
         [43265] = 81141,   -- Death and Decay -> Crimson Scourge

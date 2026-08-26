@@ -6,18 +6,17 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.2.3"
+VERSION = "2.0.11"
 INTERFACE = "120100"
 
+RUNTIME_LUA = ["Localization.lua", "Data.lua", "Builds.lua", "Guides.lua", "Codex.lua", "Voices.lua", "Core.lua", "MentorEngine.lua"]
 REQUIRED = [
-    "DKMentor.toc", "Localization.lua", "Data.lua", "Builds.lua", "Guides.lua",
-    "Voices.lua", "Core.lua", "README.md", "CHANGELOG.md", "LICENSE",
+    "DKMentor.toc", *RUNTIME_LUA, "README.md", "CHANGELOG.md", "LICENSE",
     "THIRD_PARTY_NOTICES.md", "POLICY_AND_SOURCES.md", "PUBLISHING.md",
+    "RELEASE_NOTES_v2.0.11.md", "TESTING_v2.0.11.md", "CURSEFORGE_CHANGELOG_v2.0.11.md", "tests/localization_smoke.lua",
     "Media/DKArcFill.tga", "Media/DKArcBG.tga", "Media/DKArcGlow.tga",
     "Media/DKArcFillRight.tga", "Media/DKArcBGRight.tga", "Media/DKArcGlowRight.tga",
 ]
-
-ADDON_LUA = ["Localization.lua", "Data.lua", "Builds.lua", "Guides.lua", "Voices.lua", "Core.lua"]
 
 
 def parse_toc(text: str):
@@ -34,18 +33,23 @@ def parse_toc(text: str):
     return meta, order
 
 
+def section(text: str, start: str, end: str) -> str:
+    a = text.find(start)
+    b = text.find(end, a + 1) if a >= 0 else -1
+    return text[a:b] if a >= 0 and b > a else ""
+
+
 def main() -> int:
     errors: list[str] = []
     for rel in REQUIRED:
         if not (ROOT / rel).is_file():
             errors.append(f"Missing required file: {rel}")
-
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1
 
-    toc = (ROOT / "DKMentor.toc").read_text(encoding="utf-8")
-    meta, order = parse_toc(toc)
+    toc_text = (ROOT / "DKMentor.toc").read_text(encoding="utf-8")
+    meta, order = parse_toc(toc_text)
     expected = {
         "Interface": INTERFACE,
         "Title": "DK Mentor",
@@ -57,563 +61,395 @@ def main() -> int:
     for key, value in expected.items():
         if meta.get(key) != value:
             errors.append(f"TOC {key}: expected {value!r}, got {meta.get(key)!r}")
-
-    if order != ADDON_LUA:
+    if order != RUNTIME_LUA:
         errors.append(f"TOC load order mismatch: {order!r}")
+    notes = meta.get("Notes", "")
+    if "Loadout Pilot" not in notes or "Death Knight" not in notes:
+        errors.append("TOC Notes must describe the DK-focused 2.0 scope and Loadout Pilot handoff")
 
+    core = (ROOT / "Core.lua").read_text(encoding="utf-8")
+    mentor_engine = (ROOT / "MentorEngine.lua").read_text(encoding="utf-8")
     data = (ROOT / "Data.lua").read_text(encoding="utf-8")
-    if f'Data.version = "{VERSION}"' not in data:
-        errors.append("Data.version does not match release version")
-    if f"Data.interface = {INTERFACE}" not in data:
-        errors.append("Data.interface does not match TOC Interface")
-
     builds = (ROOT / "Builds.lua").read_text(encoding="utf-8")
-    if re.search(r'code\s*=\s*"[^"\s]{20,}"', builds):
-        errors.append("Builds.lua appears to bundle a talent import string")
+    codex = (ROOT / "Codex.lua").read_text(encoding="utf-8")
+    loc = (ROOT / "Localization.lua").read_text(encoding="utf-8")
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 
-    forbidden_ext = {".ogg", ".mp3", ".wav", ".flac", ".m4a"}
+    if f'Data.version = "{VERSION}"' not in data:
+        errors.append("Data.version does not match current build")
+    if f"Data.interface = {INTERFACE}" not in data:
+        errors.append("Data.interface does not match TOC")
+    if f"## {VERSION}" not in changelog:
+        errors.append("CHANGELOG.md has no current-version entry")
+
+    # 2.0.10 compact post-combat popup: dynamic content sizing with bounded density.
+    for snippet in (
+        'local POST_COMBAT_MIN_WIDTH = 300',
+        'local POST_COMBAT_MAX_WIDTH = 480',
+        'local POST_COMBAT_MAX_INSIGHTS = 3',
+        'local function LayoutPostCombatFrame(frame, titleText, bodyText)',
+        'GetFontStringMetric(frame.text, "GetStringHeight", 14)',
+        'frame:SetSize(desiredWidth, math.max(50, desiredHeight))',
+        'local bodyText = BuildPostCombatSummary(report)',
+        'LayoutPostCombatFrame(frame, titleText, bodyText)',
+    ):
+        if snippet not in mentor_engine:
+            errors.append(f"2.0.10 dynamic post-combat popup regression: {snippet}")
+
+    # 2.0.7 HUD edit-mode safety: movement handles are session-explicit.
+    for snippet in (
+        'addon.hudEditSessionActive = false',
+        'DB.hudLocked = true',
+        'self.hudEditSessionActive = not DB.hudLocked',
+        'DB.hudLocked ~= false or self.hudEditSessionActive ~= true',
+        'resourceArcFrame.dragHandle:SetShown(canMove)',
+    ):
+        if snippet not in core:
+            errors.append(f"2.0.7 HUD edit-mode guard missing: {snippet}")
+
+    # 2.0.10 release-candidate polish guards.
+    for snippet in (
+        'majorReleaseNotice = ""',
+        'DB.majorReleaseNotice ~= "2.0"',
+        'local function SanitizeFrameConfig(key)',
+        'cfg.x = Clamp(tonumber(cfg.x) or defaults.x or 0, -4000, 4000)',
+        'function addon:ShowMentorAlertPreview()',
+        'Alert preview active for 8 seconds.',
+    ):
+        if snippet not in core:
+            errors.append(f"2.0.10 RC Core polish regression: {snippet}")
+    for snippet in (
+        'function Engine.ResetSettings()',
+        'function Engine.TestAlerts()',
+        'configFrame.testButton:SetText(T("Test alerts"))',
+        'configFrame.resetButton:SetText(T("Reset Mentor settings"))',
+        'rest == "test" or rest == "preview"',
+        'rest == "reset" or rest == "defaults"',
+        'DK Mentor recommends actions; it never casts abilities automatically.',
+    ):
+        if snippet not in mentor_engine:
+            errors.append(f"2.0.10 RC Mentor polish regression: {snippet}")
+
+
+    # 2.0.11 manual-language override regression guards.
+    for snippet in (
+        'local enUSByPtBR = {}',
+        'value = enUSByPtBR[key] or key',
+        'function DKM.RefreshStaticLocalization()',
+        'for _, moduleName in ipairs({ "Data", "Builds", "Guides", "Codex", "Voices" }) do',
+    ):
+        if snippet not in loc:
+            errors.append(f"2.0.11 localization refresh regression: {snippet}")
+    for snippet in (
+        'if DKM.RefreshStaticLocalization then DKM.RefreshStaticLocalization() end',
+        'function addon:GetRuntimeSpecLabel(specID, fallbackName)',
+        'return T(labelKey)',
+        'addon:GetRuntimeContextLabel(contextKey)',
+        'button:SetText(addon:GetRuntimeContextLabel(button.contextKey))',
+        'row.tag:SetText(T(tip.tag or "TIP"))',
+        'row.description:SetText(T(tip.text or ""))',
+        'card.action:SetText(T(entry.title or "USE"))',
+        'card.when:SetText(T(entry.when or ""))',
+    ):
+        if snippet not in core:
+            errors.append(f"2.0.11 runtime localization regression: {snippet}")
+    for snippet in (
+        '[250] = "Blood"', '[251] = "Frost"', '[252] = "Unholy"',
+        'world = "World"', 'delve = "Delve"', 'dungeon = "Dungeon"',
+        'mythicplus = "Mythic+"', 'raid = "Raid"', 'pvp = "PvP"',
+        'tag = tag', 'text = text', 'title = title', 'when = when',
+    ):
+        if snippet not in data:
+            errors.append(f"2.0.11 canonical localization key missing: {snippet}")
+    if 'self.GetRuntimeContextLabel and self:GetRuntimeContextLabel(context)' not in mentor_engine:
+        errors.append("2.0.11 MentorEngine must use runtime-localized context labels")
+
+    # Project safety/policy basics.
     for p in ROOT.rglob("*"):
-        if p.is_file() and p.suffix.lower() in forbidden_ext:
+        if p.is_file() and p.suffix.lower() in {".ogg", ".mp3", ".wav", ".flac", ".m4a"}:
             errors.append(f"Bundled audio is not allowed: {p.relative_to(ROOT)}")
         if p.is_file() and p.name.endswith(".bak"):
             errors.append(f"Backup file must not be committed: {p.relative_to(ROOT)}")
+    if re.search(r'code\s*=\s*"[^"\s]{20,}"', builds):
+        errors.append("Builds.lua must not bundle third-party talent import strings")
+    for api_name in ("CastSpellByName", "CastSpellByID", "RunMacroText", "UseAction", "UseContainerItem", "TargetUnit", "AttackTarget"):
+        if api_name in core or api_name in mentor_engine:
+            errors.append(f"Combat automation API must not be used: {api_name}")
 
-    if f"## {VERSION}" not in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8"):
-        errors.append(f"CHANGELOG.md has no {VERSION} entry")
+    # DK Mentor 2.0 responsibility boundary: no built-in loadout engine/UI.
+    defaults = section(core, "local DEFAULTS = {", "local function GetSpellData")
+    for legacy_default in (
+        "specializationBindings", "loadoutBindings", "equipmentBindings", "dungeonOverrides",
+        "knownDungeons", "personalBuildCodes", "selectedBuild", "autoSwitchSpecialization = true",
+        "autoSwitchLoadouts = true", "autoSwitchEquipment = true",
+    ):
+        if legacy_default in defaults:
+            errors.append(f"2.0 DEFAULTS must not contain retired loadout state: {legacy_default}")
 
-    core = (ROOT / "Core.lua").read_text(encoding="utf-8")
-    localization = (ROOT / "Localization.lua").read_text(encoding="utf-8")
-    if "function addon:GetReadyCheckStatus()" not in core:
-        errors.append("Core.lua is missing DK Ready Check")
-    if "Data.runeforges" not in data:
-        errors.append("Data.lua is missing Runeforge metadata")
-    for enchant_id in (3368, 3370, 3847, 6241, 6242, 6243, 6244, 6245):
-        if f"[{enchant_id}]" not in data:
-            errors.append(f"Missing DK Runeforge enchant ID {enchant_id}")
-    if 'command == "ready"' not in core:
-        errors.append("/dkm ready command is missing")
-    if 'P("DK READY", "DK PRONTO")' not in localization:
-        errors.append("Ready Check ptBR localization is missing")
+    for forbidden_symbol in (
+        "function addon:ApplyAutomaticProfile(", "function addon:TryAutoSwitchSpecialization(",
+        "function addon:TryAutoSwitchLoadout(", "function addon:TryAutoSwitchEquipment(",
+        "function addon:SyncDungeonLootSpecialization(", "function addon:GetCurrentDungeonIdentity(",
+        "function addon:RememberDungeonIdentity(", "function addon:CreateDungeonOverridesFrame(",
+        "function addon:CreateDungeonOverrideEditorFrame(", "local function CreateLoadoutPickerFrame(",
+        "local function CreateEquipmentPickerFrame(", "function addon:UpdateBuildSection(",
+        "SetLootSpecialization", "C_ClassTalents.ImportLoadout", "C_EquipmentSet.UseEquipmentSet",
+    ):
+        if forbidden_symbol in core:
+            errors.append(f"Retired loadout engine/UI remains in Core.lua: {forbidden_symbol}")
 
-    forbidden_combat_calls = (
-        "CastSpellByName", "CastSpellByID", "RunMacroText", "UseAction",
-        "UseContainerItem", "PickupSpell", "TargetUnit", "AttackTarget",
-    )
-    for api_name in forbidden_combat_calls:
-        if api_name in core:
-            errors.append(f"Potential combat-automation API must not be used: {api_name}")
+    for legacy_event in (
+        '"SPECIALIZATION_CHANGE_CAST_FAILED"', '"TRAIT_CONFIG_CREATED"', '"TRAIT_CONFIG_LIST_UPDATED"',
+        '"SELECTED_LOADOUT_CHANGED"', '"ACTIVE_COMBAT_CONFIG_CHANGED"', '"CONFIG_COMMIT_FAILED"',
+        '"EQUIPMENT_SETS_CHANGED"', '"EQUIPMENT_SWAP_FINISHED"', '"PLAYER_LOOT_SPEC_UPDATED"',
+        '"PLAYER_ROLES_ASSIGNED"',
+    ):
+        if legacy_event in section(core, "function addon:RegisterRuntimeEvents()", "addon:SetScript(\"OnEvent\""):
+            errors.append(f"Loadout-specific runtime event still registered: {legacy_event}")
 
+    if 'local tabOrder = { "combat", "guide", "settings" }' not in core:
+        errors.append("2.0 main UI must expose exactly Combat / DK Codex / Settings tabs")
+    if 'CreatePage("builds")' in core or "loadoutContextBar" in core:
+        errors.append("Retired Loadouts main-tab UI still exists")
+    if 'frame.loadoutPilotSection = CreateSection(settingsPage, T("Loadout automation")' not in core:
+        errors.append("Settings handoff to Loadout Pilot is missing")
+    if 'SlashCmdList.LOADOUTPILOT("")' not in core:
+        errors.append("Optional Loadout Pilot open integration is missing")
+    if 'command == "loadout" or command == "loadouts"' not in core:
+        errors.append("/dkm loadouts handoff command is missing")
 
-    # 1.0.10 regression guards: runtime context must be automatic-only and War Mode experiment absent.
-    if 'function addon:DetectContext()' not in core or 'return self:DetectActualContext(), true' not in core:
-        errors.append("Automatic-only runtime context detection is missing")
-    if 'DB.modeOverride = "auto"' not in core:
-        errors.append("Legacy modeOverride migration is missing")
-    if 'contexts = { "world", "delve", "dungeon", "mythicplus", "raid", "pvp" }' not in core:
-        errors.append("Expected World/Delve/Dungeon/Mythic+/Raid/PvP selector set is missing")
-    for forbidden_warmode in ("UpdateWarModeButton", "ToggleWarMode", "SetWarModeDesired", "warModeButton", "warmode ="):
-        if forbidden_warmode in core:
-            errors.append(f"Experimental War Mode logic must not be present: {forbidden_warmode}")
-
-    # 1.0.10 secret-value regression guards. PvP can return secret booleans from Unit APIs.
-    forbidden_secret_bool_patterns = (
-        'UnitIsAFK("player") == true',
-        'UnitExists("pet") then',
-        'UnitIsDeadOrGhost("player"))',
-        'IsMounted() == true',
-        'value ~= nil then\n            return value == true',
-    )
-    for pattern in forbidden_secret_bool_patterns:
-        if pattern in core:
-            errors.append(f"Secret boolean must be guarded before comparison/branch: {pattern}")
-    if "local function GetAccessibleBoolean(value)" not in core:
-        errors.append("GetAccessibleBoolean secret-value guard is missing")
-
-    # 1.0.13 proc/interrupt feature guards.
-    if 'function addon:UpdateInterruptAlert()' not in core:
-        errors.append("Mind Freeze interrupt alert is missing")
-    if 'SPELL_ACTIVATION_OVERLAY_GLOW_SHOW' not in core or 'activeProcGlows' not in core:
-        errors.append("Dynamic proc-glow tracking is missing")
-    if 'frame.slotsPerRow = GetConfiguredBarColumns(dbKey, slotsPerRow or maxSlots, maxSlots)' not in core:
-        errors.append("Wrapped DK buff-bar layout support is missing")
-    if 'GetAccessibleBoolean(notInterruptible)' not in core:
-        errors.append("Interruptibility secret-value guard is missing")
-    if 'CastSpellByName' in core or 'CastSpellByID' in core:
-        errors.append("Interrupt alert must never cast Mind Freeze")
-
-    if 'mirroredActiveBuffOrder' not in core or 'GetMirrorItemDisplaySpellID' not in core:
-        errors.append("Active Blizzard tracked-buff mirroring is missing")
-    if 'ResolveProcGlowDisplaySpellID' not in core or 'Data.procGlowMappings' not in data:
-        errors.append("DK proc-glow to aura mapping is missing")
-    if 'SyncKnownProcGlowStates' not in core or 'C_SpellActivationOverlay.IsSpellOverlayed' not in core:
-        errors.append("Known proc-glow polling fallback is missing")
-    for frost_proc in (51124, 59052, 1229310, 194879, 377101, 377103, 1230916):
-        if str(frost_proc) not in data:
-            errors.append(f"Missing Frost proc/buff tracking ID {frost_proc}")
-
-    # 1.0.13 active-only buff bar regression guards.
-    if 'if visibleCount <= 0 then' not in core or 'buffFrame:Hide()' not in core:
-        errors.append("DK Buff bar must hide when no DK buff/proc is active")
-    if 'inactive/dim placeholders remain' not in core:
-        errors.append("Active-only DK buff list implementation is missing")
-    if 'self:RefreshCooldownViewerBuffMirrors()' not in core:
-        errors.append("DK Buff bar must poll Blizzard tracked-buff mirrors")
-    if 'item.GetAuraSpellID' not in core or 'item.GetAuraSpellInstanceID' not in core:
-        errors.append("Blizzard materialized aura identity/instance bridge is missing")
-
-    # 1.0.15 Wowhead Cooldown Manager profile integration guards.
-    if 'Data.cooldownManagerProfiles' not in data:
-        errors.append("Cooldown Manager profile metadata is missing")
-    for cooldown_id in (92575, 86579, 92577, 86281, 90617, 92923, 90603, 90611, 92535, 92533):
-        if str(cooldown_id) not in data:
-            errors.append(f"Missing researched Cooldown Manager ID {cooldown_id}")
-    if 'BuildCooldownManagerProfileSpellList' not in core or 'GetCachedCooldownViewerInfo' not in core:
-        errors.append("Safe Cooldown Manager profile resolver is missing")
-    # This public API has AllowedWhenUntainted secret arguments in Midnight;
-    # DK Mentor must consume Blizzard's already-built provider/frame cache instead.
-    if 'pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo' in core:
-        errors.append("Protected Cooldown Viewer info API must not be called directly")
-    if 'cooldownUseAuraDisplayTime' not in core or 'wasSetFromAura' not in core:
-        errors.append("Materialized aura visual-state bridge is missing")
-    for proc_id in (1265790, 1297365, 1254252, 1242223, 433925, 434157, 1233448):
-        if str(proc_id) not in data:
-            errors.append(f"Missing Midnight 12.1 proc/buff tracking ID {proc_id}")
-
-    # 1.0.16 native AuraContainer + combat-exit regression guards.
-    if 'schema = 29' not in core or 'combatBarsOnlyInCombat = true' not in core:
-        errors.append("Current settings schema/combat-only default is missing")
-    if 'if previousSchema < 21 then' not in core or 'DB.combatBarsOnlyInCombat = true' not in core:
-        errors.append("Existing installs are not migrated back to combat-only HUDs")
-    if 'CreateManagedAuraBar(' not in core or '"DKMentorBuffBar"' not in core:
-        errors.append("Primary DK Buffs AuraContainer path is missing")
-    if 'includeSpellIDs = BuildDKBuffIncludeSpellIDs(specID)' not in core:
-        errors.append("DK Buffs spell-ID candidate filter is missing")
-    if 'SetAuraGroupCandidateFilters' not in core or 'RefreshManagedDKBuffFilter' not in core:
-        errors.append("Live DK Buffs candidate-filter refresh is missing")
-    if 'pcall(container.SetEnabled, container, true)' not in core:
-        errors.append("AuraContainer SetEnabled activation is missing")
-    unit_pos = core.find('pcall(container.SetUnit, container, "player")')
-    group_pos = core.find('pcall(container.AddAuraGroup, container, dbKey, filterString, options)')
-    enable_pos = core.find('pcall(container.SetEnabled, container, true)')
-    if min(unit_pos, group_pos, enable_pos) < 0 or not (unit_pos < group_pos < enable_pos):
-        errors.append("AuraContainer initialization order must be SetUnit -> AddAuraGroup -> SetEnabled")
-    if 'function addon:SyncCombatEventState()' not in core:
-        errors.append("Combat-state resynchronization helper is missing")
-    if 'C_Timer.After(0.25' not in core or 'addon:RefreshCombatHUDVisibility()' not in core:
-        errors.append("Delayed combat-exit visibility assertion is missing")
-    for season2_buff in (1310372, 1300369):
-        if str(season2_buff) not in data:
-            errors.append(f"Missing Blood Season 2 buff tracking ID {season2_buff}")
-
-    # 1.0.17 configurable combat-bar layout + Preview hard-override guards.
+    # Upgrades from 1.x: keep old SavedVariables inert and avoid another schema migration.
+    if "schema = 30" not in defaults:
+        errors.append("2.0.10 RC must use schema 30 for the non-destructive HUD migration guard")
+    init = section(core, "function addon:InitializeDatabase()", "function addon:CreateUI()")
     for snippet in (
-        'iconsPerRow = 5',
-        'iconsPerRow = 11',
-        'function addon:SetCombatBarScale(dbKey, value)',
-        'function addon:SetCombatBarColumns(dbKey, value)',
-        'function addon:ResetCombatBarLayout()',
-        'local function ShowManagedAuraPreview(frame, slotStore)',
-        'local function RestoreManagedAuraRuntime(frame, slotStore)',
-        'self.hudPreviewMode ~= true and DB.combatBarsOnlyInCombat == true',
+        'if DB.mainTab == "builds" then DB.mainTab = "guide" end',
+        "DB.autoSwitchSpecialization ~= nil then DB.autoSwitchSpecialization = false", "DB.autoSwitchLoadouts ~= nil then DB.autoSwitchLoadouts = false", "DB.autoSwitchEquipment ~= nil then DB.autoSwitchEquipment = false",
+        "DB.schema = DEFAULTS.schema",
+    ):
+        if snippet not in init:
+            errors.append(f"2.0 upgrade safety guard missing: {snippet}")
+    if "DB.specializationBindings = nil" in init or "DB.loadoutBindings = nil" in init or "DB.equipmentBindings = nil" in init:
+        errors.append("2.0 must preserve legacy mapping tables for rollback safety rather than deleting them")
+
+    # Manual spec chooser is allowed; automatic spec switching is not.
+    manual_spec = section(core, "function addon:SwitchSpecialization(index)", "function addon:DetectActualContext()")
+    if "C_SpecializationInfo.SetSpecialization" not in manual_spec and "C_ClassTalents.SwitchToSpecializationByIndex" not in manual_spec:
+        errors.append("Manual specialization picker implementation is missing")
+    if "Manual-only convenience" not in manual_spec:
+        errors.append("Manual specialization boundary is not documented in code")
+    on_update = section(core, 'addon:SetScript("OnUpdate"', 'addon:RegisterEvent("ADDON_LOADED")')
+    if "GetCurrentDungeonIdentity" in on_update or "RememberDungeonIdentity" in on_update or "ApplyAutomaticProfile" in on_update:
+        errors.append("Active context polling still touches retired loadout automation")
+
+    # DK Ready remains class-specific rather than loadout-compliance-specific.
+    ready = section(core, "function addon:GetReadyCheckStatus()", "function addon:PrintReadyCheckStatus()")
+    for required in ("GetRuneforgeStatus", "GetGhoulReadyStatus"):
+        if required not in ready:
+            errors.append(f"DK Ready lost class-specific check: {required}")
+    for forbidden in ("loadout", "equipmentBindings", "specializationBindings", "talent"):
+        if forbidden.lower() in ready.lower():
+            errors.append(f"DK Ready must not check retired loadout compliance: {forbidden}")
+
+    # Compact DK status HUD: context + ready only, with manual spec chooser and right-click open.
+    widget = section(core, "local function CreateStatusWidget()", "local function LayoutStatusWidget()")
+    if "frame.build" in widget or "frame.gear" in widget or "frame.auto" in widget:
+        errors.append("2.0 status HUD must not contain build/gear/automation fields")
+    for required in ('frame.specButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")', "addon:ToggleSpecializationPicker()", "addon:ToggleMainFrame()"):
+        if required not in widget:
+            errors.append(f"DK status HUD interaction missing: {required}")
+    status_update = section(core, "function addon:UpdateStatusWidget()", "function addon:RefreshStatusWidgetVisibility()")
+    if "GetRuntimeContextLabel" not in status_update or "GetReadyCheckStatus" not in status_update:
+        errors.append("2.0 status HUD must show context and DK Ready")
+
+    # 2.0.1 compact status HUD / Codex action-row regression guards.
+    for snippet in (
+        'frame:SetSize(150, 32)', 'frame.icon:SetSize(24, 24)',
+        'frame.title:SetPoint("LEFT", frame.icon, "RIGHT", 6, 0)',
+        'frame.ready:SetPoint("LEFT", frame.title, "RIGHT", 8, 0)',
+        'math.max(140, math.min(360, 4 + 24 + 6 + titleWidth + 8 + readyWidth + 6))',
+        'statusWidget:SetSize(desiredWidth, 32)',
+        'guide.sourceURLBox:SetSize(395, 24)',
+        'guide.selectSourceButton:SetSize(170, 24)',
+        'guide.openPilotButton:SetSize(155, 24)',
     ):
         if snippet not in core:
-            errors.append(f"1.0.17 bar-layout/Preview regression guard missing: {snippet}")
-    if 'P("HUD size...", "Tamanho dos HUDs...")' not in localization:
-        errors.append("Combat-HUD layout ptBR localization is missing")
+            errors.append(f"2.0.1 compact UI regression: {snippet}")
 
-    # 1.0.18 regression guard: preview/runtime helpers must see the local cooldown
-    # reset helper. In Lua, a later `local function` is NOT visible to functions
-    # compiled before its declaration, which broke both normal DK Buffs and Preview.
-    clear_cd_pos = core.find('local function ClearTrackingCooldown(slot)')
-    hide_slots_pos = core.find('local function HideTrackingSlots(slotStore)')
-    preview_pos = core.find('local function ShowManagedAuraPreview(frame, slotStore)')
-    if min(clear_cd_pos, hide_slots_pos, preview_pos) < 0 or not (clear_cd_pos < hide_slots_pos < preview_pos):
-        errors.append("ClearTrackingCooldown must be declared before managed-aura runtime/preview helpers")
+    # Codex + recommendation-only builds.
+    if 'sectionOrder = { "overview", "builds", "rotation", "survival", "stats", "utility", "check" }' not in codex:
+        errors.append("DK Codex must expose seven sections including Builds")
+    for snippet in ("DK mechanics — Runes", "PvE stat priority", "Runeforge", "Gems", "Enchants", "Consumables", "Cheat sheet", "Beginner opener", "Interrupt and crowd control handbook"):
+        if snippet not in codex:
+            errors.append(f"DK Codex content missing: {snippet}")
+    guide_update = section(core, "function addon:UpdateGuideSection()", "function addon:UpdateAll()")
+    for snippet in ('sectionKey == "builds"', "self:GetBuildProfiles(specID, context)", "does not create, select, or switch WoW loadouts", "self:UpdateLoadoutPilotIntegration()"):
+        if snippet not in guide_update:
+            errors.append(f"Recommendation-only Builds section missing: {snippet}")
+    if 'command == "build" or command == "builds"' not in core:
+        errors.append("/dkm builds must open Codex build recommendations")
 
-    # 1.0.19 regression guard: HUD lock is interaction-only. Managed aura bars
-    # must not become visually transparent just because dragging is disabled.
-    chrome_start = core.find('local function UpdateManagedAuraBarChrome(frame)')
-    chrome_end = core.find('local MANAGED_AURA_ICON_SIZE', chrome_start)
-    chrome_block = core[chrome_start:chrome_end] if chrome_start >= 0 and chrome_end > chrome_start else ''
-    if 'frame.label:SetShown(true)' not in chrome_block:
-        errors.append("Managed-aura labels must remain visible when HUDs are locked")
-    if 'frame:EnableMouse(editing)' not in chrome_block:
-        errors.append("HUD lock must still disable managed-aura mouse interaction")
-    if 'frame:SetBackdropColor(0, 0, 0, 0)' in chrome_block or 'frame:SetBackdropBorderColor(0, 0, 0, 0)' in chrome_block:
-        errors.append("HUD lock must not make managed-aura bars transparent")
+    # Character Check is read-only and DK-oriented.
+    check = section(core, "function addon:GetCharacterCheckReport(selectedSpecID)", "function addon:UpdateGuideSection()")
+    for forbidden in ("Talent loadout", "Equipment set", "specializationBindings", "loadoutBindings", "equipmentBindings"):
+        if forbidden in check:
+            errors.append(f"Character Check still references retired loadout state: {forbidden}")
+    for required in ("Common enchant slots", "Sockets", "Current stat snapshot", "Utility toolkit"):
+        if required not in check:
+            errors.append(f"Character Check regression: {required}")
 
-    # 1.0.20 DK resource HUD + Midnight secret-value regression guards.
+    # Midnight 12.1 secret-aspect/aura safeguards.
+    managed_create = section(core, "local function CreateManagedAuraBar", "local function ClearTrackingCooldown")
+    if 'pcall(container.SetUnit, container, "player")' not in managed_create or "pcall(container.SetEnabled, container, true)" not in managed_create:
+        errors.append("Managed AuraContainer setup is incomplete")
+    if "HookScript(\"OnShow\"" in core or "HookScript(\"OnHide\"" in core:
+        errors.append("Never hook secret AuraButton OnShow/OnHide handlers")
+    if "managedAuraButtons" in core:
+        errors.append("Do not retain AuraButton objects to infer secret aura visibility")
+    chrome = section(core, "local function UpdateManagedAuraBarChrome(frame)", "local MANAGED_AURA_ICON_SIZE")
+    for snippet in ("local showChrome = addon.hudPreviewMode == true", "frame.label:SetShown(showChrome)", "frame.dragHint:SetShown(showChrome)", "frame:EnableMouse(editing)", "frame:SetBackdropColor(0, 0, 0, 0)"):
+        if snippet not in chrome:
+            errors.append(f"Secret-safe empty aura bar behavior missing: {snippet}")
+
+    # 2.0.3 resource-arc click-through regression guards.
+    arc_create = section(core, "local function CreateResourceArcHUD()", "local COMBAT_BAR_LAYOUT_LIMITS")
     for snippet in (
-        'resourceHUD = {',
-        'local function CreateResourceHUD()',
-        'for index = 1, 6 do',
-        'pcall(GetRuneCooldown, index)',
-        'pcall(UnitPower, "player", RUNIC_POWER_TYPE)',
-        'pcall(UnitPowerMax, "player", RUNIC_POWER_TYPE)',
-        'resourceFrame.power.SetMinMaxValues',
-        'resourceFrame.power.SetValue',
-        'function addon:UpdateResourceHUD()',
-        'function addon:CycleResourceHUDMode()',
-        '"UNIT_DISPLAYPOWER"',
-        '"RUNE_POWER_UPDATE"',
-        'command == "resources" or command == "resource"',
-        'self.hudPreviewMode ~= true and DB.combatBarsOnlyInCombat == true',
+        'frame:EnableMouse(false)',
+        'frame.dragHandle = CreateFrame("Frame", nil, frame, "BackdropTemplate")',
+        'frame.dragHandle:SetSize(118, 20)',
+        'frame.dragHandle:RegisterForDrag("LeftButton")',
+    ):
+        if snippet not in arc_create:
+            errors.append(f"2.0.3 resource arc click-through guard missing: {snippet}")
+    hud_hints = section(core, "function addon:UpdateHUDMoveHints()", "function addon:SetHUDsLocked(locked)")
+    for snippet in (
+        'local canMove = self:CanMoveHUDs()',
+        'resourceArcFrame:EnableMouse(false)',
+        'resourceArcFrame.dragHandle:EnableMouse(canMove)',
+        'resourceArcFrame.dragHandle:SetShown(canMove)',
+    ):
+        if snippet not in hud_hints:
+            errors.append(f"2.0.3 resource arc interaction sync missing: {snippet}")
+    if 'resourceArcFrame:EnableMouse(editing)' in core:
+        errors.append("Resource arc parent must never be mouse-enabled; it blocks world target clicks")
+
+    # 2.0.4+ Mind Freeze alert event-latch reliability guards.
+    interrupt_update = section(core, "function addon:UpdateInterruptAlert()", "function addon:UpdateAbilityBar()")
+    for snippet in (
+        "targetInterruptEventState == true",
+        "local presentationBound = SetInterruptFrameFromNotInterruptible",
+        "if not presentationBound then",
+    ):
+        if snippet not in interrupt_update:
+            errors.append(f"Interrupt event-latch guard missing: {snippet}")
+    runtime_events = section(core, "function addon:RegisterRuntimeEvents()", 'addon:SetScript("OnEvent"')
+    for snippet in (
+        'self.RegisterUnitEvent, self, eventName, "target"',
+        '"UNIT_SPELLCAST_INTERRUPTIBLE", "UNIT_SPELLCAST_NOT_INTERRUPTIBLE"',
+        '"UNIT_SPELLCAST_DELAYED"',
+        '"UNIT_SPELLCAST_CHANNEL_UPDATE"',
+        '"UNIT_SPELLCAST_EMPOWER_START"',
+    ):
+        if snippet not in runtime_events:
+            errors.append(f"2.0.4 interrupt registration guard missing: {snippet}")
+    if "ScheduleInterruptAlertRefreshes()" not in core:
+        errors.append("2.0.4 interrupt transition refresh helper is missing")
+
+    # 2.0.10 Midnight Secret-safe interrupt presentation guards.
+    for snippet in (
+        'local function GetTargetInterruptStateFromCastAPI()',
+        'return true, notInterruptible, "cast", castBarID',
+        'return true, notInterruptible, "channel", castBarID',
+        'local function SetInterruptFrameFromNotInterruptible(frame, notInterruptible)',
+        'IsSecretValue(notInterruptible)',
+        'pcall(frame.SetAlphaFromBoolean, frame, notInterruptible, 0, 1)',
+        'local presentationBound = SetInterruptFrameFromNotInterruptible(interruptFrame, rawNotInterruptible)',
+        'self:UpdateInterruptAlert()',
+        'function addon:PrintInterruptAlertStatus()',
+        'interruptFrame:EnableMouse(canMove)',
     ):
         if snippet not in core:
-            errors.append(f"1.0.20 resource-HUD regression guard missing: {snippet}")
+            errors.append(f"2.0.10 Secret-safe interrupt regression: {snippet}")
+    if 'GetTargetInterruptibleFromCastAPI' in core:
+        errors.append('2.0.10 must not use the old readable-only interrupt API helper')
 
-    resource_update_start = core.find('function addon:UpdateRunicPowerHUD()')
-    resource_update_end = core.find('function addon:UpdateResourceHUD()', resource_update_start)
-    resource_update = core[resource_update_start:resource_update_end] if resource_update_start >= 0 and resource_update_end > resource_update_start else ''
-    native_value_pos = resource_update.find('resourceFrame.power.SetValue')
-    readable_guard_pos = resource_update.find('if IsAccessibleNumber(power) and IsAccessibleNumber(maxPower) then')
-    numeric_format_pos = resource_update.find('math.floor(power + 0.5)')
-    if min(native_value_pos, readable_guard_pos, numeric_format_pos) < 0 or not (native_value_pos < readable_guard_pos < numeric_format_pos):
-        errors.append("Runic Power must flow to the native StatusBar before any readable-only numeric formatting")
-    for forbidden in ('if power >', 'if power <', 'if power ==', 'if power >=', 'if power <='):
-        if forbidden in resource_update:
-            errors.append(f"Runic Power secret value must not drive combat logic: {forbidden}")
-
-    if 'if InCombatLockdown and InCombatLockdown() then\n        Print(T("HUD preview cannot be changed during combat."))' not in core:
-        errors.append("HUD Preview must be blocked during combat for secret-safe resource anchoring")
-    if core.count('Print(T("HUD positions cannot be changed during combat."))') < 2:
-        errors.append("HUD position resets must be blocked during combat")
-    for loc_snippet in (
-        'P("DK Resources", "Recursos do DK")',
-        'P("Runes + Runic Power", "Runas + Poder Rúnico")',
-        'P("Runes only", "Só Runas")',
-        'P("Runic Power only", "Só Poder Rúnico")',
-    ):
-        if loc_snippet not in localization:
-            errors.append(f"1.0.20 resource-HUD ptBR localization missing: {loc_snippet}")
-
-    # 1.0.21 HUD appearance controls.
+    # Core DK HUD/resource guards.
     for snippet in (
-        'opacity = 1',
-        'function addon:SetCombatBarOpacity(dbKey, value)',
-        'local function NormalizeCombatBarOpacity(value)',
-        'frame:SetAlpha(config.opacity)',
-        'showPowerText = true',
-        'runeSpacing = "normal"',
-        'function addon:SetResourceHUDPowerTextEnabled(enabled)',
-        'function addon:CycleResourceRuneSpacing()',
-        'function addon:ResetResourceHUDLayout()',
-        'RESOURCE_RUNE_LAYOUTS',
-        'resourceFrame.layoutRuneSpacing',
+        "function addon:UpdateInterruptAlert()", "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW", "activeProcGlows",
+        "local function CreateResourceHUD()", "local function CreateResourceArcHUD()", "for index = 1, 6 do",
+        'pcall(UnitPower, "player", RUNIC_POWER_TYPE)', "DK_ARC_FILL_RIGHT_TEXTURE", "GetDKRuneColors",
+        "SetResourceArcHealthColors", "function addon:SetCombatBarScale(dbKey, value)",
+        "function addon:SetCombatBarOpacity(dbKey, value)", "function addon:SetCombatBarColumns(dbKey, value)",
+        "function addon:SetLanguageOverride(value)", "languagePickerFrame = CreateLanguagePickerFrame()",
     ):
         if snippet not in core:
-            errors.append(f"1.0.21 HUD-appearance regression guard missing: {snippet}")
-    if core.count('opacity = 1') < 5:
-        errors.append("Every configurable combat HUD must default to full opacity")
-    for loc_snippet in (
-        'P("Opacity", "Opacidade")',
-        'P("Power text: ON", "Texto do Poder: LIGADO")',
-        'P("Rune spacing: %s", "Espaçamento das Runas: %s")',
-        'P("Restore DK Resources", "Restaurar Recursos do DK")',
-        'P("HUD appearance...", "Aparência dos HUDs...")',
-    ):
-        if loc_snippet not in localization:
-            errors.append(f"1.0.21 HUD-appearance ptBR localization missing: {loc_snippet}")
+            errors.append(f"Core DK/HUD regression guard missing: {snippet}")
 
-    for rel in ("RELEASE_NOTES_v1.0.21.md", "TESTING_v1.0.21.md"):
-        if not (ROOT / rel).is_file():
-            errors.append(f"Missing 1.0.21 release document: {rel}")
-
-    # 1.1.5 DK Arcs mirroring/movement/opening regression guards.
+    # 2.0.5 Adaptive DK Coach / Combat Insights feature guards.
     for snippet in (
-        'DK_ARC_FILL_TEXTURE',
-        'DK_ARC_FILL_RIGHT_TEXTURE',
-        'DK_ARC_BG_RIGHT_TEXTURE',
-        'DK_ARC_GLOW_RIGHT_TEXTURE',
-        'CreateDKArcBar',
-        'holder.bar:SetOrientation("VERTICAL")',
-        'DK_RUNE_TEXTURE',
-        'GetDKRuneColors',
-        'SaveResourceArcPosition',
-        'RestoreResourceArcPosition',
-        'NormalizeResourceArcSpacing',
-        'function addon:SetResourceArcSpacing(value)',
-        'SetResourceArcHealthColors',
+        'local MODE_ORDER = { "essential", "mentor", "training" }',
+        'function addon:GetAdaptiveCoachEntries(specID, context, baseEntries)',
+        'GetRecentDamagePercent', 'GetRunicPowerPercent', 'GetReadyRuneCount',
+        'BONE SHIELD', 'BUILD WOUNDS', 'high-value proc is active',
+        'UNIT_SPELLCAST_INTERRUPTIBLE', 'UNIT_SPELLCAST_NOT_INTERRUPTIBLE',
+        'SamplePlayerHealthDamage', 'BuildScoreReport', 'DK Mentor Score',
+        'Adaptive DK Coach — last combat', 'Solo/Delve boost', 'Post-combat popup',
     ):
-        if snippet not in core:
-            errors.append(f"1.1.5 DK Arcs regression guard missing: {snippet}")
-    for rel in ("RELEASE_NOTES_v1.1.5.md", "TESTING_v1.1.5.md"):
-        if not (ROOT / rel).is_file():
-            errors.append(f"Missing 1.1.5 release document: {rel}")
-
-    classic_start = core.find('local function CreateResourceHUD()')
-    classic_end = core.find('local DK_ARC_FILL_TEXTURE', classic_start)
-    classic_body = core[classic_start:classic_end] if classic_start >= 0 and classic_end > classic_start else ''
-    if 'RestoreFramePosition(frame, "resourceHUD")' not in classic_body:
-        errors.append('Classic DK Resources lost its saved-position restore path')
-    arc_start = core.find('local function CreateResourceArcHUD()')
-    arc_end = core.find('local COMBAT_BAR_LAYOUT_LIMITS', arc_start)
-    arc_body = core[arc_start:arc_end] if arc_start >= 0 and arc_end > arc_start else ''
-    if 'RestoreResourceArcPosition(frame)' not in arc_body:
-        errors.append('DK Arcs lost its independent saved-position restore path')
-    if 'SaveResourceArcPosition(self)' not in arc_body:
-        errors.append('DK Arcs is no longer movable/saving its position')
-    if 'dragHandle = CreateFrame' in arc_body or 'frame.label = frame.dragHandle' in arc_body:
-        errors.append('DK Arcs must not recreate the visible Arcos do DK/Move header')
-    if 'CenterResourceArcHUD' in core:
-        errors.append('Legacy forced-centering helper must not remain in DK Arcs 1.1.5')
-
-    # 1.1.6 low-health arc warning regression guard.
+        if snippet not in mentor_engine:
+            errors.append(f"2.0.5 Adaptive Coach regression: {snippet}")
+    # 2.0.6 Midnight hardening: CLEU is forbidden for third-party addons.
+    for forbidden in ('COMBAT_LOG_EVENT_UNFILTERED', 'CombatLogGetCurrentEventInfo'):
+        if forbidden in mentor_engine or forbidden in core:
+            errors.append(f"2.0.6 forbidden Midnight combat-log dependency present: {forbidden}")
     for snippet in (
-        'local percent = GetPlayerHealthPercent()',
-        'local low = IsAccessibleNumber(percent) and percent <= 30',
-        'resourceArcFrame.healthBar:SetStatusBarColor(0.92, 0.20, 0.20, 0.98)',
+        'SamplePlayerHealthDamage()',
+        'MarkInterruptHandled(true)',
+        'event == "UNIT_SPELLCAST_INTERRUPTED" then MarkInterruptHandled(false)',
+        'GetUnitAuraBySpellID, "target", spellID',
     ):
-        if snippet not in core:
-            errors.append(f"1.1.6 low-health warning regression guard missing: {snippet}")
-    for rel in ("RELEASE_NOTES_v1.1.6.md", "TESTING_v1.1.6.md"):
-        if not (ROOT / rel).is_file():
-            errors.append(f"Missing 1.1.6 release document: {rel}")
+        if snippet not in mentor_engine:
+            errors.append(f"2.0.6 Midnight-safe mentor guard missing: {snippet}")
 
-
-
-    # 1.1.8 selectable addon-language regression guards.
     for snippet in (
-        'languageOverride = "auto"',
-        'function addon:SetLanguageOverride(value)',
-        'function addon:ToggleLanguagePicker()',
-        'function addon:UpdateLanguageSettings()',
-        'languagePickerFrame = CreateLanguagePickerFrame()',
-        'DKM.SetLocaleOverride(DB.languageOverride)',
-        'command == "language" or command == "lang" or command == "idioma"',
+        'BONE_SHIELD = 195181', 'FESTERING_WOUND = 194310',
+        'VIRULENT_PLAGUE = 191587', 'FROST_STRIKE = 49143', 'DEATH_COIL = 47541',
     ):
-        if snippet not in core:
-            errors.append(f"1.1.8 language-selection regression guard missing: {snippet}")
-    for loc_snippet in (
-        'function DKM.SetLocaleOverride(value)',
-        'P("Automatic (WoW)", "Automático (WoW)")',
-        'P("Portuguese (Brazil)", "Português (Brasil)")',
-        'P("Language: %s", "Idioma: %s")',
+        if snippet not in data:
+            errors.append(f"2.0.5 DK state data missing: {snippet}")
+    if 'MentorEngine.lua' not in (ROOT / "scripts/package.sh").read_text(encoding="utf-8"):
+        errors.append("package.sh must include MentorEngine.lua")
+    if 'MentorEngine.lua' not in (ROOT / "scripts/package.ps1").read_text(encoding="utf-8"):
+        errors.append("package.ps1 must include MentorEngine.lua")
+    for snippet in (
+        'P("Adaptive DK Coach", "Coach Adaptativo de DK")',
+        'P("Mentor intelligence...", "Inteligência do Mentor...")',
+        'P("Combat Insights: ON", "Combat Insights: LIGADO")',
     ):
-        if loc_snippet not in localization:
-            errors.append(f"1.1.8 language localization guard missing: {loc_snippet}")
-    for rel in ("RELEASE_NOTES_v1.1.8.md", "TESTING_v1.1.8.md"):
-        if not (ROOT / rel).is_file():
-            errors.append(f"Missing 1.1.8 release document: {rel}")
+        if snippet not in loc:
+            errors.append(f"2.0.5 Adaptive Coach localization missing: {snippet}")
 
-    # 1.1.7 packaging regression guard: both arc sides must ship in every addon ZIP.
+    # Media packaging scripts must copy the full texture folder.
     package_sh = (ROOT / "scripts/package.sh").read_text(encoding="utf-8")
     package_ps1 = (ROOT / "scripts/package.ps1").read_text(encoding="utf-8")
     if 'cp -a "$ROOT/Media/." "$STAGE/Media/"' not in package_sh:
         errors.append("package.sh must copy the complete Media folder")
-    if 'Copy-Item $MediaSource $MediaDest -Recurse -Force' not in package_ps1:
+    if "Copy-Item $MediaSource $MediaDest -Recurse -Force" not in package_ps1:
         errors.append("package.ps1 must copy the complete Media folder")
-    for rel in (
-        "Media/DKArcFill.tga", "Media/DKArcBG.tga", "Media/DKArcGlow.tga",
-        "Media/DKArcFillRight.tga", "Media/DKArcBGRight.tga", "Media/DKArcGlowRight.tga",
-    ):
-        if not (ROOT / rel).is_file():
-            errors.append(f"DK Arcs package asset missing: {rel}")
 
-
-    # 1.2.0 Loadouts 2.0 regression guards.
+    # Localization for the new ownership boundary.
     for snippet in (
-        'specializationBindings = {}',
-        'dungeonOverrides = {}',
-        'knownDungeons = {}',
-        'autoSwitchSpecialization = true',
-        'function addon:ResolveRuntimeSpecializationTarget(context)',
-        'function addon:TryAutoSwitchSpecialization(reason)',
-        'function addon:ApplyAutomaticProfile(reason)',
-        'function addon:CanAutoSwitchSpecialization(targetSpecID, context)',
-        'UnitGroupRolesAssigned',
-        'if specID == 250 then return "TANK" end',
-        'function addon:GetCurrentSeasonDungeonCatalog()',
-        'C_ChallengeMode.GetMapScoreInfo',
-        'C_ChallengeMode.GetMapTable',
-        'C_ChallengeMode.GetMapUIInfo',
-        'function addon:GetActiveDungeonOverride()',
-        'function addon:FindDungeonOverrideForIdentity(identity, includeDisabled)',
-        'function addon:ApplyDungeonOverrideIfCurrent(key, reason)',
-        'SPECIALIZATION_CHANGE_CAST_FAILED',
-        'function addon:ResolveRuntimeLoadoutBinding(specID, context)',
-        'function addon:ResolveRuntimeEquipmentBinding(specID, context)',
-        'function addon:CreateDungeonOverridesFrame()',
-        'function addon:CreateDungeonOverrideEditorFrame()',
-        'function addon:CreateProfileSpecializationPickerFrame()',
-        'addon:ToggleSpecializationPicker()',
-        'Dungeon overrides...',
+        'P("Loadout automation", "Automação de loadouts")',
+        'P("Open Loadout Pilot", "Abrir Loadout Pilot")',
+        'P("Build recommendations", "Recomendações de builds")',
+        'P("/dkm loadouts — open Loadout Pilot when installed",',
     ):
-        if snippet not in core:
-            errors.append(f"1.2.0 Loadouts 2.0 regression guard missing: {snippet}")
-    for loc_snippet in (
-        'P("Spec AUTO: ON", "Spec AUTO: LIGADO")',
-        'P("Dungeon Overrides", "Overrides de Masmorra")',
-        'P("Do not change", "Não alterar")',
-        'P("Role protection: your group role is %s, but the target specialization is %s (%s). Automatic specialization switching was skipped."',
-    ):
-        if loc_snippet not in localization:
-            errors.append(f"1.2.0 Loadouts localization guard missing: {loc_snippet}")
-    if 'if previousSchema < 28 then' not in core:
-        errors.append("1.2.0 schema migration is missing")
-    if core.count('self:ApplyAutomaticProfile(') + core.count('addon:ApplyAutomaticProfile(') < 5:
-        errors.append("Automatic profile orchestration is not wired to enough runtime transitions")
-    for rel in ("RELEASE_NOTES_v1.2.0.md", "TESTING_v1.2.0.md"):
-        if not (ROOT / rel).is_file():
-            errors.append(f"Missing 1.2.0 release document: {rel}")
-
-    # 1.2.1 Loadout Pilot parity: Mythic+ defaults, unified dungeon identity,
-    # independent Loot Specialization, and override-picker layering.
-    for snippet in (
-        'schema = 29',
-        'if previousSchema < 29 then',
-        'DB.specializationBindings.mythicplus = DB.specializationBindings.dungeon',
-        'function addon:GetMythicPlusMapID()',
-        'C_ChallengeMode.HasSlottedKeystone',
-        'C_ChallengeMode.GetSlottedKeystoneInfo',
-        'function addon:GetChallengeDungeonIdentity(challengeMapID)',
-        'EJ_GetInstanceForMap',
-        'EJ_GetInstanceInfo',
-        '"dungeon:" .. tostring',
-        'function addon:MigrateDungeonOverrideIdentity(oldKey, newKey, info)',
-        'function addon:MigrateUnifiedDungeonOverrides()',
-        'function addon:GetDungeonFallbackContext(entry)',
-        'function addon:GetLootSpecializationID()',
-        'SetLootSpecialization',
-        'function addon:SyncDungeonLootSpecialization(reason)',
-        'function addon:SetDungeonOverrideLootSpec(key, specID)',
-        'function addon:SyncPendingEquipmentState(announce)',
-        'pending-equipment-retry',
-        'equipment-swap-finished',
-        'function addon:CreateLootSpecializationPickerFrame()',
-        'PLAYER_LOOT_SPEC_UPDATED',
-        'PLAYER_ROLES_ASSIGNED',
-        'UPDATE_BATTLEFIELD_STATUS',
-        'CHALLENGE_MODE_KEYSTONE_SLOTTED',
-        'CHALLENGE_MODE_RESET',
-    ):
-        if snippet not in core:
-            errors.append(f"1.2.1 dungeon/loadout regression guard missing: {snippet}")
-
-    if 'Data.contextOrder = { "world", "delve", "dungeon", "mythicplus", "raid", "pvp" }' not in data:
-        errors.append("1.2.1 Data.contextOrder must expose a separate Mythic+ profile")
-
-    # 1.2.2 hotfix regression guard: the schema-29 migration must use the
-    # existing DeepCopy helper. 1.2.1 accidentally referenced a nonexistent
-    # CopyTableDeep global and crashed InitializeDatabase before the UI loaded.
-    if 'CopyTableDeep(' in core:
-        errors.append("1.2.2 migration must not reference undefined CopyTableDeep")
-    migration_start = core.find('if previousSchema < 29 then')
-    migration_end = core.find('DB.schema = DEFAULTS.schema', migration_start)
-    migration_body = core[migration_start:migration_end] if migration_start >= 0 and migration_end > migration_start else ''
-    if 'DeepCopy(DB.loadoutBindings[dungeonKey])' not in migration_body:
-        errors.append("1.2.2 Mythic+ talent migration must use DeepCopy")
-    if 'DeepCopy(DB.equipmentBindings[dungeonKey])' not in migration_body:
-        errors.append("1.2.2 Mythic+ equipment migration must use DeepCopy")
-    if core.find('local function DeepCopy(value)') < 0 or core.find('local function DeepCopy(value)') > core.find('function addon:InitializeDatabase()'):
-        errors.append("1.2.2 DeepCopy helper must be declared before InitializeDatabase")
-    if 'if result then\n            self.pendingEquipmentKey = nil' in core:
-        errors.append("Gear pending state must not clear blindly on EQUIPMENT_SWAP_FINISHED")
-
-    # Verify the requested sequence without requiring Loot Spec to wait for a
-    # role-blocked playing-spec switch. Loot Spec is intentionally independent.
-    apply_start = core.find('function addon:ApplyAutomaticProfile(reason)')
-    apply_end = core.find('function addon:SetAutoSwitchLoadouts', apply_start)
-    apply_body = core[apply_start:apply_end] if apply_start >= 0 and apply_end > apply_start else ''
-    spec_pos = apply_body.find('self:TryAutoSwitchSpecialization(reason)')
-    loot_pos = apply_body.find('self:SyncDungeonLootSpecialization(reason)')
-    talent_pos = apply_body.find('self:TryAutoSwitchLoadout(reason)')
-    gear_pos = apply_body.find('self:TryAutoSwitchEquipment(reason)')
-    if min(spec_pos, loot_pos, talent_pos, gear_pos) < 0 or not (spec_pos < loot_pos < talent_pos < gear_pos):
-        errors.append("1.2.1 apply order must be playing spec -> loot spec -> talents -> equipment")
-    mismatch_guard_pos = apply_body.find('if targetSpecID and currentSpecID ~= targetSpecID then return false end')
-    if mismatch_guard_pos < 0 or loot_pos > mismatch_guard_pos:
-        errors.append("Loot Spec must be applied even if playing-spec automation is pending/role-blocked")
-
-    # The community-reported UI bug was caused by child pickers rendering
-    # behind the Dungeon Override editor. Check each picker constructor.
-    picker_markers = (
-        ('function addon:CreateProfileSpecializationPickerFrame()', 'function addon:UpdateProfileSpecializationPicker'),
-        ('function addon:CreateLootSpecializationPickerFrame()', 'function addon:UpdateLootSpecializationPicker'),
-        ('local function CreateLoadoutPickerFrame()', 'local function CreateEquipmentPickerFrame()'),
-        ('local function CreateEquipmentPickerFrame()', 'local function CreateVoiceConfigFrame()'),
-    )
-    for start_marker, end_marker in picker_markers:
-        start = core.find(start_marker)
-        end = core.find(end_marker, start + 1)
-        body = core[start:end] if start >= 0 and end > start else ''
-        if 'SetFrameStrata("FULLSCREEN_DIALOG")' not in body or 'SetFrameLevel(1200)' not in body:
-            errors.append(f"1.2.1 picker must render above Dungeon Overrides: {start_marker}")
-
-    editor_start = core.find('function addon:CreateDungeonOverrideEditorFrame()')
-    editor_end = core.find('function addon:OpenDungeonOverrideEditor', editor_start)
-    editor_body = core[editor_start:editor_end] if editor_start >= 0 and editor_end > editor_start else ''
-    if 'SetFrameStrata("FULLSCREEN_DIALOG")' not in editor_body or 'SetFrameLevel(900)' not in editor_body:
-        errors.append("Dungeon Override editor must remain below its pickers")
-
-    for loc_snippet in (
-        'P("Mythic+", "Mítica+")',
-        'P("Loot specialization", "Especialização de saque")',
-        'P("No override", "Sem override")',
-        'P("Current specialization (%s)", "Especialização atual (%s)")',
-        'P("Dungeon override: ACTIVE", "Override de masmorra: ATIVO")',
-    ):
-        if loc_snippet not in localization:
-            errors.append(f"1.2.1 localization guard missing: {loc_snippet}")
-
-    for rel in ("RELEASE_NOTES_v1.2.1.md", "TESTING_v1.2.1.md"):
-        if not (ROOT / rel).is_file():
-            errors.append(f"Missing 1.2.1 release document: {rel}")
-
-    for rel in ("RELEASE_NOTES_v1.2.2.md", "TESTING_v1.2.2.md"):
-        if not (ROOT / rel).is_file():
-            errors.append(f"Missing 1.2.2 hotfix document: {rel}")
-
-
-    # 1.2.3 Loadout Pilot responsiveness + compact HUD shortcut guards.
-    manual_spec_start = core.find('function addon:SwitchSpecialization(index)')
-    manual_spec_end = core.find('function addon:DetectActualContext()', manual_spec_start)
-    manual_spec_body = core[manual_spec_start:manual_spec_end] if manual_spec_start >= 0 and manual_spec_end > manual_spec_start else ''
-    auto_spec_start = core.find('function addon:TryAutoSwitchSpecialization(reason)')
-    auto_spec_end = core.find('function addon:ApplyAutomaticProfile(reason)', auto_spec_start)
-    auto_spec_body = core[auto_spec_start:auto_spec_end] if auto_spec_start >= 0 and auto_spec_end > auto_spec_start else ''
-    if manual_spec_body.find('C_SpecializationInfo.SetSpecialization') < 0 or manual_spec_body.find('C_SpecializationInfo.SetSpecialization') > manual_spec_body.find('C_ClassTalents.SwitchToSpecializationByIndex'):
-        errors.append("1.2.3 manual spec switching must prefer the Loadout Pilot SetSpecialization path")
-    if auto_spec_body.find('C_SpecializationInfo.SetSpecialization') < 0 or auto_spec_body.find('C_SpecializationInfo.SetSpecialization') > auto_spec_body.find('C_ClassTalents.SwitchToSpecializationByIndex'):
-        errors.append("1.2.3 automatic spec switching must prefer the Loadout Pilot SetSpecialization path")
-    if '(now - self.lastSpecializationSwitchAttemptAt) < 2 then' not in auto_spec_body:
-        errors.append("1.2.3 automatic specialization retry throttle must be 2 seconds")
-    for snippet in (
-        'function addon:SchedulePendingSpecializationRetry(targetSpecID, delay)',
-        'addon:SchedulePendingSpecializationRetry(targetSpecID, 2.0)',
-        'self:SchedulePendingSpecializationRetry(targetSpecID, 2.0)',
-        'addon:ApplyAutomaticProfile("world-ready")',
-        'C_Timer.After(1.0, function()',
-        'C_Timer.After(0.5, function()',
-        'frame:SetScript("OnMouseUp", function(_, mouseButton)',
-        'frame.specButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")',
-        'addon:ToggleMainFrame()',
-        'Right-click: open or close DK Mentor',
-    ):
-        if snippet not in core and snippet not in localization:
-            errors.append(f"1.2.3 responsiveness/HUD regression guard missing: {snippet}")
-    for rel in ("RELEASE_NOTES_v1.2.3.md", "TESTING_v1.2.3.md"):
-        if not (ROOT / rel).is_file():
-            errors.append(f"Missing 1.2.3 release document: {rel}")
-
-    # 1.1.9 language-picker layering + protected reload regression guards.
-    for snippet in (
-        'frame:SetFrameStrata("FULLSCREEN_DIALOG")',
-        'frame:SetFrameLevel(1000)',
-        'frame:EnableMouse(true)',
-        'Language saved as %s. Type /reload to apply it.',
-    ):
-        if snippet not in core and snippet not in localization:
-            errors.append(f"1.1.9 language picker regression guard missing: {snippet}")
-    if 'C_Timer.After(0.05, ReloadUI)' in core or 'ReloadUI()' in core:
-        errors.append("1.1.9 language selector must not call protected ReloadUI/Reload automatically")
-    for rel in ("RELEASE_NOTES_v1.1.9.md", "TESTING_v1.1.9.md"):
-        if not (ROOT / rel).is_file():
-            errors.append(f"Missing 1.1.9 release document: {rel}")
+        if snippet not in loc:
+            errors.append(f"2.0 EN/ptBR localization missing: {snippet}")
 
     if errors:
         print("Validation failed:", file=sys.stderr)
-        print("\n".join(f"- {e}" for e in errors), file=sys.stderr)
+        for error in errors:
+            print(f" - {error}", file=sys.stderr)
         return 1
 
     print(f"Validation passed: DK Mentor {VERSION}, Retail interface {INTERFACE}")

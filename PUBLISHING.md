@@ -1,19 +1,19 @@
-# Publishing DK Mentor 1.2.3
+# Publishing DK Mentor 2.0.11
 
-Release focus: **faster specialization/profile response + Build HUD right-click shortcut**.
+DK Mentor 2.0.11 is a focused localization hotfix on top of the stable 2.0.10 release. It does not change combat logic or SavedVariables schema.
 
-## CurseForge
+## Release focus
 
-Upload the clean CurseForge ZIP as a **Release** for WoW Retail 12.1.0 after the live 1.2.3 checklist passes.
+- Make the manual Auto / Português / English setting authoritative for addon-owned UI text after `/reload`.
+- Fix World / Delve / Dungeon / Mythic+ / Raid / PvP labels in the Combat page and compact DK Status HUD.
+- Fix addon specialization labels and static Survival / Coach / Codex / Guide data that could be materialized before SavedVariables were available.
+- Preserve WoW-client localization for spell/item names returned directly by Blizzard APIs.
+- Preserve all 2.0.10 combat, Midnight Secret Value, HUD, Adaptive Coach, and schema-30 behavior.
 
-Suggested display name: `DK Mentor 1.2.3`
+## CurseForge package
 
-Suggested changelog:
+Run `TESTING_v2.0.11.md`, especially the ptBR-client + English-addon scenario, then upload `DKMentor-v2.0.11-CurseForge.zip`.
 
-- Improved specialization/profile responsiveness using the proven Loadout Pilot request path and shorter DK Mentor-side waits.
-- Added retry handling for transient automatic specialization-switch failures.
-- The first automatic profile is now attempted sooner after entering the world.
-- Added right-click on the compact Build HUD to open/close DK Mentor.
-- Preserved left-click manual spec selection, role protection, Dungeon/Mythic+ overrides, Loot Spec, and DK READY.
+Suggested display name: `DK Mentor 2.0.11`
 
-The CurseForge package must remain clean: one `DKMentor/` root folder containing only runtime addon files, `LICENSE`, `THIRD_PARTY_NOTICES.md`, and the complete `Media/` folder.
+Suggested release type: `Release`.

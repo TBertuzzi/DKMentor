@@ -1,10 +1,9 @@
 local ADDON_NAME, DKM = ...
 
--- DK Mentor v1.0.0 build guidance. PvE profiles reference current Wowhead
--- guides; PvP profiles reference current Icy Veins guides where available.
--- DK Mentor does not bundle third-party prose, artwork, or talent import strings.
--- Players can store a guide import string locally and bind a real WoW loadout
--- to each content type for optional automatic switching.
+-- DK Mentor build guidance. PvE profiles reference current Wowhead guides;
+-- PvP profiles reference current Icy Veins guides where available. DK Mentor
+-- does not bundle third-party prose, artwork, or talent import strings and does
+-- not create, select, or switch WoW loadouts. Automation belongs to Loadout Pilot.
 local T = DKM.T or function(value) return value end
 
 local REVIEWED_PATCH = "12.1.0"
@@ -24,9 +23,13 @@ local function sourced(sourceKey, name, note, pvp)
     return {
         name = T(name),
         note = T(note),
-        source = T("%s • %s • guide updated %s", s.name, s.author, s.updated),
+        -- Keep source metadata separate so the "guide updated" label can be
+        -- localized at render time after the user's DK Mentor language is known.
+        source = string.format("%s • %s • guide updated %s", s.name, s.author, s.updated),
         sourceURL = s.url,
         sourceName = s.name,
+        sourceAuthor = s.author,
+        sourceUpdated = s.updated,
         code = "",
         reviewedPatch = REVIEWED_PATCH,
         reviewedDate = REVIEWED_DATE,

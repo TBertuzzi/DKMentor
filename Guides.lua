@@ -108,5 +108,5 @@ DKM.Guides = {
             },
         },
     },
-    footer = T("This guide is intentionally beginner-focused and complements the build source shown in the Loadouts tab. It does not replace encounter-specific guides or simulations."),
+    footer = T("This guide is intentionally beginner-focused and complements the build recommendations in the DK Codex. It does not replace encounter-specific guides or simulations."),
 }

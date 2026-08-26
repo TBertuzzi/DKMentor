@@ -6,6 +6,7 @@ local clientLocale = (GetLocale and GetLocale()) or "enUS"
 local localeOverride = "auto"
 local locale = clientLocale
 local ptBR = {}
+local enUSByPtBR = {}
 
 local function NormalizeLanguageOverride(value)
     value = tostring(value or "auto")
@@ -23,9 +24,9 @@ local function ResolveEffectiveLocale(override)
     return resolved, override
 end
 
--- SavedVariables are normally available while the addon is loading. Reading the
--- preference here means Data/Guides modules that localize static labels during
--- file load also start in the user's selected DK Mentor language after /reload.
+-- SavedVariables may not be available while addon files are executing. Use the
+-- client locale as a provisional language; Core applies the user's manual DK
+-- Mentor override at ADDON_LOADED and then refreshes static module strings.
 if type(_G.DKMentorDB) == "table" then
     locale, localeOverride = ResolveEffectiveLocale(_G.DKMentorDB.languageOverride)
 else
@@ -34,6 +35,14 @@ end
 
 local function P(en, pt)
     ptBR[en] = pt
+    -- Keep a reverse lookup as well. SavedVariables are loaded only after the
+    -- addon files execute, so static tables may have been materialized using
+    -- the WoW client language before DK Mentor can apply its manual language
+    -- override. The reverse map lets us normalize those cached strings once
+    -- the user's DK Mentor language is known.
+    if type(pt) == "string" and pt ~= "" and enUSByPtBR[pt] == nil then
+        enUSByPtBR[pt] = en
+    end
 end
 
 -- General UI
@@ -73,6 +82,7 @@ P("Check action bars", "Verificar barras")
 P("Disable native highlight", "Desativar destaque nativo")
 P("Enable native highlight", "Ativar destaque nativo")
 P("Select source URL", "Selecionar URL da fonte")
+P("guide updated %s", "guia atualizado %s")
 P("Personal talent import code (optional; stored locally):", "Código de importação de talentos (opcional; salvo localmente):")
 P("Save code", "Salvar código")
 P("Clear", "Limpar")
@@ -775,11 +785,114 @@ P("Language saved as %s. Type /reload to apply it.", "Idioma salvo como %s. Digi
 P("Cancel", "Cancelar")
 P("/dkm language auto|ptbr|en — change DK Mentor language", "/dkm language auto|ptbr|en — alterar o idioma do DK Mentor")
 
+
+-- Adaptive DK Coach / Combat Insights (2.0.5)
+P("Essential", "Essencial")
+P("Mentor", "Mentor")
+P("Training", "Treinamento")
+P("STABLE", "ESTÁVEL")
+P("CRITICAL", "CRÍTICO")
+P("DANGER", "PERIGO")
+P("RECOVER", "RECUPERAR")
+P("PRESSURE", "PRESSÃO")
+P("Adaptive Coach mode: %s", "Modo do Coach Adaptativo: %s")
+P("Adaptive DK Coach", "Coach Adaptativo de DK")
+P("Adaptive DK Coach — last combat", "Coach Adaptativo de DK — último combate")
+P("Mentor intelligence...", "Inteligência do Mentor...")
+P("Details...", "Detalhes...")
+P("Last combat insights", "Insights do último combate")
+P("Real-time DK priorities, defensive awareness, interrupt/control coaching, resource/proc waste detection, and post-combat execution insights.", "Prioridades de DK em tempo real, consciência defensiva, orientação de interrupção/controle, detecção de desperdício de recursos/procs e insights de execução após o combate.")
+P("Essential = only urgent survival/interrupt calls. Mentor = balanced default. Training = adds resource, proc, rune-idle, and possible control-stop coaching.", "Essencial = apenas alertas urgentes de sobrevivência/interrupção. Mentor = padrão equilibrado. Treinamento = adiciona recursos, procs, runas ociosas e possíveis controles para parar casts.")
+P("Mode: %s", "Modo: %s")
+P("Defensive Advisor: ON", "Advisor defensivo: LIGADO")
+P("Defensive Advisor: OFF", "Advisor defensivo: DESLIGADO")
+P("Interrupt/Utility: ON", "Interrupção/Utilidade: LIGADO")
+P("Interrupt/Utility: OFF", "Interrupção/Utilidade: DESLIGADO")
+P("Resource warnings: ON", "Alertas de recursos: LIGADOS")
+P("Resource warnings: OFF", "Alertas de recursos: DESLIGADOS")
+P("Proc warnings: ON", "Alertas de procs: LIGADOS")
+P("Proc warnings: OFF", "Alertas de procs: DESLIGADOS")
+P("Solo/Delve boost: ON", "Foco Solo/Imersão: LIGADO")
+P("Solo/Delve boost: OFF", "Foco Solo/Imersão: DESLIGADO")
+P("Combat Insights: ON", "Combat Insights: LIGADO")
+P("Combat Insights: OFF", "Combat Insights: DESLIGADO")
+P("Post-combat popup: ON", "Resumo pós-combate: LIGADO")
+P("Post-combat popup: OFF", "Resumo pós-combate: DESLIGADO")
+P("Clear last report", "Limpar último relatório")
+P("No completed combat report yet.", "Ainda não há relatório de combate concluído.")
+P("DK Mentor Score: %d/100", "DK Mentor Score: %d/100")
+P("  (+%d more)", "  (+%d a mais)")
+P("Duration: %ds • Minimum health: %d%%", "Duração: %ds • Menor vida: %d%%")
+P("Resources", "Recursos")
+P("Procs", "Procs")
+P("Defensives", "Defensivos")
+P("Interrupts", "Interrupções")
+P("%s: N/A", "%s: N/D")
+P("%s: %d", "%s: %d")
+P("Runic Power near cap: %.1fs • 5+ Runes ready: %.1fs", "Poder Rúnico perto do limite: %.1fs • 5+ Runas prontas: %.1fs")
+P("Procs consumed: %d • estimated expired: %d", "Procs consumidos: %d • expirados estimados: %d")
+P("Your interrupts: %d • handled opportunities: %d • completed casts: %d", "Suas interrupções: %d • oportunidades resolvidas: %d • casts concluídos: %d")
+P("Critical windows answered: %d/%d • defensive/recovery casts: %d", "Janelas críticas respondidas: %d/%d • usos defensivos/recuperação: %d")
+P("What to improve:", "O que melhorar:")
+P("Scores use only combat data that the WoW client makes readable to addons. Encounter-specific boss timers remain the job of DBM/BigWigs; DK Mentor translates observable pressure, casts, resources, and procs into DK responses.", "As notas usam apenas dados de combate que o cliente do WoW permite aos addons ler. Timers específicos de chefes continuam sendo responsabilidade do DBM/BigWigs; o DK Mentor traduz pressão, casts, recursos e procs observáveis em respostas de DK.")
+P("Score: %d/100\n%s", "Score: %d/100\n%s")
+P("Score: —\n%s", "Score: —\n%s")
+P("No major issue detected.", "Nenhum problema importante detectado.")
+P("Finish a combat of at least 5 seconds to generate DK-specific execution insights.", "Finalize um combate de pelo menos 5 segundos para gerar insights de execução específicos de DK.")
+P("Clean execution: no major DK Mentor mistakes were detected in the readable combat data.", "Execução limpa: nenhum erro importante foi detectado pelo DK Mentor nos dados de combate disponíveis.")
+P("%d interruptible cast(s) completed without a detected stop.", "%d cast(s) interrompível(eis) terminou(aram) sem uma interrupção detectada.")
+P("%d critical-health window(s) had no defensive/recovery response detected.", "%d janela(s) de vida crítica não teve/tiveram resposta defensiva ou de recuperação detectada.")
+P("Runic Power stayed near cap for %.1f seconds.", "O Poder Rúnico ficou perto do limite por %.1f segundos.")
+P("Five or more Runes stayed ready for %.1f seconds.", "Cinco ou mais Runas ficaram prontas por %.1f segundos.")
+P("%d important proc window(s) ended without a detected consumer.", "%d janela(s) de proc importante terminou(aram) sem consumo detectado.")
+P("%d non-boss cast(s) completed while a DK control response may have been possible.", "%d cast(s) de alvo não-chefe terminou(aram) quando um controle de DK talvez pudesse ter sido usado.")
+P("DK Mentor — %s / %s • %s", "DK Mentor — %s / %s • %s")
+P("USE NOW", "USE AGORA")
+P("critical health / amplify recovery", "vida crítica / amplifique a recuperação")
+P("after the damage spike", "depois do pico de dano")
+P("MITIGATE", "MITIGAR")
+P("heavy incoming pressure", "pressão de dano elevada")
+P("MAGIC", "MAGIA")
+P("repeated magic pressure", "pressão mágica repetida")
+P("critical health / heavy pressure", "vida crítica / pressão intensa")
+P("convert Runic Power into survival", "converta Poder Rúnico em sobrevivência")
+P("INTERRUPT", "INTERROMPER")
+P("target cast is interruptible", "o cast do alvo pode ser interrompido")
+P("STOP CAST", "PARAR CAST")
+P("non-interruptible cast — try DK control", "cast não-interrompível — tente controle de DK")
+P("PREPARE", "PREPARE")
+P("boss cast cannot be interrupted", "o cast do chefe não pode ser interrompido")
+P("SPEND RP", "GASTE PR")
+P("Runic Power near cap", "Poder Rúnico perto do limite")
+P("PROC", "PROC")
+P("high-value proc is active", "proc importante ativo")
+P("USE RUNES", "USE RUNAS")
+P("5+ runes are ready", "5+ runas estão prontas")
+P("ELITE", "ELITE")
+P("use early if the pull is dangerous", "use cedo se o pull for perigoso")
+P("keep a defensive ready", "mantenha um defensivo pronto")
+
+P("BONE SHIELD", "ESCUDO ÓSSEO")
+P("low stacks — refresh before they fall", "poucas cargas — renove antes que acabem")
+P("DISEASE", "DOENÇA")
+P("Virulent Plague missing on current target", "Praga Virulenta ausente no alvo atual")
+P("BUILD WOUNDS", "GERAR FERIDAS")
+P("long-lived target has few Festering Wounds", "alvo resistente com poucas Feridas Supurantes")
+P("SPEND WOUNDS", "GASTAR FERIDAS")
+P("Festering Wounds are high — avoid overbuilding", "Feridas Supurantes altas — evite gerar em excesso")
+P("/dkm mentor — open Adaptive DK Coach settings and Combat Insights", "/dkm mentor — abrir configurações do Coach Adaptativo e Combat Insights")
+P("/dkm mentor essential|mentor|training — change coaching intensity", "/dkm mentor essential|mentor|training — alterar a intensidade do Coach")
+
 function DKM.T(key, ...)
     key = tostring(key or "")
     local value = key
     if locale == "ptBR" then
         value = ptBR[key] or key
+    else
+        -- If a static table was created before SavedVariables became
+        -- available, it may contain the ptBR value already. Translate it back
+        -- to its canonical English key when the addon override is English.
+        value = enUSByPtBR[key] or key
     end
     if select("#", ...) > 0 then
         local ok, formatted = pcall(string.format, value, ...)
@@ -788,6 +901,36 @@ function DKM.T(key, ...)
         end
     end
     return value
+end
+
+local function RelocalizeTable(tbl, seen)
+    if type(tbl) ~= "table" then return end
+    seen = seen or {}
+    if seen[tbl] then return end
+    seen[tbl] = true
+
+    for key, value in pairs(tbl) do
+        if type(value) == "string" then
+            tbl[key] = DKM.T(value)
+        elseif type(value) == "table" then
+            RelocalizeTable(value, seen)
+        end
+    end
+end
+
+function DKM.RefreshStaticLocalization()
+    -- Data/Builds/Guides/Codex/Voices are loaded before ADDON_LOADED. By that
+    -- point SavedVariables are not guaranteed to be available yet, so their
+    -- static labels can reflect the WoW client locale instead of the manual
+    -- DK Mentor override. Normalize them immediately after the override is
+    -- applied and before the UI is created.
+    local seen = {}
+    for _, moduleName in ipairs({ "Data", "Builds", "Guides", "Codex", "Voices" }) do
+        local module = DKM[moduleName]
+        if type(module) == "table" then
+            RelocalizeTable(module, seen)
+        end
+    end
 end
 
 P("Mythic+", "Mítica+")
@@ -858,6 +1001,8 @@ P("Interrupt alert disabled.", "Alerta de interrupção desativado.")
 P("Shows the Mind Freeze icon only when your current target has a confirmed interruptible cast or channel.", "Mostra o ícone de Congelar Mente somente quando seu alvo atual estiver lançando ou canalizando algo confirmado como interrompível.")
 P("Appears when your current target is confirmed to be casting or channeling an interruptible spell.", "Aparece quando seu alvo atual estiver lançando ou canalizando uma magia confirmada como interrompível.")
 P("/dkm interrupt on|off — show or hide the Mind Freeze interrupt alert", "/dkm interrupt on|off — exibe ou oculta o alerta de Congelar Mente")
+P("/dkm interrupt status — inspect the current target cast signal", "/dkm interrupt status — inspeciona o sinal de cast do alvo atual")
+P("Interrupt status: enabled=%s • cast=%s • source=%s • castBarID=%s • API=%s • event=%s", "Status de interrupção: ativado=%s • cast=%s • fonte=%s • castBarID=%s • API=%s • evento=%s")
 
 P("Active DK procs are prioritized first and mirrored from Blizzard tracked buffs when available.", "Procs ativos do DK têm prioridade e são espelhados dos buffs rastreados da Blizzard quando disponíveis.")
 
@@ -940,3 +1085,236 @@ P("Build: current", "Build: atual")
 P("Gear: current", "Equipamento: atual")
 P("Specialization, talent, and gear mappings are configured per content profile in the Loadouts tab. These switches are global.", "Especialização, talentos e equipamento são configurados por perfil de conteúdo na aba Loadouts. Estes controles AUTO são globais.")
 P("This profile is specific to %s / %s. DK Mentor can switch specialization, talents, and equipment automatically when their AUTO options are enabled. Dungeon overrides can replace only the values you choose.", "Este perfil é específico para %s / %s. O DK Mentor pode trocar especialização, talentos e equipamento automaticamente quando as opções AUTO estiverem ligadas. Overrides de masmorra substituem apenas os valores que você escolher.")
+
+-- 2.0.x focused DK Mentor / Loadout Pilot handoff
+P("DK Mentor Status", "Status do DK Mentor")
+P("DK status HUD: ON", "HUD de status do DK: LIGADO")
+P("DK status HUD: OFF", "HUD de status do DK: DESLIGADO")
+P("DK status HUD enabled.", "HUD de status do DK ativado.")
+P("DK status HUD disabled.", "HUD de status do DK desativado.")
+P("Shows detected content and DK Ready status beside your specialization icon.", "Mostra o conteúdo detectado e o status DK Pronto ao lado do ícone da especialização.")
+P("Global addon settings for Death Knight combat HUDs, guidance, and commentary.", "Configurações globais dos HUDs de combate, orientações e comentários do Cavaleiro da Morte.")
+P("Loadout automation", "Automação de loadouts")
+P("Loadout Pilot detected. DK Mentor focuses on Death Knight guidance while Loadout Pilot handles specialization, talent, gear, and loot-spec automation.", "Loadout Pilot detectado. O DK Mentor foca em orientação para Cavaleiro da Morte enquanto o Loadout Pilot cuida da automação de especialização, talentos, equipamento e especialização de saque.")
+P("Loadout automation moved to the dedicated Loadout Pilot addon. DK Mentor no longer changes specialization, talents, gear, or loot specialization automatically.", "A automação de loadouts foi movida para o addon dedicado Loadout Pilot. O DK Mentor não altera mais especialização, talentos, equipamento ou especialização de saque automaticamente.")
+P("Open Loadout Pilot", "Abrir Loadout Pilot")
+P("Loadout Pilot not detected", "Loadout Pilot não detectado")
+P("Pilot not detected", "Pilot não detectado")
+P("Loadout Pilot is not currently loaded. Install or enable Loadout Pilot to automate specialization, talents, gear, and loot specialization.", "O Loadout Pilot não está carregado. Instale ou ative o Loadout Pilot para automatizar especialização, talentos, equipamento e especialização de saque.")
+P("Build recommendations", "Recomendações de builds")
+P("Build recommendations — %s", "Recomendações de build — %s")
+P("DK Mentor recommends builds and explains when to use them; it does not create, select, or switch WoW loadouts. Use Loadout Pilot if you want automation.", "O DK Mentor recomenda builds e explica quando usá-las; ele não cria, seleciona nem troca loadouts do WoW. Use o Loadout Pilot se quiser automação.")
+P("No build recommendation is available for this specialization and content.", "Nenhuma recomendação de build está disponível para esta especialização e conteúdo.")
+P("Source: %s", "Fonte: %s")
+P("/dkm builds — open DK Codex build recommendations", "/dkm builds — abrir recomendações de build do Códice do DK")
+P("/dkm loadouts — open Loadout Pilot when installed", "/dkm loadouts — abrir o Loadout Pilot quando instalado")
+P("/dkm hud on|off — show or hide the movable DK status HUD", "/dkm hud on|off — mostrar ou ocultar o HUD móvel de status do DK")
+P("This guide is intentionally beginner-focused and complements the build recommendations in the DK Codex. It does not replace encounter-specific guides or simulations.", "Este guia é propositalmente voltado para iniciantes e complementa as recomendações de build do Códice do DK. Ele não substitui guias específicos de encontros nem simulações.")
+
+-- 1.3.0 DK Codex
+P("DK Codex", "Códice do DK")
+P("Current", "Atual")
+P("Overview", "Visão geral")
+P("Stats & Gear", "Atributos e equipamento")
+P("Rotation", "Rotação")
+P("Survival", "Sobrevivência")
+P("Utility", "Utilidade")
+P("Character Check", "Verificação do personagem")
+P("Midnight Season 2", "Midnight Temporada 2")
+P("DK Codex is an in-game Death Knight reference for Patch 12.1. Browse any DK specialization without changing the specialization you are playing.", "O Códice do DK é uma referência de Cavaleiro da Morte dentro do jogo para o Patch 12.1. Consulte qualquer especialização de DK sem trocar a especialização que você está jogando.")
+P("Following current specialization", "Acompanhando a especialização atual")
+P("Browsing %s without switching specialization", "Consultando %s sem trocar de especialização")
+P("DK Codex • Patch %s • %s", "Códice do DK • Patch %s • %s")
+P("Character Check — live diagnostics", "Verificação do personagem — diagnóstico ao vivo")
+P("This check inspects your active character. It never changes gear, talents, enchants, gems, or abilities.", "Esta verificação analisa o personagem ativo. Ela nunca altera equipamento, talentos, encantamentos, gemas ou habilidades.")
+P("Recommendation context", "Contexto da recomendação")
+P("Utility ready reference", "Referência de utilidades disponíveis")
+P("General guidance only; simulate your character for exact optimization.", "Apenas orientação geral; simule seu personagem para uma otimização exata.")
+P("/dkm codex — open the DK Codex", "/dkm codex — abrir o Códice do DK")
+P("/dkm guide — alias for the DK Codex", "/dkm guide — atalho para o Códice do DK")
+
+P("DK mechanics — Runes", "Mecânicas do DK — Runas")
+P("Death Knights have six Runes, but only three can regenerate at the same time. Spending from different Rune pairs keeps regeneration moving; sitting on too many ready Runes wastes future resource generation.", "Cavaleiros da Morte possuem seis Runas, mas somente três podem se regenerar ao mesmo tempo. Gastar Runas de pares diferentes mantém a regeneração em movimento; ficar com Runas prontas demais desperdiça geração futura de recursos.")
+P("DK mechanics — Runic Power", "Mecânicas do DK — Poder Rúnico")
+P("Runic Power is generated mainly by spending Runes and fuels damage spenders plus Death Strike. Avoid capping it, but in dangerous solo, PvP, or tank situations keep enough available for emergency recovery.", "O Poder Rúnico é gerado principalmente ao gastar Runas e alimenta habilidades de dano e Golpe da Morte. Evite chegar ao limite, mas em situações perigosas solo, JxJ ou como tank mantenha o suficiente para uma recuperação de emergência.")
+P("DK mechanics — Death Strike", "Mecânicas do DK — Golpe da Morte")
+P("Death Strike is strongest after meaningful incoming damage. Blood plans much of its active mitigation around that timing; Frost and Unholy should treat it as a survival conversion of Runic Power instead of a normal damage button.", "Golpe da Morte é mais forte depois de receber dano relevante. Sangue planeja boa parte da mitigação ativa em torno desse momento; Gélido e Profano devem tratá-lo como uma conversão de Poder Rúnico em sobrevivência, e não como um botão normal de dano.")
+P("How to use this Codex", "Como usar este Códice")
+P("Use the Codex as a fast in-game reference, not as a replacement for simulation or encounter-specific strategy. Stat values, Hero Talent tuning, trinkets, and exact openers can shift with hotfixes even inside the same patch.", "Use o Códice como referência rápida dentro do jogo, não como substituto de simulação ou estratégia específica de encontro. Valores de atributos, balanceamento de Talentos Heroicos, berloques e openers exatos podem mudar com hotfixes até dentro do mesmo patch.")
+
+P("Universal survival toolkit", "Kit universal de sobrevivência")
+P("Anti-Magic Shell is best used before predictable magic damage or magic control. Icebound Fortitude is the major emergency defensive and also helps against dangerous stuns. Lichborne, Death Pact, and Anti-Magic Zone depend on your talent choices but can add powerful personal or group survival.", "Carapaça Antimagia é melhor antes de dano mágico ou controle previsível. Fortitude Congélida é o grande defensivo de emergência e também ajuda contra atordoamentos perigosos. Lichborne, Pacto da Morte e Zona Antimagia dependem dos seus talentos, mas podem adicionar muita sobrevivência pessoal ou para o grupo.")
+P("Physical vs. magic damage", "Dano físico vs. mágico")
+P("Do not press Anti-Magic Shell into a purely physical hit. Use Icebound Fortitude or spec-specific mitigation for heavy physical pressure, and save Anti-Magic Shell for mechanics it can actually absorb or prevent.", "Não use Carapaça Antimagia contra um golpe puramente físico. Use Fortitude Congélida ou mitigação da especialização contra pressão física pesada e guarde a Carapaça para mecânicas que ela realmente possa absorver ou impedir.")
+P("Resource planning saves lives", "Planejar recursos salva vidas")
+P("A DK at zero Runic Power has fewer recovery options. Before a dangerous pull or enemy burst, avoid spending every point of Runic Power if you expect to need Death Strike immediately afterward.", "Um DK com zero Poder Rúnico tem menos opções de recuperação. Antes de um pull perigoso ou burst inimigo, evite gastar tudo se você espera precisar de Golpe da Morte logo depois.")
+
+P("Interrupt and crowd control handbook", "Manual de interrupção e controle")
+P("Mind Freeze is your primary interrupt. Death Grip can stop or reposition many movable casters, Asphyxiate provides a stun when talented, Blinding Sleet can disrupt groups, and Chains of Ice is excellent for controlling dangerous movement. A well-timed control effect often prevents more damage than a late defensive.", "Congelar Mente é sua interrupção principal. Garra da Morte pode parar ou reposicionar muitos conjuradores móveis, Asfixiar oferece atordoamento quando escolhido, Granizo Cegante pode desorganizar grupos e Correntes de Gelo é excelente para controlar movimentações perigosas. Um controle bem usado frequentemente evita mais dano que um defensivo tardio.")
+P("Death Grip etiquette", "Boas práticas com Garra da Morte")
+P("Grip is powerful group utility, but moving an enemy can break tank positioning or pull it out of ground effects. Use it deliberately: bring a caster into the pack, rescue positioning, or stop a dangerous cast when a normal interrupt is unavailable.", "Grip é uma utilidade poderosa, mas mover um inimigo pode atrapalhar o posicionamento do tank ou tirá-lo de efeitos no chão. Use de forma intencional: traga um conjurador para o pack, corrija posicionamento ou pare uma magia perigosa quando uma interrupção normal não estiver disponível.")
+P("Movement and group tools", "Movimento e ferramentas de grupo")
+P("Death's Advance is valuable against slows and forced movement. Anti-Magic Zone can protect the group from shared magic damage, and Raise Ally gives every DK a combat resurrection when the encounter allows it.", "Avanço da Morte é valioso contra lentidão e movimento forçado. Zona Antimagia pode proteger o grupo de dano mágico compartilhado, e Reviver Aliado oferece ao DK uma ressurreição em combate quando o encontro permite.")
+
+P("Playstyle identity", "Identidade da jogabilidade")
+P("Hero Talents — San'layn", "Talentos Heroicos — San'layn")
+P("Hero Talents — Deathbringer", "Talentos Heroicos — Deathbringer")
+P("Hero Talents — Rider of the Apocalypse", "Talentos Heroicos — Cavaleiro do Apocalipse")
+P("PvE stat priority — San'layn", "Prioridade de atributos JxA — San'layn")
+P("PvE stat priority — Deathbringer", "Prioridade de atributos JxA — Deathbringer")
+P("PvE stat priority", "Prioridade de atributos JxA")
+P("PvP stat priority", "Prioridade de atributos JxJ")
+P("Gems", "Gemas")
+P("Enchants", "Encantamentos")
+P("Consumables", "Consumíveis")
+P("Cheat sheet", "Resumo rápido")
+P("Beginner opener", "Opener para iniciantes")
+P("Cooldown handbook — burst", "Manual de cooldowns — burst")
+P("Cooldown handbook — defense", "Manual de cooldowns — defesa")
+P("Cooldown handbook — resources", "Manual de cooldowns — recursos")
+P("Cooldown handbook — spenders", "Manual de cooldowns — gastadores")
+P("Blood survival priority", "Prioridade de sobrevivência — Sangue")
+P("Frost survival priority", "Prioridade de sobrevivência — Gélido")
+P("Unholy survival priority", "Prioridade de sobrevivência — Profano")
+P("Large pulls", "Pulls grandes")
+P("Do not die during Pillar", "Não morra durante Pilar")
+P("Pet awareness", "Atenção ao pet")
+P("Blood-specific control", "Controle específico de Sangue")
+P("Frost-specific control", "Controle específico de Gélido")
+P("Unholy-specific utility", "Utilidade específica de Profano")
+
+P("Blood is a reactive tank built around preparing mitigation, taking a hit, and recovering with Death Strike. Large health swings are normal; the goal is to control them with Bone Shield, Runic Power planning, and proactive cooldowns.", "Sangue é um tank reativo: prepara mitigação, recebe o golpe e recupera com Golpe da Morte. Grandes oscilações de vida são normais; o objetivo é controlá-las com Escudo Ósseo, planejamento de Poder Rúnico e cooldowns proativos.")
+P("San'layn emphasizes Vampiric Strike, Essence of the Blood Queen, and strong Dancing Rune Weapon windows. In Patch 12.1 it is a very attractive default for content with frequent multi-target combat and rewards maintaining its haste-oriented gameplay loop.", "San'layn enfatiza Golpe Vampírico, Essência da Rainha de Sangue e janelas fortes de Arma Rúnica Dançante. No Patch 12.1 é uma opção padrão muito atraente para conteúdo com combate frequente contra múltiplos alvos e recompensa uma jogabilidade orientada por Aceleração.")
+P("Deathbringer centers on Reaper's Mark and more compact burst windows. It is straightforward to plan around and remains competitive when encounter timing or single-target focus favors its damage profile.", "Deathbringer gira em torno da Marca do Ceifador e de janelas de burst mais compactas. É simples de planejar e continua competitivo quando o timing do encontro ou o foco em alvo único favorece seu perfil de dano.")
+P("Strength > Haste > Critical Strike > Mastery > Versatility. Haste is especially valuable for San'layn, with current general guidance often favoring it strongly until roughly the 30% unbuffed area. Item level and simulation still matter more than blindly following a fixed list.", "Força > Aceleração > Acerto Crítico > Maestria > Versatilidade. Aceleração é especialmente valiosa para San'layn, com a orientação geral atual favorecendo-a bastante até perto de 30% sem buffs. Nível de item e simulação ainda importam mais do que seguir cegamente uma lista fixa.")
+P("Strength > Critical Strike > Mastery > Versatility > Haste. Blood's two Hero Talent trees value secondaries differently, so always compare gear in the context of the tree you actually play.", "Força > Acerto Crítico > Maestria > Versatilidade > Aceleração. As duas árvores de Talento Heroico de Sangue valorizam atributos secundários de forma diferente, então compare o equipamento no contexto da árvore que você realmente joga.")
+P("Current Patch 12.1 guidance commonly favors Rune of Sanguination for San'layn and many Deathbringer situations. Rune of the Fallen Crusader remains a strong build- and target-count-dependent alternative. DK Mentor's Ready Check only requires a valid DK Runeforge; the Codex recommendation is informational.", "A orientação atual do Patch 12.1 costuma favorecer Runa da Sangradura para San'layn e muitas situações de Deathbringer. Runa do Cruzado Caído continua uma alternativa forte dependendo da build e do número de alvos. A verificação DK Pronto exige apenas uma Forja Rúnica válida; a recomendação do Códice é informativa.")
+P("A common current setup uses Indecipherable Eversong Diamond as the unique epic gem. Deathbringer commonly leans toward Flawless Masterful Garnet, while San'layn commonly leans toward Flawless Quick Garnet. Adjust to your own stat distribution.", "Uma configuração atual comum usa Indecipherable Eversong Diamond como gema épica única. Deathbringer tende a Flawless Masterful Garnet, enquanto San'layn tende a Flawless Quick Garnet. Ajuste de acordo com a distribuição dos seus atributos.")
+P("Current general recommendations: Head — Empowered Blessing of Speed; Shoulders — Akil'zon's Swiftness; Chest — Mark of the Worldsoul; Legs — Forest Hunter's Armor Kit; Feet — Farstrider's Hunt. Rings commonly use Silvermoon's Tenacity for Deathbringer or Nature's Fury for San'layn.", "Recomendações gerais atuais: Cabeça — Empowered Blessing of Speed; Ombros — Akil'zon's Swiftness; Peito — Mark of the Worldsoul; Pernas — Forest Hunter's Armor Kit; Pés — Farstrider's Hunt. Anéis costumam usar Silvermoon's Tenacity para Deathbringer ou Nature's Fury para San'layn.")
+P("Thalassian Phoenix Oil is a common weapon consumable. Flask choices are stat-dependent: Flask of the Shattered Sun is a common baseline, with Blood Knights or Thalassian Resistance alternatives depending on build and goals. Potion of Recklessness is the usual damage potion; carry Concentrated Silvermoon Health Potions, a current feast or Royal Roast-style personal food, and Void-Touched Augment Runes when appropriate.", "Thalassian Phoenix Oil é um consumível comum de arma. Frascos dependem dos atributos: Flask of the Shattered Sun é uma base comum, com Blood Knights ou Thalassian Resistance como alternativas conforme build e objetivo. Potion of Recklessness é a poção de dano usual; carregue Concentrated Silvermoon Health Potions, um banquete atual ou comida pessoal no estilo Royal Roast e Void-Touched Augment Runes quando apropriado.")
+P("Keep Bone Shield active. Do not cap Runes. Build and preserve enough Runic Power for Death Strike. Use Death Strike after meaningful damage. Keep Blood Boil working on packs, and use your major cooldowns before the pull becomes a crisis.", "Mantenha Escudo Ósseo ativo. Não fique com Runas paradas. Gere e preserve Poder Rúnico suficiente para Golpe da Morte. Use Golpe da Morte depois de dano relevante. Mantenha Sangue Fervente funcionando nos packs e use cooldowns grandes antes que o pull vire uma crise.")
+P("A safe general pattern is: pre-place Death and Decay when useful, prepare Bone Shield/Death's Caress, apply your Hero Talent burst such as Reaper's Mark when available, activate Dancing Rune Weapon for the dangerous opening window, establish Blood Boil coverage, then settle into your normal Rune/Runic Power and Death Strike priority. Exact sequencing changes with talents.", "Um padrão geral seguro é: pré-posicione Morte e Decomposição quando útil, prepare Escudo Ósseo/Carícia da Morte, aplique o burst do Talento Heroico como Marca do Ceifador quando disponível, ative Arma Rúnica Dançante na abertura perigosa, estabeleça Sangue Fervente e então siga a prioridade normal de Runas/Poder Rúnico e Golpe da Morte. A sequência exata muda com os talentos.")
+P("Dancing Rune Weapon is both offensive and defensive and should usually be used early enough to gain its full value. Deathbringer players align Reaper's Mark with planned damage windows; San'layn players care strongly about their Vampiric Strike / Essence of the Blood Queen window.", "Arma Rúnica Dançante é ofensiva e defensiva e normalmente deve ser usada cedo o bastante para entregar todo o seu valor. Deathbringer alinha Marca do Ceifador com janelas planejadas; San'layn valoriza muito sua janela de Golpe Vampírico / Essência da Rainha de Sangue.")
+P("Vampiric Blood amplifies your health and recovery, Rune Tap helps before predictable hits when talented, Icebound Fortitude covers major physical or stun pressure, and Anti-Magic Shell should be planned around magic mechanics.", "Sangue Vampírico aumenta vida e recuperação, Runa Vampírica ajuda antes de golpes previsíveis quando escolhida, Fortitude Congélida cobre grande pressão física ou atordoamento e Carapaça Antimagia deve ser planejada para mecânicas mágicas.")
+P("Prepare Bone Shield before dangerous contact, avoid entering a tank buster with no Runic Power, use mitigation before the hit, then use Death Strike after the hit. Do not wait until nearly zero health to press every major cooldown at once.", "Prepare Escudo Ósseo antes do contato perigoso, evite entrar em um tank buster sem Poder Rúnico, use mitigação antes do golpe e Golpe da Morte depois dele. Não espere ficar quase sem vida para apertar todos os cooldowns grandes de uma vez.")
+P("Open difficult packs with a plan: establish threat and diseases quickly, position casters with Grip, use Dancing Rune Weapon or another planned cooldown early, and rotate defensives instead of overlapping everything. Save enough Runic Power to recover from the first real spike.", "Abra packs difíceis com um plano: estabeleça ameaça e doenças rápido, posicione conjuradores com Grip, use Arma Rúnica Dançante ou outro cooldown planejado cedo e alterne defensivos em vez de sobrepor tudo. Guarde Poder Rúnico suficiente para se recuperar do primeiro pico real.")
+P("Gorefiend's Grasp is one of the strongest positioning tools a tank can bring. Use it to consolidate enemies for your group, but avoid dragging mobs through dangerous areas or disrupting carefully placed crowd control.", "Garra de Sanguinávido é uma das ferramentas de posicionamento mais fortes que um tank pode trazer. Use para agrupar inimigos, mas evite arrastar mobs por áreas perigosas ou quebrar controles bem posicionados.")
+
+P("Frost converts Runes into heavy weapon attacks and uses Runic Power on Frost spenders while reacting to Killing Machine and Rime. Strong play is about keeping resources moving and entering major cooldown windows prepared.", "Gélido converte Runas em ataques pesados de arma e usa Poder Rúnico em gastadores de Gelo enquanto reage a Máquina Assassina e Rime. Jogar bem significa manter os recursos circulando e entrar preparado nas grandes janelas de cooldown.")
+P("Rider adds Horsemen/minion pressure and excellent mobility through Death Charge. It is especially comfortable for movement-heavy or solo content and remains a strong raid option in current Patch 12.1 tuning.", "Cavaleiro adiciona pressão de Cavaleiros/minions e excelente mobilidade com Investida da Morte. É especialmente confortável em conteúdo solo ou com muita movimentação e continua uma forte opção de raide no balanceamento atual do Patch 12.1.")
+P("Deathbringer adds Reaper's Mark and concentrated burst windows. It is a strong Mythic+ option in current 12.1 tuning, but both Frost Hero Talent trees are viable and their relative value can change with hotfixes and encounter shape.", "Deathbringer adiciona Marca do Ceifador e janelas concentradas de burst. É uma opção forte de Mítica+ no balanceamento atual do 12.1, mas as duas árvores Heroicas de Gélido são viáveis e o valor relativo pode mudar com hotfixes e formato do encontro.")
+P("Critical Strike > Haste > Mastery > Versatility. Deathbringer generally places a little less value on Haste than Rider. Higher item level is often important, and your exact distribution should be simulated rather than treated as permanent stat weights.", "Acerto Crítico > Aceleração > Maestria > Versatilidade. Deathbringer geralmente valoriza um pouco menos Aceleração que Cavaleiro. Nível de item maior costuma ser importante e sua distribuição exata deve ser simulada, não tratada como pesos permanentes.")
+P("Item Level > Versatility > Mastery > Haste > Critical Strike is the current general PvP direction. Exact Haste goals can differ between Rider and Deathbringer builds.", "Nível de item > Versatilidade > Maestria > Aceleração > Acerto Crítico é a direção geral atual no JxJ. Metas exatas de Aceleração podem variar entre builds de Cavaleiro e Deathbringer.")
+P("Rune of the Fallen Crusader is the common Frost staple. Rune of Razorice is build-dependent and frequently paired with Fallen Crusader for dual-wield setups. Some Breath-oriented dual-wield setups can prefer Rune of the Stoneskin Gargoyle on one weapon. For two-handed play, Fallen Crusader plus Thalassian Phoenix Oil is a strong general baseline unless your build specifically calls for Razorice.", "Runa do Cruzado Caído é a base comum de Gélido. Runa da Gelâmina depende da build e é frequentemente combinada com Cruzado Caído em duas armas. Algumas configurações de Sopro com duas armas podem preferir Runa da Gárgula Litopele em uma arma. Para arma de duas mãos, Cruzado Caído + Thalassian Phoenix Oil é uma base forte, salvo se a build pedir Gelâmina.")
+P("Choose gems to support your current Crit/Haste balance rather than chasing a fixed universal number. Use the current unique epic gem when available, then favor the secondary stat your simulation needs most.", "Escolha gemas para apoiar seu equilíbrio atual de Crítico/Aceleração em vez de perseguir um número universal fixo. Use a gema épica única atual quando disponível e depois favoreça o atributo secundário que sua simulação mais precisar.")
+P("Current general recommendations: Head — Empowered Rune of Avoidance; Shoulders — Amirdrassil's Grace; Chest — Mark of the Worldsoul; Legs — Forest Hunter's Armor Kit; Boots — Lynx's Dexterity; Rings — Eyes of the Eagle.", "Recomendações gerais atuais: Cabeça — Empowered Rune of Avoidance; Ombros — Amirdrassil's Grace; Peito — Mark of the Worldsoul; Pernas — Forest Hunter's Armor Kit; Botas — Lynx's Dexterity; Anéis — Eyes of the Eagle.")
+P("Flask of the Shattered Sun is a common default, while Magisters or Blood Knights flasks can become better depending on your current stats. Potion of Recklessness is the usual default damage potion. Carry Concentrated Silvermoon Health Potions, a current main-stat feast or Royal Roast-style personal food, Thalassian Phoenix Oil when appropriate, and Void-Touched Augment Runes.", "Flask of the Shattered Sun é uma opção padrão comum, enquanto frascos de Magisters ou Blood Knights podem ficar melhores conforme seus atributos. Potion of Recklessness é a poção de dano padrão. Carregue Concentrated Silvermoon Health Potions, banquete atual de atributo primário ou comida Royal Roast, Thalassian Phoenix Oil quando apropriado e Void-Touched Augment Runes.")
+P("Keep Runes cycling. React to Killing Machine and Rime without creating resource waste. Avoid capping Runic Power. Enter Pillar of Frost / Breath windows with resources ready. Keep attacking during burst instead of spending the whole window repositioning.", "Mantenha as Runas girando. Reaja a Máquina Assassina e Rime sem desperdiçar recursos. Evite capar Poder Rúnico. Entre nas janelas de Pilar de Gelo / Sopro com recursos prontos. Continue atacando durante o burst em vez de gastar toda a janela reposicionando.")
+P("A current general single-target pattern is: Empower Rune Weapon, establish an Obliterate, apply Reaper's Mark if Deathbringer, activate Remorseless Winter, then start your major Pillar of Frost / Breath of Sindragosa burst package and use Frostwyrm's Fury in the planned window. Exact order changes with your saved build, weapon style, and Hero Talents.", "Um padrão geral atual para alvo único é: Potencializar Arma Rúnica, estabelecer Obliterar, aplicar Marca do Ceifador se Deathbringer, ativar Inverno Impiedoso, iniciar o pacote principal de Pilar de Gelo / Sopro de Sindragosa e usar Fúria da Serpe de Gelo na janela planejada. A ordem exata muda conforme build, arma e Talentos Heroicos.")
+P("Pillar of Frost defines your main damage window. Align it intelligently with Breath of Sindragosa, Frostwyrm's Fury, Reaper's Mark, trinkets, and potion according to your build. Avoid drifting major cooldowns without a reason.", "Pilar de Gelo define sua principal janela de dano. Alinhe de forma inteligente com Sopro de Sindragosa, Fúria da Serpe de Gelo, Marca do Ceifador, berloques e poção conforme sua build. Evite atrasar grandes cooldowns sem motivo.")
+P("Empower Rune Weapon is not just a damage button: it stabilizes the resources that make your burst work. Use it where the extra Runes and Runic Power actually feed your next damage window instead of overcapping.", "Potencializar Arma Rúnica não é apenas um botão de dano: ele estabiliza os recursos que fazem seu burst funcionar. Use onde as Runas e o Poder Rúnico extras realmente alimentem a próxima janela sem estourar o limite.")
+P("Frost does not want to spend damage resources on Death Strike unnecessarily, but staying alive is always a DPS gain. When pressure is coming, preserve enough Runic Power for one or more Death Strikes and use Anti-Magic Shell before predictable magic damage.", "Gélido não quer gastar recursos de dano em Golpe da Morte sem necessidade, mas ficar vivo sempre é ganho de DPS. Quando a pressão vier, preserve Poder Rúnico para um ou mais Golpes da Morte e use Carapaça Antimagia antes de dano mágico previsível.")
+P("A burst window is not permission to ignore mechanics. Pre-position, use Death's Advance for forced movement when appropriate, and use defensives early enough that you can keep attacking instead of losing the entire window to emergency recovery.", "Uma janela de burst não é permissão para ignorar mecânicas. Posicione-se antes, use Avanço da Morte contra movimento forçado quando apropriado e defensivos cedo o bastante para continuar atacando sem perder toda a janela se recuperando.")
+P("Frost has the same excellent DK baseline toolkit: Mind Freeze, Death Grip, Chains of Ice, Asphyxiate/Blinding Sleet when talented, Anti-Magic Zone, and Raise Ally. Rider can add particularly convenient movement through Death Charge.", "Gélido mantém o excelente kit base de DK: Congelar Mente, Garra da Morte, Correntes de Gelo, Asfixiar/Granizo Cegante quando escolhidos, Zona Antimagia e Reviver Aliado. Cavaleiro ainda pode adicionar mobilidade muito conveniente com Investida da Morte.")
+
+P("Unholy combines diseases, summoned minions, Rune spenders, and Runic Power spenders. Its damage rewards setup: prepare your disease/minion state first, then commit major cooldowns instead of pressing them into an empty setup.", "Profano combina doenças, minions invocados, gastadores de Runas e de Poder Rúnico. Seu dano recompensa preparação: organize doenças/minions antes e só então comprometa grandes cooldowns, em vez de apertá-los sem setup.")
+P("Rider is a strong default minion-oriented option in current Patch 12.1 guidance. It adds Horsemen pressure and Death Charge mobility and fits naturally with Unholy's pet-focused burst windows.", "Cavaleiro é uma opção padrão forte voltada a minions na orientação atual do Patch 12.1. Adiciona pressão dos Cavaleiros e mobilidade de Investida da Morte, encaixando naturalmente nas janelas de burst focadas em pets de Profano.")
+P("San'layn shifts more of the gameplay toward Vampiric Strike, plague/direct-damage interactions, and maintaining Essence of the Blood Queen. It offers a different rhythm and remains viable; exact preference can change by content and tuning.", "San'layn desloca mais da jogabilidade para Golpe Vampírico, interações de pragas/dano direto e manutenção de Essência da Rainha de Sangue. Oferece um ritmo diferente e continua viável; a preferência exata pode mudar por conteúdo e balanceamento.")
+P("Critical Strike > Mastery > Haste > Versatility. Crit, Mastery, and Haste are all valuable and significantly stronger than Versatility in current general PvE guidance. Item level and simulation should still decide close upgrades.", "Acerto Crítico > Maestria > Aceleração > Versatilidade. Crítico, Maestria e Aceleração são valiosos e significativamente mais fortes que Versatilidade na orientação JxA atual. Nível de item e simulação devem decidir upgrades próximos.")
+P("Item Level > Versatility > Mastery > Haste > Critical Strike is the current general PvP direction.", "Nível de item > Versatilidade > Maestria > Aceleração > Acerto Crítico é a direção geral atual no JxJ.")
+P("Rune of the Apocalypse plus Thalassian Phoenix Oil is the current strong all-content PvE baseline for Unholy in Patch 12.1. Rune of the Fallen Crusader remains a competitive alternative, so treat the recommendation as build guidance rather than a hard error.", "Runa do Apocalipse + Thalassian Phoenix Oil é a forte base JxA atual para Profano no Patch 12.1. Runa do Cruzado Caído continua uma alternativa competitiva; trate a recomendação como orientação de build, não como erro obrigatório.")
+P("Indecipherable Eversong Diamond is the current unique epic choice. Flawless Quick Garnet or Flawless Masterful Garnet are common secondary gems depending on whether your current gear needs more Haste or Mastery.", "Indecipherable Eversong Diamond é a gema épica única atual. Flawless Quick Garnet ou Flawless Masterful Garnet são opções secundárias comuns conforme seu equipamento precise de mais Aceleração ou Maestria.")
+P("Flask of the Shattered Sun is a common default, with Magisters becoming attractive depending on your Crit/Mastery balance. Potion of Recklessness is the usual damage potion. Carry Concentrated Silvermoon Health Potions, a current main-stat feast or Royal Roast-style personal food, Thalassian Phoenix Oil, and Void-Touched Augment Runes.", "Flask of the Shattered Sun é uma opção padrão comum, com Magisters ficando atraente conforme seu equilíbrio de Crítico/Maestria. Potion of Recklessness é a poção de dano usual. Carregue Concentrated Silvermoon Health Potions, banquete atual de atributo primário ou Royal Roast, Thalassian Phoenix Oil e Void-Touched Augment Runes.")
+P("Keep your disease active. Build the resources your current talents expect before major cooldowns. Avoid capping Runic Power. Spend procs promptly. Coordinate Army of the Dead and Dark Transformation with your planned burst package, and use Epidemic instead of Death Coil when the active target count makes it appropriate.", "Mantenha sua doença ativa. Gere os recursos que seus talentos atuais pedem antes dos grandes cooldowns. Evite capar Poder Rúnico. Gaste procs rapidamente. Coordene Exército dos Mortos e Transformação Negra com o burst planejado e use Epidemia no lugar de Espiral da Morte quando o número de alvos justificar.")
+P("A current beginner-friendly pattern is: Outbreak, build initial resources with Festering Strike, then commit Army of the Dead + Dark Transformation with potion/trinkets, follow with Soul Reaper when appropriate, and enter the Putrefy / Scourge Strike / Death Coil or Epidemic priority for your build. Exact sequencing changes with Hero Talents and target count.", "Um padrão atual amigável para iniciantes é: Surto, gere recursos iniciais com Golpe Purulento, então use Exército dos Mortos + Transformação Negra com poção/berloques, siga com Ceifador de Almas quando apropriado e entre na prioridade de Putrefy / Golpe do Flagelo / Espiral da Morte ou Epidemia da sua build. A sequência exata muda com Talentos Heroicos e quantidade de alvos.")
+P("Army of the Dead and Dark Transformation define major Unholy setup windows. Plan them around encounter timing and add waves instead of pressing them just before targets disappear. Rider emphasizes minion pressure; San'layn shifts more value into its Vampiric Strike / plague loop.", "Exército dos Mortos e Transformação Negra definem grandes janelas de setup de Profano. Planeje com o timing do encontro e ondas de adds, em vez de usar pouco antes dos alvos sumirem. Cavaleiro enfatiza pressão de minions; San'layn move mais valor para o ciclo de Golpe Vampírico/pragas.")
+P("Death Coil is the normal single-target Runic Power spender and Epidemic takes over in meaningful AoE. Do not cap Runic Power, but remember that Death Strike uses the same resource when survival becomes more important than damage.", "Espiral da Morte é o gastador normal de Poder Rúnico em alvo único e Epidemia assume em AoE relevante. Não cape Poder Rúnico, mas lembre que Golpe da Morte usa o mesmo recurso quando sobreviver fica mais importante que causar dano.")
+P("Keep your ghoul and setup stable, but do not sacrifice your character to protect the rotation. Preserve Runic Power when danger is approaching, use Anti-Magic Shell proactively, and Death Strike after a real damage spike when necessary.", "Mantenha seu carniçal e setup estáveis, mas não sacrifique o personagem para proteger a rotação. Preserve Poder Rúnico quando o perigo se aproximar, use Carapaça Antimagia de forma proativa e Golpe da Morte depois de um pico real quando necessário.")
+P("Unholy loses meaningful value when its permanent ghoul is unexpectedly missing. DK Mentor's Ready Check already watches this when Raise Dead is part of your current setup; the Character Check repeats the state as a quick diagnostic.", "Profano perde valor quando seu carniçal permanente some inesperadamente. A verificação DK Pronto já monitora isso quando Reviver Morto faz parte da configuração; a Verificação do Personagem repete o estado como diagnóstico rápido.")
+P("Your baseline control suite is just as important as your damage setup. Use Grip to bring casters into disease/AoE coverage, Mind Freeze priority spells, Chains of Ice dangerous movers, and keep Raise Ally ready for group recovery.", "Seu kit base de controle é tão importante quanto o setup de dano. Use Grip para trazer conjuradores para doenças/AoE, Congelar Mente em magias prioritárias, Correntes de Gelo em inimigos perigosos e mantenha Reviver Aliado disponível para o grupo.")
+
+P("Blood: the checker verifies a DK Runeforge, common enchantable slots, sockets when item data is available, mapped talents/gear, and a live stat snapshot. It does not fail you for using a different valid Runeforge because Blood recommendations depend on Hero Talents and encounter shape.", "Sangue: a verificação confere Forja Rúnica, slots normalmente encantáveis, engastes quando os dados estiverem disponíveis, talentos/equipamento associados e um retrato dos atributos. Ela não reprova uma Forja Rúnica válida diferente porque a recomendação de Sangue depende dos Talentos Heroicos e do encontro.")
+P("Frost: the checker verifies setup hygiene, but it does not mark Razorice/Fallen Crusader combinations wrong because the correct pairing depends on two-handed vs dual-wield and the active build.", "Gélido: a verificação confere a preparação, mas não marca combinações Gelâmina/Cruzado Caído como erradas porque o par correto depende de arma de duas mãos ou duas armas e da build ativa.")
+P("Unholy: the checker also reports ghoul state when your current setup exposes Raise Dead. Rune of the Apocalypse is the current PvE baseline recommendation, but the checker treats other valid DK Runeforges as informational rather than a hard failure.", "Profano: a verificação também informa o estado do carniçal quando a configuração atual expõe Reviver Morto. Runa do Apocalipse é a recomendação base JxA atual, mas outras Forjas Rúnicas válidas são tratadas como informação, não como falha obrigatória.")
+P("Patch 12.1 guidance reviewed 2026-08-25 from current Death Knight theorycraft/guide references and WoW client data. Use Raidbots or another current simulator for exact personal gear/stat optimization.", "Orientação do Patch 12.1 revisada em 25/08/2026 com referências atuais de theorycraft/guias de DK e dados do cliente do WoW. Use Raidbots ou outro simulador atual para otimização exata de equipamento e atributos.")
+
+P("Live check uses your active specialization: %s. Static recommendations above can still be browsed for %s.", "A verificação ao vivo usa sua especialização ativa: %s. As recomendações estáticas ainda podem ser consultadas para %s.")
+P("Specialization/profile", "Especialização/perfil")
+P("Current specialization", "Especialização atual")
+P("Talent loadout", "Loadout de talentos")
+P("Equipment set", "Conjunto de equipamento")
+P("Common enchant slots", "Slots comuns de encantamento")
+P("Missing enchant: %s", "Encantamento ausente: %s")
+P("Waiting for item data (%d)", "Aguardando dados de itens (%d)")
+P("No missing permanent enchants detected", "Nenhum encantamento permanente ausente detectado")
+P("Sockets", "Engastes")
+P("Socket information unavailable", "Informações de engaste indisponíveis")
+P("%d empty socket(s) detected", "%d engaste(s) vazio(s) detectado(s)")
+P("No empty sockets detected; %d item(s) still loading", "Nenhum engaste vazio detectado; %d item(ns) ainda carregando")
+P("No empty sockets detected", "Nenhum engaste vazio detectado")
+P("Current stat snapshot", "Retrato atual dos atributos")
+P("Crit: %s   Haste: %s   Mastery: %s   Versatility: %s", "Crítico: %s   Aceleração: %s   Maestria: %s   Versatilidade: %s")
+P("This snapshot is informational. DK Mentor does not mark a character wrong for a secondary-stat distribution because item level, Hero Talents, trinkets, and diminishing returns can change the answer.", "Este retrato é informativo. O DK Mentor não marca um personagem como errado pela distribuição de secundários porque nível de item, Talentos Heroicos, berloques e retornos decrescentes podem mudar a resposta.")
+P("Utility toolkit", "Kit de utilidades")
+P("Known / available: %s", "Conhecidas / disponíveis: %s")
+P("Not currently known/talented: %s", "Não conhecidas/escolhidas agora: %s")
+P("For live cooldown readiness, use DK Mentor's Ability Availability Bar; the Codex does not automate abilities.", "Para prontidão de cooldowns ao vivo, use a Barra de Disponibilidade de Habilidades do DK Mentor; o Códice não automatiza habilidades.")
+P("Head", "Cabeça")
+P("Shoulders", "Ombros")
+P("Chest", "Peito")
+P("Legs", "Pernas")
+P("Feet", "Pés")
+P("Ring 1", "Anel 1")
+P("Ring 2", "Anel 2")
+P("Mind Freeze", "Congelar Mente")
+P("Death Grip", "Garra da Morte")
+P("Chains of Ice", "Correntes de Gelo")
+P("Asphyxiate", "Asfixiar")
+P("Blinding Sleet", "Granizo Cegante")
+P("Anti-Magic Zone", "Zona Antimagia")
+P("Death's Advance", "Avanço da Morte")
+P("Raise Ally", "Reviver Aliado")
+
+-- Managed DKM loadout refresh from saved import codes (1.3.4)
+P("The talent import code is empty.", "O código de importação de talentos está vazio.")
+P("WoW's talent import decoder is not available yet. Open the Talents window once and try again.", "O decodificador de importação de talentos do WoW ainda não está disponível. Abra a janela de Talentos uma vez e tente novamente.")
+P("WoW's talent APIs are not available yet.", "As APIs de talentos do WoW ainda não estão disponíveis.")
+P("The talent import code could not be decoded.", "Não foi possível decodificar o código de importação de talentos.")
+P("The talent import code is invalid or incomplete.", "O código de importação de talentos é inválido ou está incompleto.")
+P("The talent import code uses a different WoW serialization version.", "O código de importação de talentos usa uma versão de serialização diferente da versão atual do WoW.")
+P("The talent import code belongs to a different specialization.", "O código de importação de talentos pertence a outra especialização.")
+P("Could not resolve the talent tree for this specialization.", "Não foi possível localizar a árvore de talentos desta especialização.")
+P("The talent tree changed since this code was generated. Get a current import code and try again.", "A árvore de talentos mudou desde que este código foi gerado. Obtenha um código de importação atual e tente novamente.")
+P("Could not read the talent tree nodes.", "Não foi possível ler os nós da árvore de talentos.")
+P("Updated WoW loadout '%s' from the saved talent import code.", "Loadout do WoW '%s' atualizado com o código de importação de talentos salvo.")
+P("The code was saved locally, but WoW did not confirm the DKM loadout update. The existing loadout was left untouched.", "O código foi salvo localmente, mas o WoW não confirmou a atualização do loadout DKM. O loadout existente foi mantido sem alterações.")
+P("A DKM talent loadout update is already in progress.", "Uma atualização de loadout de talentos DKM já está em andamento.")
+P("The code was saved locally. Leave combat to update the WoW DKM loadout.", "O código foi salvo localmente. Saia de combate para atualizar o loadout DKM do WoW.")
+P("The code was saved locally. Switch to %s before updating WoW loadout '%s'.", "O código foi salvo localmente. Troque para %s antes de atualizar o loadout do WoW '%s'.")
+P("The code was saved locally, but this WoW client cannot update the DKM loadout from an import code.", "O código foi salvo localmente, mas este cliente do WoW não consegue atualizar o loadout DKM a partir de um código de importação.")
+P("The code was saved locally, but WoW loadout '%s' was not changed: %s", "O código foi salvo localmente, mas o loadout do WoW '%s' não foi alterado: %s")
+P("invalid import code", "código de importação inválido")
+P("WoW rejected the import", "o WoW rejeitou a importação")
+P("Updating WoW loadout '%s' from the saved talent import code...", "Atualizando o loadout do WoW '%s' com o código de importação de talentos salvo...")
+P("When a DKM-managed loadout already exists, Save code also refreshes that WoW loadout from the new import string.", "Quando já existe um loadout gerenciado pelo DKM, Salvar código também atualiza esse loadout do WoW com o novo código de importação.")
+P("Saved locally. If a DKM-managed loadout already exists, Save code refreshes it from this import string; otherwise import it into WoW and bind a loadout below.", "Salvo localmente. Se já existir um loadout gerenciado pelo DKM, Salvar código o atualiza usando este código de importação; caso contrário, importe-o no WoW e associe um loadout abaixo.")
+P("The new DKM loadout is ready, but WoW kept the previous '%s' copy. You can safely delete the older duplicate later.", "O novo loadout DKM está pronto, mas o WoW manteve a cópia anterior de '%s'. Você pode excluir com segurança a duplicata mais antiga depois.")
+
+-- DK Mentor 2.0.10 release-candidate polish
+P("Test alerts", "Testar alertas")
+P("Reset Mentor settings", "Restaurar configurações do Mentor")
+P("Mentor settings restored to defaults.", "Configurações do Mentor restauradas para o padrão.")
+P("Alert preview active for 8 seconds.", "Prévia dos alertas ativa por 8 segundos.")
+P("Alert preview is available only out of combat.", "A prévia dos alertas só está disponível fora de combate.")
+P("DK Mentor — alert preview", "DK Mentor — prévia de alertas")
+P("Preview: Defensive • Proc • Resource", "Prévia: Defensivo • Proc • Recurso")
+P("RESOURCE", "RECURSO")
+P("example: heavy incoming pressure", "exemplo: pressão pesada de dano")
+P("example: high-value proc is active", "exemplo: um proc importante está ativo")
+P("example: spend or recover before capping", "exemplo: gaste ou recupere antes de atingir o limite")
+P("/dkm mentor test|reset — preview alerts or restore Mentor defaults", "/dkm mentor test|reset — testar alertas ou restaurar os padrões do Mentor")
+P("DK Mentor recommends actions; it never casts abilities automatically.", "O DK Mentor recomenda ações; ele nunca usa habilidades automaticamente.")
+P("DK Mentor 2.0 — Adaptive DK Coach is ready.", "DK Mentor 2.0 — Adaptive DK Coach está pronto.")
+P("Loadout automation now belongs to Loadout Pilot; DK Mentor focuses on combat, survival, resources, procs, interrupts, and post-combat insights.", "A automação de loadouts agora pertence ao Loadout Pilot; o DK Mentor foca em combate, sobrevivência, recursos, procs, interrupções e análises pós-combate.")
+P("DK Mentor recommends actions; it never casts abilities automatically. Use /dkm help for commands.", "O DK Mentor recomenda ações; ele nunca usa habilidades automaticamente. Use /dkm help para ver os comandos.")
+P("Ready. Explore the DK Codex and use /dkm help to view commands.", "Pronto. Explore o Códice do DK e use /dkm help para ver os comandos.")

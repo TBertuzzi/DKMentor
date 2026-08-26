@@ -1,15 +1,16 @@
-# CurseForge submission values
+# CurseForge submission — DK Mentor 2.0.11
 
-- **Project name:** DK Mentor
-- **Suggested slug:** dk-mentor
 - **Game:** World of Warcraft
-- **Game version:** Retail / 12.1.x
-- **Primary category:** Combat
+- **Project:** DK Mentor
+- **File:** `DKMentor-v2.0.11-CurseForge.zip`
+- **Release state:** Release (localization hotfix)
+- **Retail interface:** 120100
 - **License:** MIT
-- **Current file:** `DKMentor-v1.2.3-CurseForge.zip`
-- **Release type recommendation:** Release after the v1.2.3 live checklist passes.
-- **Description:** use `CURSEFORGE_DESCRIPTION.md`
-- **Logo:** `logo/DKMentor_Logo_512.png`
-- **Project image/banner:** `logo/DKMentor_Banner_1200x480.png`
 
-The uploaded game file must contain exactly one top-level `DKMentor` folder. Do not upload the GitHub repository archive as the CurseForge addon file.
+## Suggested display name
+
+`DK Mentor 2.0.11`
+
+## Release positioning
+
+Focused 2.0 localization hotfix. Manual English/Português selection now consistently controls addon-owned context labels, specialization labels, Survival/Coach guidance, Codex/Guide static text, and the compact status HUD after `/reload`. WoW-provided spell/item names continue to use the game client's locale by design. No combat behavior or SavedVariables schema changed from 2.0.10.

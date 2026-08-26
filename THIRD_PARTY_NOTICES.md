@@ -1,6 +1,10 @@
 # Third-party notices
 
-DK Mentor 1.1.2 does not bundle third-party Lua libraries, copied addon code, third-party talent import strings, external artwork, music, or sound files.
+DK Mentor 2.0.4 does not bundle third-party Lua libraries, copied addon code, third-party talent import strings, external artwork, music, or sound files.
+
+## Loadout Pilot
+
+DK Mentor 2.0 can detect and open the separately installed Loadout Pilot addon. No Loadout Pilot Lua code is embedded or copied into DK Mentor; the integration is limited to an optional local handoff when Loadout Pilot is already loaded.
 
 ## IceHUD
 

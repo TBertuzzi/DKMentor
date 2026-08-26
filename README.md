@@ -2,42 +2,117 @@
 
 # DK Mentor
 
-**DK Mentor** is a World of Warcraft Retail addon for Blood, Frost, and Unholy Death Knights. It combines Blizzard's native Assisted Combat highlighting with survival guidance, content-aware specialization/talent/equipment profiles, dynamic per-dungeon overrides, compact combat HUDs, a DK Ready Check with Runeforge/Ghoul guards, aura tracking, beginner guidance, and optional Lich King commentary.
+**DK Mentor** is a World of Warcraft Retail addon built specifically for **Blood, Frost, and Unholy Death Knights**. Version 2.0 focuses the project on one job: helping Death Knight players understand their class, read the fight, and keep the most useful DK information close to the character.
 
-The in-game UI automatically uses Brazilian Portuguese on `ptBR` clients and English on `enUS`/`enGB`; unsupported locales fall back to English.
+Loadout automation is no longer part of DK Mentor. Specialization/talent/gear/Loot Specialization automation belongs to the dedicated **Loadout Pilot** addon. DK Mentor can detect Loadout Pilot and open it from Settings or `/dkm loadouts`, but it does not require it.
 
-## Highlights
+The in-game UI defaults to Brazilian Portuguese on `ptBR` clients and English on `enUS`/`enGB`, with a manual **Auto / Português / English** override in Settings. After changing the override, use `/reload` to rebuild the UI in the selected addon language. Addon-owned labels, context names, guidance, Codex text, and specialization labels follow that override; spell/item names returned directly by the WoW client intentionally remain in the WoW client language.
+
+## DK Mentor 2.0 focus
 
 - Blood, Frost, and Unholy specialization detection.
-- World, Delve, Dungeon, Mythic+, Raid, and PvP context detection with automatic runtime switching.
+- World, Delve, Dungeon, Mythic+, Raid, and PvP **content detection for guidance and HUD labels only**.
 - Blizzard Assisted Combat offensive highlighting; DK Mentor never casts abilities.
-- Health-aware Survival Coach for defensive, healing, control, and utility priorities.
-- Contextual **specialization + talent loadout + Equipment Set** profiles with independent Spec AUTO / Talents AUTO / Gear AUTO switching when WoW permits it.
-- Dynamic **Dungeon Overrides** discovered from WoW Mythic+/Challenge Mode data and visited instances; one rule is shared across Normal/Heroic/Mythic 0/Mythic+ and can independently override specialization, **Loot Specialization**, talents, and gear.
-- Dungeon/Mythic+/Raid/PvP role protection skips automatic Tank <-> DPS playing-specialization changes that conflict with the player's assigned group role; Loot Specialization remains independent.
-- Compact movable one-line Build HUD showing the specialization icon, detected content/dungeon, active build, associated gear, and DK READY; left-click the icon for manual spec switching and right-click the HUD to open/close DK Mentor.
-- **DK Ready Check** in the Build HUD for mapped talents, mapped equipment, Death Knight Runeforge coverage, and the Unholy ghoul when applicable.
-- **Runeforge Guard** validates a DK Runeforge on every equipped weapon without pretending one rune is universally best for all builds.
-- **Ghoul Guard** warns Unholy Death Knights when their permanent pet is missing/dead, with travel/vehicle suppression.
-- DK Buff Bar for important class buffs/procs using Blizzard's Retail 12.1 AuraContainer with a spec-aware Cooldown Manager whitelist; it defaults to five icons per row and can display up to 30 active tracked effects.
-- External Buff Bar for helpful effects applied to you by other players or NPCs.
-- Player Debuff Bar for harmful effects currently affecting your own character.
-- DK Buffs, External Buffs, and Debuffs default to **five icons per row**, can be widened/narrowed independently, and grow upward when they wrap.
-- Ability Availability Bar for important abilities, cooldowns, charges, and temporary unavailability.
-- **DK Resources HUD** with all six Rune recharge segments plus a Runic Power bar; each resource can be shown independently.
-- Optional icon-only **Mind Freeze interrupt alert** that appears for a confirmed interruptible cast/channel on your current target; it never casts the interrupt automatically.
-- Combat-only visibility for DK Buffs, External Buffs, Debuffs, the Ability Bar, and DK Resources is the default; it can be switched to always-visible from Settings.
-- Independent 70%-160% combat-HUD scaling, **30%-100% opacity**, configurable icons per row for icon bars, and a Runes / Runic Power / Both mode for DK Resources.
-- HUD lock/unlock, hard-override preview, and reset-position workflow.
-- Beginner Guide tab per specialization.
-- Optional situational Lich King commentary using sound resources already installed by the WoW client; no Blizzard audio files are bundled.
-- Minimap button positioned on the outer edge of the current Edit Mode minimap size.
+- **Adaptive DK Coach** with Essential, Mentor, and Training modes; it prioritizes urgent survival, interrupts, possible control stops, resources, procs, and spec-aware states when the client exposes them.
+- **Defensive Advisor** using readable player health and recent health-loss pressure, with Blood-specific Bone Shield/Death Strike/Vampiric Blood handling. It does not inspect the restricted Midnight combat log or guess damage school.
+- **Combat Insights + DK Mentor Score** after meaningful combats, with readable resource, proc, interrupt, and critical-health response analysis.
+- Compact movable **DK Status HUD** showing the specialization icon, detected content, and DK READY state.
+- Left-click the status icon to use the normal manual Blood/Frost/Unholy specialization picker; right-click the widget to open or close DK Mentor.
+- **DK Ready Check** for class-specific readiness: Death Knight Runeforge coverage and the Unholy ghoul when applicable.
+- **DK Codex** with current Blood/Frost/Unholy guidance: builds, stats, Runeforges, gems, enchants, consumables, Hero Talents, cheat sheets, openers, cooldowns, survival, utility, and live Character Check.
+- Build recommendations are advisory and source-linked. DK Mentor does **not** create, select, import, or switch WoW talent loadouts.
+- Optional **Loadout Pilot integration** for players who want automatic specialization, talents, equipment, or Loot Specialization changes.
+- DK Buff Bar for important class buffs/procs using Blizzard's Retail 12.1 AuraContainer.
+- External Buff Bar for helpful effects applied by other players/NPCs.
+- Player Debuff Bar for harmful effects affecting your character.
+- Ability Availability Bar for important cooldowns, charges, and temporary availability.
+- DK Resources HUD with six Rune indicators plus Runic Power, including the optional **DK Arcs** layout.
+- Optional Mind Freeze interrupt alert for a confirmed interruptible target cast/channel; the Adaptive Coach can also surface Mind Freeze and possible DK control stops, but never interrupts automatically.
+- Movable, lockable, scalable combat HUDs with Preview mode, opacity controls, icon wrapping, and combat-only visibility.
+- Release-candidate polish: one-click **Reset HUD positions**, **Reset Mentor settings**, and an out-of-combat **Test alerts** preview for Defensive / Proc / Resource / Interrupt visuals.
+- One-time 2.0 upgrade notice explaining the Loadout Pilot split and the recommendation-only safety model.
+- Optional situational Lich King commentary using sound resources already installed by WoW. No Blizzard audio is bundled.
+
+## Why loadout automation moved out
+
+DK Mentor and Loadout Pilot had started solving the same problem in two places. Version 2.0 separates those responsibilities:
+
+- **DK Mentor:** DK gameplay, class knowledge, HUDs, survival guidance, readiness, resources, buffs/procs, and the DK Codex.
+- **Loadout Pilot:** automatic specialization, talents, equipment, Loot Specialization, and content/dungeon loadout rules.
+
+This keeps DK Mentor easier to maintain and lets loadout improvements be implemented once in the addon dedicated to that job.
+
+Existing 1.x SavedVariables are intentionally preserved for rollback safety. DK Mentor 2.0.11 keeps the schema-30 migration guard introduced in 2.0.10 to sanitize stale HUD anchors/coordinates while preserving valid user settings, and it forces the retired automatic-switch flags off. Legacy mapping data is ignored rather than deleted.
 
 ## Retail 12.1 combat restrictions
 
-Modern WoW can protect or hide some combat values from addons. DK Mentor does not attempt to bypass those restrictions. The addon uses Blizzard-owned APIs and UI mechanisms where available, including Assisted Combat, DurationObjects, proc events, and the Retail 12.1 AuraContainer/AuraButton system for dynamic player aura HUDs. The DK Resources HUD reads the six secondary Rune cooldowns normally. Runic Power is a primary resource and can become a secret value in combat, so DK Mentor passes it directly into Blizzard's native `StatusBar` value path and does not branch, threshold, or make recommendations from the hidden number.
+Modern WoW can protect or hide combat values from addons. DK Mentor does not attempt to bypass those restrictions. It uses Blizzard-owned APIs and UI mechanisms where available, including Assisted Combat, DurationObjects, proc events, and the Retail 12.1 AuraContainer/AuraButton system for dynamic player aura HUDs.
 
-When the game does not expose a restricted value, DK Mentor avoids pretending that the value is known.
+Midnight 12.1 prevents addons from using protected AuraButtons to infer secret aura state. Combat-log events are also unavailable to third-party addons, so DK Mentor never registers `COMBAT_LOG_EVENT_UNFILTERED` and never calls `CombatLogGetCurrentEventInfo`. DK Mentor therefore never attaches `OnShow`/`OnHide` handlers to those buttons and never reads their visibility to decide combat behavior. During normal locked gameplay, DK Mentor hides its decorative aura-bar chrome and lets Blizzard render only the active aura icons.
+
+Runic Power can also become a secret value in combat. DK Mentor passes it to Blizzard's StatusBar rendering path and only performs coaching/score calculations when the number is readable; inaccessible values are ignored rather than compared.
+
+## DK Codex
+
+The **DK Codex** can browse Current, Blood, Frost, or Unholy without changing the specialization you are playing. It contains seven sections:
+
+- Overview
+- Builds
+- Rotation
+- Survival
+- Stats & Gear
+- Utility
+- Character Check
+
+The **Builds** section uses the content DK Mentor currently detects and shows source-linked recommendations for that specialization/content. It is intentionally recommendation-only. If Loadout Pilot is loaded, the Codex can open it directly for players who want automation.
+
+Optimization advice is advisory: exact gearing, stat balance, trinkets, and encounter-specific choices should still be simulated when the difference matters.
+
+### Character Check
+
+Character Check is read-only. It reports useful player-owned state such as:
+
+- active specialization;
+- DK Runeforge state;
+- Unholy ghoul state when relevant;
+- common missing permanent enchants;
+- empty sockets when item data is available;
+- current Crit/Haste/Mastery/Versatility snapshot;
+- known/talented DK utility.
+
+It never equips gear, changes talents, sockets gems, applies enchants, or casts abilities.
+
+## DK Ready Check
+
+The compact DK READY result is deliberately class-specific in 2.0. It checks:
+
+- whether equipped DK weapons have a recognized Death Knight Runeforge when the item data is readable;
+- whether the Unholy permanent ghoul is available when that check applies.
+
+It no longer treats a talent loadout, equipment set, Loot Specialization, or content profile as a readiness requirement.
+
+Use `/dkm ready` for the detailed chat report.
+
+## DK Resources HUD
+
+The optional DK Resources HUD keeps the Death Knight resource loop close to the character:
+
+- six Rune recharge indicators;
+- Runic Power bar;
+- Runes only / Runic Power only / both;
+- Classic bars or optional **DK Arcs** presentation;
+- independent scale, opacity, saved position, Preview, and combat-only visibility;
+- Runic Power text toggle and Rune spacing controls.
+
+## Aura HUDs
+
+The addon provides three aura concepts:
+
+- **DK Buffs:** important self buffs/procs for the active DK specialization.
+- **External Buffs:** positive effects supplied by other players/NPCs.
+- **Debuffs:** harmful effects on the player.
+
+They use Blizzard's Retail aura-container system. DK Buffs combines spec-aware candidate data with current Cooldown Manager-related metadata. The bars are display-only and do not automate reactions.
 
 ## Installation
 
@@ -52,11 +127,16 @@ When the game does not expose a restricted value, DK Mentor avoids pretending th
 ```text
 /dkm
 /dkm help
-/dkm mode
+/dkm codex
+/dkm builds
+/dkm loadouts
+/dkm ready
 /dkm coach on|off
-/dkm build
-/dkm gear
-/dkm voice
+/dkm mentor
+/dkm mentor essential|mentor|training
+/dkm mentor test|reset
+/dkm hud on|off
+/dkm hud lock|unlock|preview
 /dkm buffs on|off
 /dkm externalbuffs on|off
 /dkm debuffs on|off
@@ -64,77 +144,50 @@ When the game does not expose a restricted value, DK Mentor avoids pretending th
 /dkm resources on|off
 /dkm resources runes on|off
 /dkm resources power on|off
+/dkm resources style classic|arcs
 /dkm interrupt on|off
 /dkm combatbars combat|always
-/dkm ready
-/dkm hud lock|unlock|preview
+/dkm settings
+/dkm language auto|ptbr|en
+/dkm voice
+/dkm rotation
+/dkm bars
 /dkm reset
 ```
 
-## Loadouts 2.1
-
-DK Mentor maps **existing** WoW talent loadouts and Equipment Sets to separate World, Delve, Dungeon, **Mythic+**, Raid, and PvP profiles. Each content profile can also choose Blood, Frost, Unholy, or **Do not change**. The three automation switches remain independent: **Spec AUTO**, **Talents AUTO**, and **Gear AUTO**.
-
-**Dungeon Overrides** use one canonical dungeon rule shared across Normal, Heroic, Mythic 0, and Mythic+. The seasonal catalog comes from WoW's Challenge Mode data and visited instances; DK Mentor resolves Challenge Mode map data to a stable InstanceID whenever possible, so the same dungeon does not need duplicate M0/M+ configurations.
-
-For each dungeon you can independently configure:
-
-- playing specialization: inherit, keep current, Blood, Frost, or Unholy;
-- **Loot Specialization**: no override, current specialization, Blood, Frost, or Unholy;
-- talent loadout: inherit, keep current, or choose a saved WoW loadout;
-- equipment set: inherit, keep current, or choose a saved WoW set.
-
-Inherited fields follow the context you are actually playing: regular dungeon content uses the **Dungeon** default, while a slotted/active keystone uses the **Mythic+** default. A slotted keystone is detected before the timer starts so DK Mentor can prepare the requested setup while WoW still permits changes.
-
-Loot Specialization is independent from the playing role. A Frost/Unholy DPS can select Blood loot without becoming Blood. When a dungeon Loot Spec override ends, DK Mentor restores the Loot Specialization that was active before that override session.
-
-In Dungeon, Mythic+, Raid, and PvP, DK Mentor protects the assigned group role when **playing-spec** automation is used. Same-role Frost <-> Unholy switching remains allowed, while an automatic DPS <-> Tank switch is skipped when it conflicts with the protected role. This guard never removes the normal manual specialization selector on the Build HUD.
-
-No third-party talent import strings are bundled. Build panels link to attributed public guide sources; players can store their own import strings locally in `DKMentorDB`.
-
-## DK Ready Check
-
-The Build HUD includes a compact readiness result and a detailed hover tooltip. It checks only player-owned/configuration state: the content-mapped talent loadout, the mapped Equipment Set, permanent Runeforge enchants on equipped weapons, and the Unholy pet when Raise Dead is available.
-
-Runeforge Guard answers **"is this a Death Knight Runeforge?"**, not **"is this always the mathematically best rune?"**. Rune choice can vary by build and encounter, so the addon avoids presenting a universal optimization claim.
-
-Use `/dkm ready` for a chat report while testing.
-
-## DK Resources HUD
-
-The optional **DK Resources** HUD keeps the Death Knight resource loop close to the other combat bars:
-
-- Six Rune segments show ready/recharging state.
-- A Runic Power bar follows the player resource using Blizzard's native status-bar rendering path.
-- Settings can show **Runes + Runic Power**, **Runes only**, or **Runic Power only**.
-- The HUD has its own 70%-160% scale, 30%-100% opacity, saved position, lock/unlock behavior, Preview support, and the same Combat only / Always visibility rule as the other combat HUDs.
-- Runic Power text can be hidden for a cleaner visual, and Rune spacing can be switched between Compact, Normal, and Wide.
-- **Restore DK Resources** resets only this HUD without changing the other combat HUDs.
-- In restricted combat, the Runic Power fill may remain live while its numeric text is intentionally omitted if the underlying number is secret.
-
-## Aura HUDs
-
-The addon provides three separate aura concepts:
-
-- **DK Buffs**: important self buffs/procs for the active Death Knight specialization.
-- **External Buffs**: positive effects on the player supplied by other players/NPCs.
-- **Debuffs**: negative effects currently affecting the player character.
-
-DK Buffs, External Buffs, and Debuffs use Blizzard's Retail aura-container system so the game client owns aura assignment and refreshes during restricted combat. DK Buffs uses a spell-ID whitelist assembled from spec data and current Cooldown Manager profiles; DK Mentor never branches on secret aura presence to decide what should be shown. The HUDs are display-only and do not automate reactions.
+`/dkm build` is an alias for the Codex Builds section. `/dkm loadouts`, `/dkm pilot`, `/dkm gear`, and `/dkm equipment` hand off to Loadout Pilot when it is installed/enabled.
 
 ## Lich King commentary
 
 The commentary feature is optional and disabled by default. It references numeric sound resources already present in the player's installed WoW client. DK Mentor does not include, extract, modify, or redistribute Blizzard audio files or dialogue transcripts.
 
-## Publishing and project policy
+## Development and publishing
 
-- [1.2.3 live test checklist](TESTING_v1.2.3.md)
-- [1.2.2 hotfix test checklist](TESTING_v1.2.2.md)
+- [DK Mentor 2.0.11 localization hotfix checklist](TESTING_v2.0.11.md)
+- [DK Mentor 2.0.11 release notes](RELEASE_NOTES_v2.0.11.md)
+- [DK Mentor 2.0.10 release-candidate checklist](TESTING_v2.0.10.md)
+- [DK Mentor 2.0.10 release notes](RELEASE_NOTES_v2.0.10.md)
+- [DK Mentor 2.0.9 live test checklist](TESTING_v2.0.9.md)
+- [DK Mentor 2.0.9 release notes](RELEASE_NOTES_v2.0.9.md)
+- [DK Mentor 2.0.7 live test checklist](TESTING_v2.0.7.md)
+- [DK Mentor 2.0.7 release notes](RELEASE_NOTES_v2.0.7.md)
+- [DK Mentor 2.0.5 live test checklist](TESTING_v2.0.5.md)
+- [DK Mentor 2.0.5 release notes](RELEASE_NOTES_v2.0.5.md)
+- [DK Mentor 2.0.4 live test checklist](TESTING_v2.0.4.md)
+- [DK Mentor 2.0.4 release notes](RELEASE_NOTES_v2.0.4.md)
+- [DK Mentor 2.0.3 live test checklist](TESTING_v2.0.3.md)
+- [DK Mentor 2.0.3 release notes](RELEASE_NOTES_v2.0.3.md)
+- [DK Mentor 2.0.2 live test checklist](TESTING_v2.0.2.md)
+- [DK Mentor 2.0.2 release notes](RELEASE_NOTES_v2.0.2.md)
+- [DK Mentor 2.0.1 live test checklist](TESTING_v2.0.1.md)
+- [DK Mentor 2.0.1 release notes](RELEASE_NOTES_v2.0.1.md)
 - [Publishing guide](PUBLISHING.md)
 - [Policy and sources](POLICY_AND_SOURCES.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
 - [Security policy](SECURITY.md)
 - [Support](SUPPORT.md)
+
+Historical release/test documents remain in the source archive for project history.
 
 ## License
 

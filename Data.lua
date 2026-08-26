@@ -5,26 +5,26 @@ local Data = DKM.Data
 local T = DKM.T or function(value) return value end
 
 Data.addonName = ADDON_NAME
-Data.version = "1.2.3"
+Data.version = "2.0.11"
 Data.interface = 120100
-Data.dataVersion = "2026-08-24"
+Data.dataVersion = "2026-08-25"
 Data.patch = "12.1.0"
 
 Data.specNames = {
-    [250] = T("Blood"),
-    [251] = T("Frost"),
-    [252] = T("Unholy"),
+    [250] = "Blood",
+    [251] = "Frost",
+    [252] = "Unholy",
 }
 
 Data.contextOrder = { "world", "delve", "dungeon", "mythicplus", "raid", "pvp" }
 Data.contextNames = {
-    auto = T("Auto"),
-    world = T("World"),
-    delve = T("Delve"),
-    dungeon = T("Dungeon"),
-    mythicplus = T("Mythic+"),
-    raid = T("Raid"),
-    pvp = T("PvP"),
+    auto = "Auto",
+    world = "World",
+    delve = "Delve",
+    dungeon = "Dungeon",
+    mythicplus = "Mythic+",
+    raid = "Raid",
+    pvp = "PvP",
 }
 
 -- Permanent Death Knight Runeforge enchant IDs used by Retail.
@@ -64,6 +64,20 @@ Data.spells = {
     MARROWREND = 195182,
     DEATH_AND_DECAY = 43265,
     GOREFIENDS_GRASP = 108199,
+    BONE_SHIELD = 195181,
+    BLOOD_BOIL = 50842,
+    HEART_STRIKE = 206930,
+    OBLITERATE = 49020,
+    FROSTSCYTHE = 207230,
+    HOWLING_BLAST = 49184,
+    FROST_STRIKE = 49143,
+    FESTERING_STRIKE = 85948,
+    SCOURGE_STRIKE = 55090,
+    FESTERING_WOUND = 194310,
+    OUTBREAK = 77575,
+    VIRULENT_PLAGUE = 191587,
+    DEATH_COIL = 47541,
+    EPIDEMIC = 207317,
 }
 
 local S = Data.spells
@@ -71,10 +85,10 @@ local S = Data.spells
 local function Tip(spellID, tag, text, optional, fallbackName)
     return {
         spellID = spellID,
-        tag = T(tag),
-        text = T(text),
+        tag = tag,
+        text = text,
         optional = optional == true,
-        fallbackName = fallbackName and T(fallbackName) or fallbackName,
+        fallbackName = fallbackName,
     }
 end
 
@@ -168,10 +182,10 @@ Data.tips = {
 local function Coach(spellID, title, when, optional, fallbackName)
     return {
         spellID = spellID,
-        title = T(title),
-        when = T(when),
+        title = title,
+        when = when,
         optional = optional == true,
-        fallbackName = fallbackName and T(fallbackName) or fallbackName,
+        fallbackName = fallbackName,
     }
 end
 

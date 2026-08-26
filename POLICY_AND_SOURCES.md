@@ -1,30 +1,31 @@
-# Policy and sources
+# DK Mentor — Policy and Sources
 
-## Combat behavior
+## Gameplay automation boundary
 
-DK Mentor is a guidance and display addon. It does not cast abilities, perform protected actions automatically, or attempt to bypass Blizzard's protected/secret combat-value system.
+DK Mentor is a display, guidance, and class-knowledge addon. It never casts combat abilities automatically.
 
-Offensive recommendations come from Blizzard Assisted Combat when the game exposes them. Survival guidance is advisory. Dynamic player aura HUDs use Blizzard-owned Retail aura-container mechanisms where available.
+Starting with 2.0, DK Mentor also does not automatically change the player's specialization, talent loadout, Equipment Set, or Loot Specialization. Those responsibilities belong to the separate Loadout Pilot addon. The optional DK Mentor integration only opens Loadout Pilot when it is already installed and loaded.
 
-The DK Ready Check reads only player-owned/configuration state: the selected saved talent loadout, mapped Equipment Set status, equipped weapon item links for permanent Runeforge IDs, and the player pet unit for the Unholy ghoul check. It does not inspect enemy combat state or trigger combat actions.
+The manual specialization picker in the DK Status HUD is a direct player-initiated convenience. It never runs from context detection or automation.
 
-Runeforge Guard recognizes public Death Knight Runeforge enchant/spell identifiers. It validates that a DK Runeforge is present on each equipped weapon and deliberately does not declare a single rune universally optimal across all builds or encounters.
+## DK Ready Check
 
-## Third-party build sources
+The DK Ready Check reads only player-owned class state required for its DK-specific checks: equipped weapon item links/permanent Runeforge IDs and the player's pet unit for the Unholy ghoul check. It does not inspect enemy combat state or trigger combat actions. Talent loadouts and equipment mappings are not readiness requirements in 2.0.
 
-DK Mentor links to public Wowhead PvE Death Knight talent guides and public Icy Veins PvP guides where appropriate. The addon stores source name, author, reviewed patch/date, and URL alongside short original summaries.
+## DK Codex and Character Check
 
-No third-party guide prose, artwork, page layout, addon code, or talent import strings are bundled.
+The Codex is advisory. It contains summarized/original guidance based on current public DK theorycraft/guide references and does not reproduce third-party guide prose or bundled talent import strings.
 
-## Audio
+Character Check is read-only. It can inspect equipped item data, permanent enchant presence, sockets when readable, player secondary stats, and whether common DK utility spells are known/talented. It does not change gear, talents, gems, enchants, or abilities.
 
-Optional Lich King commentary references numeric sound resources already installed by the WoW client. The repository and release archives must never contain extracted Blizzard `.ogg`, `.mp3`, `.wav`, or other game-audio files, nor copied dialogue transcripts.
+## Midnight 12.1 protected data
 
-## Trademarks
+DK Mentor respects secret/protected values. It does not attempt to bypass Blizzard's restrictions.
 
-World of Warcraft, Warcraft, the Lich King, and Blizzard Entertainment are trademarks or registered trademarks of Blizzard Entertainment, Inc. Wowhead and Icy Veins are third-party services. DK Mentor is not affiliated with or endorsed by Blizzard Entertainment, Wowhead, or Icy Veins.
+Aura HUDs use Blizzard's native AuraContainer/AuraButton system. DK Mentor does not attach `OnShow`/`OnHide` handlers to protected AuraButtons and does not read AuraButton visibility to infer aura state. Its own decorative chrome is hidden during normal locked gameplay while Blizzard owns active aura-icon visibility.
 
-## DK resource HUD
+Runic Power can be secret during combat. DK Mentor can pass that value into Blizzard's StatusBar rendering path but does not branch or make combat recommendations from an inaccessible numeric value.
 
-The DK Resources HUD is display-only. It uses the public six-Rune cooldown API for Rune recharge presentation. Runic Power is treated as a potentially secret primary resource during combat: DK Mentor forwards the value into Blizzard's native `StatusBar:SetValue` / `SetMinMaxValues` rendering path and does not compare, threshold, score, or select abilities from the hidden value. Resource layout changes and Preview/position resets are blocked during combat so a status bar that has received a secret value is not re-anchored while restricted.
+## External references
 
+Build/Codex source metadata points players to current public references such as Wowhead and Icy Veins. IceHUD was used only as a visual/architectural reference for the original DK Arcs concept; DK Mentor uses original code and project assets. See `THIRD_PARTY_NOTICES.md` for attribution notes.

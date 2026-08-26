@@ -22,7 +22,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y lua5.1
       - name: Syntax check addon Lua
-        run: luac5.1 -p Localization.lua Data.lua Builds.lua Guides.lua Voices.lua Core.lua
+        run: luac5.1 -p Localization.lua Data.lua Builds.lua Guides.lua Codex.lua Voices.lua Core.lua
+      - name: DK Codex smoke test
+        run: lua5.1 tests/codex_smoke.lua
       - name: Package and publish
         uses: BigWigsMods/packager@v2
         env:

@@ -11,6 +11,7 @@ assert(loadfile("Localization.lua"))("DKMentor", DKM)
 assert(loadfile("Data.lua"))("DKMentor", DKM)
 assert(loadfile("Builds.lua"))("DKMentor", DKM)
 assert(loadfile("Guides.lua"))("DKMentor", DKM)
+assert(loadfile("GearData.lua"))("DKMentor", DKM)
 assert(loadfile("Codex.lua"))("DKMentor", DKM)
 assert(loadfile("Voices.lua"))("DKMentor", DKM)
 
@@ -35,6 +36,8 @@ assert(DKM.Data.tips.general.world[1].tag == "HEAL", "Survival tag did not reloc
 assert(DKM.Data.tips.general.world[1].text:match("meaningful damage"), "Survival text did not relocalize to English")
 assert(DKM.Guides.general.title == "Death Knight fundamentals", "Guide static text did not relocalize to English")
 assert(DKM.Codex.sectionLabels.survival == "Survival", "Codex static label did not relocalize to English")
+assert(DKM.T("Gear Mentor") == "Gear Mentor", "Gear Mentor English label failed")
+assert(DKM.T("Dashboard") == "Dashboard", "Gear Mentor dashboard English label failed")
 
 -- The same tables must be reversible back to ptBR without rebuilding them.
 DKM.SetLocaleOverride("ptBR")
@@ -43,5 +46,7 @@ assert(DKM.Data.contextNames.world == "Mundo", "World context did not relocalize
 assert(DKM.Data.tips.general.world[1].tag == "CURA", "Survival tag did not relocalize back to ptBR")
 assert(DKM.Guides.general.title == "Fundamentos do Cavaleiro da Morte", "Guide static text did not relocalize back to ptBR")
 assert(DKM.Codex.sectionLabels.survival == "Sobrevivência", "Codex static label did not relocalize back to ptBR")
+assert(DKM.T("Gear Mentor") == "Mentor de equipamento", "Gear Mentor ptBR label failed")
+assert(DKM.T("Dashboard") == "Painel", "Gear Mentor dashboard ptBR label failed")
 
 print("DK Mentor localization override smoke test passed")

@@ -1,3 +1,170 @@
+## 3.0.17 - 2026-08-30 - Visual Build Mentor
+- Rebuilt the DK Codex **Builds** section into a visual **Build Mentor**.
+- Added manual content selection for **Auto / World / Delves / Dungeon / Mythic+ / Raid / PvP** without changing the player's actual specialization or talents.
+- Added visual build profile cards with **Hero Talent icons**, recommendation badges, short focus text, key-talent icons, native WoW spell tooltips, and guide source metadata.
+- Expanded current Blood, Frost, and Unholy build guidance from the reviewed Patch 12.1 guide direction while keeping Loadout Pilot responsible for automation.
+- Added PT-BR localization for the new Build Mentor interface and recommendation text.
+
+## 3.0.16 - 2026-08-30 - Gear Mentor no-truncation pass and visual crafting
+- Reworked Gear Mentor guidance rows so descriptions wrap and grow instead of being cut with ellipses.
+- Replaced the text-heavy Crafting page with visual crafted-item cards using real item IDs, icons, ownership state and native WoW tooltips.
+- Added current Season 2 crafted fallback targets for Blood, Frost and Unholy based on current Wowhead crafting guidance.
+- Shortened Codex side-menu labels while keeping the full section name in the content title, eliminating clipped Portuguese labels.
+- Kept specialization icons on Current / Blood / Frost / Unholy; Current continues to follow the active specialization icon.
+- Filled missing ptBR Gear Mentor strings, including Upgrade Plan and Frost crafting guidance.
+- Simplified tier bonus cards to show the active/inactive state without clipping the bonus explanation; full text remains in the tooltip.
+
+## 3.0.15 - 2026-08-30 - Codex specialization icons and navigation polish
+- Added specialization icons to the clickable Codex specialization buttons.
+- The **Current** specialization button now shows the icon of the actively selected Death Knight spec.
+- Polished the left-side Codex navigation so longer labels fit better and the section list feels more balanced.
+
+## 3.0.14 - 2026-08-30 - Gear Mentor crafting tab and Codex navigation refresh
+- Added a dedicated **Crafting** tab in Gear Mentor so players can see recommended craftable fallback pieces when key drops still have not appeared.
+- Refreshed the **DK Codex** navigation by moving the section selector into a clearer left-side menu, reducing the "click above then click below" confusion.
+- Improved text readability in the Codex/Gear Mentor area with stronger contrast and text shadows on the lighter helper texts.
+- Kept the existing Gear, Sources, Trinkets and Upgrades views while preserving the Tier Set overview.
+
+
+## 3.0.12 - 2026-08-30 - Tier Set & Gear Mentor polish
+
+- Fixed Gear Mentor item tooltips that could remain visible after the pointer left an item card by adding explicit ownership cleanup plus a lightweight hover-state fallback.
+- Replaced the unclear Overview Setup counter with a Season 2 tier-set progress card.
+- Added a visual Baleful Grave-Knight's Crucible section with five class-set slots, live equipped progress, and 2-piece / 4-piece status for Blood, Frost, and Unholy.
+- Tier piece cards use real item icons and native WoW item tooltips; equipped tier detection reads the live item-set ID so catalyzed/equipped tier pieces are recognized by slot when item data is available.
+- Added the same compact tier-piece strip to the Gear view.
+- Increased contrast for Gear Mentor helper text, trinket guidance, upgrade-plan text, item metadata, metric labels, and stat snapshot text.
+- Shortened the top helper hint to avoid truncation.
+- No SavedVariables schema change and no gear automation.
+
+## 3.0.11 - 2026-08-30 - Visual Gear Mentor
+
+- Rebuilt Gear Mentor around item cards instead of long text reports.
+- Added real item icons for Blood/Frost/Unholy headline targets with native WoW item tooltips on mouseover.
+- Added visual EQUIPPED / OWNED / TARGET states plus item-quality icon borders.
+- Redesigned Overview with compact item level, Runeforge, target progress, and setup-status cards.
+- Renamed the Targets view to Gear and Upgrade Plan to Upgrades while preserving the existing saved view keys.
+- Reworked Sources and Trinkets into visual item layouts; long target reason/source details now live primarily in the item tooltip.
+- Condensed current stat direction and live secondary-stat snapshot into a single compact panel.
+- Kept Gear Mentor read-only: no equipping, upgrading, purchasing, enchanting, socketing, or loadout automation.
+- Preserved the 3.0.10 Season 2 dataset, ordered Rune HUD, richer Builds, and all previous 3.0 systems.
+
+## 3.0.10 - 2026-08-30 - Gear Mentor & ordered Runes
+
+- Promoted the DK Codex Stats & Gear area into Gear Mentor with Dashboard, Targets, Sources, Trinkets, and Upgrade Plan views.
+- Added data-driven Blood/Frost/Unholy Season 2 target guidance with item ownership state, priority, loot source, trinket direction, crafting plan, and Crest priorities.
+- Added live Gear Mentor snapshot for equipped item level, Runeforge, common enchant coverage, sockets, headline target progress, weapon direction, and next target.
+- Enriched Builds with Hero Talent direction, focus, usage context, and patch review metadata while keeping talent/loadout changes recommendation-only.
+- Added `/dkm gearmentor` / `/dkm gearing` direct access while preserving `/dkm gear` as the Loadout Pilot handoff.
+- Reworked Rune HUD presentation into a Blizzard-like ordered visual pool: ready Runes stay left, spending appears from the right, and recharge progresses left-to-right.
+- Added Gear Mentor and ordered-Rune regression tests plus packaging/validation guards for the new GearData module.
+- No SavedVariables schema change and no gameplay automation.
+
+## 3.0.9 - 2026-08-30 - Mind Freeze action-bar glow & interrupt sound
+
+- Preserved the existing Midnight Secret-safe Mind Freeze detection engine and added presentation-only enhancements on top of it.
+- Added an optional cyan action-bar glow for Mind Freeze when the existing interrupt engine has a valid target cast and Mind Freeze is available.
+- Added support for both direct Mind Freeze action buttons and macros whose current spell resolves to Mind Freeze.
+- Kept the glow Secret-safe by passing protected `notInterruptible` values directly into `SetAlphaFromBoolean` rather than evaluating them in Lua.
+- Added a configurable interrupt sound using a single Blizzard-installed `RAID_WARNING` sound; no audio files are bundled and the sound defaults to OFF.
+- Interrupt sound/pulse notification is emitted once per new interrupt window instead of on repeated target-cast refreshes.
+- Added Settings -> Interrupt options..., Alert Studio action-glow control, and `/dkm interrupt glow|sound|options` commands.
+- Action glow defaults to ON; both glow and sound can be disabled independently without changing the Mind Freeze HUD.
+- No SavedVariables schema changes and no automatic casting/targeting.
+
+## 3.0.8 - 2026-08-30 - Spec-aware rotation coverage & font-safe Review
+
+- Fixed Action Bar coverage requiring spells that do not belong to the active specialization/loadout.
+- Assisted Combat rotation coverage now filters the native spell list against the currently known spellbook/talent state before counting missing buttons.
+- Added an explicit Midnight 12.1 guard that keeps Soul Reaper (343294) Unholy-only, so Frost/Blood are never asked to place it on their bars.
+- Kept active spell overrides compatible with coverage checks.
+- Replaced the Review subtitle arrow glyphs with font-safe ASCII separators to prevent square/missing-glyph boxes on WoW fonts.
+- Added regression guards for spec-aware coverage and unsupported decorative UI glyphs.
+- No SavedVariables schema or combat-coaching behavior changes.
+
+## 3.0.7 - 2026-08-30 - Modal window navigation hotfix
+
+- Fixed Alert Studio and Review stacking directly on top of Mentor Intelligence.
+- Child windows now temporarily hide their caller and restore it automatically on close/Escape.
+- Added nested modal return flow for Mentor Intelligence -> Studio -> Review and Setup/Studio transitions.
+- Added deterministic top-level frame levels to Studio and Review.
+- No combat logic or SavedVariables schema changes.
+
+## 3.0.6 - 2026-08-30 - Pinned Blizzard next action
+
+- Added an optional fixed first Live Mentor card sourced from Blizzard Assisted Combat via `C_AssistedCombat.GetNextCastSpell(false)`.
+- Kept cards 2-3 available for DK Mentor defensives, interrupts, utility, resources, procs, and spec context.
+- Added Next action controls to Mentor Intelligence, Alert Studio, and `/dkm mentor nextaction on|off`.
+- Prevented duplicate spells between the Blizzard next-action card and DK Mentor cards.
+- No automatic casting or targeting.
+
+## 3.0.5 - 2026-08-30 - Live Mentor visual hotfix
+
+- Restored the dark DK Mentor card theme after the 3.0.4 compact layout accidentally reset card backdrops to opaque white.
+- Reworked Compact to be genuinely smaller: 96px frame height, 102x64 cards, 24px icons, tighter gaps and lighter borders.
+- Tightened Medium and Large presets while keeping all coaching content intact.
+- Reduced header padding, close-button footprint, movement hint space and secondary text emphasis.
+- Kept dynamic width and all 3.0 coaching/Review/DK Tools behavior unchanged.
+
+## 3.0.4 - 2026-08-30 - Compact Live Mentor HUD
+
+- Redesigned the Live Mentor/preview HUD to be substantially smaller and easier to position without removing its useful coaching content.
+- Added Compact / Medium / Large Mentor layout presets; Compact is the new default for profiles that have not chosen a layout yet.
+- Compact layout tightens the header, icons, cards, padding, and borders while preserving action, spell, and timing text.
+- The Mentor frame width now adapts to the number of populated cards instead of always reserving space for three live recommendations.
+- Moved readable health/state text onto its own small header line so it no longer competes with the title.
+- Shortened the edit hint from Drag to move to Move on the Mentor HUD.
+- Added a Coach layout control to Alert Studio; existing Scale and Opacity controls remain available for fine tuning.
+- Preserved 3.0.3 Setup return timing, Settings button readability, subtle melee-range hint, Core crash fix, Review/Patterns, and Midnight safeguards.
+- SavedVariables schema remains 31; Setup Wizard schema remains 301.
+
+## 3.0.3 - 2026-08-30 - Settings & Preview UX Hotfix
+
+- Shortened and standardized Settings HUD toggle labels so PT-BR/English text remains single-line and readable.
+- Reduced Setup alert/tool preview windows from 8 seconds to 4 seconds and added a lightweight visible auto-return notice.
+- Shortened Alert Studio selected-alert previews to the same four-second timing.
+- Redesigned the melee range helper as a smaller, softer OUT OF RANGE / FORA DE ALCANCE hint with a 0.30s stable-out-of-range delay.
+- Added a permanent Setup 3.0 button in Settings to reopen the five-step wizard; `/dkm setup` remains available.
+- Preserved all 3.0.2 crash, glyph, flat-button, DK Toolkit, Essential Mentor, Midnight safety, and Review fixes.
+- SavedVariables schema remains 31; Setup Wizard schema remains 301.
+
+## 3.0.2 - 2026-08-30 - Core UI & HUD Hotfix
+
+- Fixed the `UpdateResourceHUD` nil crash caused by `NormalizeResourceVisibilityMode` being declared after an earlier caller.
+- Removed unsupported Unicode check-mark glyphs that could render as empty squares in WoW fonts.
+- Replaced DK Mentor-owned red Blizzard action buttons with a unified dark/cyan flat style across Core, Mentor, Review, Studio, and Setup UI.
+- Improved selected-state feedback for language and HUD toggle buttons and widened the language picker.
+- Renamed the static Combat Survival list to **DK Toolkit** to clarify that it is a complete reference, not the live Coach.
+- Essential Live Mentor is now urgent-only during normal play and hides when no urgent readable call exists; HUD Preview remains populated and is explicitly labeled as a preview.
+- Preserved 3.0.1 Setup Wizard UX, Midnight Secret-safe interrupt handling, Review/Patterns, DK Tools, and Loadout Pilot boundaries.
+- SavedVariables schema remains 31; Setup Wizard schema remains 301.
+
+## 3.0.1 - 2026-08-30 - Setup Wizard UX Hotfix
+
+- Rebuilt all five Setup Wizard steps for clear selection feedback and readable controls.
+- Steps 1/2 now auto-advance on single-choice selection.
+- Steps 3/4/5 now use readable 2x2 grids for multi-option actions.
+- Long labels are constrained/wrapped inside taller option buttons.
+- Removed the ambiguous Keep current settings footer action.
+- Alert/DK Tools previews temporarily hide the wizard and return automatically when finished.
+- Alert Studio launched from setup returns to the wizard when closed.
+- Added HUD lock-state feedback and Lock/Unlock toggle on the final step.
+- Bumped setup schema to 301 so existing 3.0.0 users see the corrected wizard once.
+- Preserved all 3.0 combat, Review, Tools, localization, and Midnight safety behavior.
+
+## 3.0.0 - 2026-08-30 - Live Mentor, Review & DK Tools
+
+- Added Review 3.0 with Overview, Timeline, Patterns, confidence-aware observations, positive feedback, and the latest 10 meaningful encounters.
+- Added Blood Coagulating Blood / Death Strike readable-pool awareness and post-combat average/max pool snapshots without guessing restricted values.
+- Updated Unholy coaching for Midnight around Lesser Ghouls, Dark Transformation, Putrefy, Festering Strike, and Scourge Strike; Dread Plague remains conservative under target-aura restrictions.
+- Corrected Frost Breath of Sindragosa coaching for the Midnight model: Runic Power capping is no longer suppressed by the obsolete continuous-drain assumption.
+- Added DK Tools: a local Death and Decay timer/charge display and a Secret-safe fail-open out-of-melee warning.
+- Added Always / Fade out of combat / Combat Only resource HUD visibility modes.
+- Added Alert Studio with category previews, scale, opacity, per-category pulse, and optional built-in Blizzard sounds.
+- Added a 5-step 3.0 Setup Wizard and new `/dkm review`, `/dkm patterns`, `/dkm studio`, `/dkm setup`, `/dkm tools`, and resource visibility commands.
+- Preserved all 2.0.x Midnight safety, click-through HUD, dynamic popup, localization, and Loadout Pilot responsibility-boundary fixes.
+- SavedVariables schema is now 31.
+
 ## 2.0.11 - 2026-08-26 - Manual language override hotfix
 
 - Fixed content-context labels staying in ptBR when DK Mentor was manually set to English on a ptBR WoW client.

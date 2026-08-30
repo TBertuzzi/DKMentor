@@ -1,8 +1,8 @@
 ## Interface: 120100
 ## Title: DK Mentor
-## Notes: Adaptive Death Knight combat coaching, defensive/interrupt/utility guidance, resource/proc waste detection, Combat Insights and DK Mentor Score, DK Ready Check, configurable combat HUDs, DK Codex, and optional Lich King commentary. Loadout automation is handled by Loadout Pilot.
+## Notes: Death Knight combat coaching with Live Mentor, Review/Timeline/Patterns, Blood Death Strike pool awareness, DK utility tools, customizable alerts, DK Ready Check, configurable HUDs, and DK Codex. Loadout automation is handled by Loadout Pilot.
 ## Author: Thiago Bertuzzi
-## Version: 2.0.11
+## Version: 3.0.17
 ## SavedVariables: DKMentorDB
 ## X-Category: Combat
 ## X-License: MIT
@@ -12,7 +12,11 @@ Localization.lua
 Data.lua
 Builds.lua
 Guides.lua
+GearData.lua
 Codex.lua
 Voices.lua
 Core.lua
 MentorEngine.lua
+MentorReview.lua
+DKTools.lua
+MentorStudio.lua

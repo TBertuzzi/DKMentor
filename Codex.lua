@@ -5,12 +5,12 @@ local T = DKM.T or function(value) return value end
 local Codex = {
     patch = "12.1.0",
     season = T("Midnight Season 2"),
-    reviewed = "2026-08-25",
+    reviewed = "2026-08-30",
     sectionOrder = { "overview", "builds", "rotation", "survival", "stats", "utility", "check" },
     sectionLabels = {
         overview = T("Overview"),
         builds = T("Builds"),
-        stats = T("Stats & Gear"),
+        stats = T("Gear Mentor"),
         rotation = T("Rotation"),
         survival = T("Survival"),
         utility = T("Utility"),
@@ -190,7 +190,7 @@ Codex.specs = {
         rotation = {
             {
                 heading = T("Cheat sheet"),
-                body = T("Keep Runes cycling. React to Killing Machine and Rime without creating resource waste. Avoid capping Runic Power. Enter Pillar of Frost / Breath windows with resources ready. Keep attacking during burst instead of spending the whole window repositioning."),
+                body = T("Keep Runes cycling. React to Killing Machine and Rime without creating resource waste. Avoid capping Runic Power. For Midnight Breath of Sindragosa, extending the window is driven by consuming Killing Machine and Rime procs rather than a continuous Runic Power drain. Keep attacking during burst instead of spending the whole window repositioning."),
             },
             {
                 heading = T("Beginner opener"),
@@ -202,7 +202,7 @@ Codex.specs = {
             },
             {
                 heading = T("Cooldown handbook — resources"),
-                body = T("Empower Rune Weapon is not just a damage button: it stabilizes the resources that make your burst work. Use it where the extra Runes and Runic Power actually feed your next damage window instead of overcapping."),
+                body = T("Empower Rune Weapon is not just a damage button: it stabilizes the resources that make your burst work. Use it where the extra resources actually feed your next damage window instead of overcapping. In Midnight Breath builds, do not treat Runic Power as the old continuous Breath fuel model."),
             },
         },
         survival = {
@@ -227,7 +227,7 @@ Codex.specs = {
         overview = {
             {
                 heading = T("Playstyle identity"),
-                body = T("Unholy combines diseases, summoned minions, Rune spenders, and Runic Power spenders. Its damage rewards setup: prepare your disease/minion state first, then commit major cooldowns instead of pressing them into an empty setup."),
+                body = T("Midnight Unholy combines diseases, Lesser Ghouls, summoned minions, Rune spenders, and Runic Power spenders. Its damage rewards setup: prepare your disease/minion state first, then commit major cooldowns instead of pressing them into an empty setup."),
             },
             {
                 heading = T("Hero Talents — Rider of the Apocalypse"),
@@ -267,11 +267,11 @@ Codex.specs = {
         rotation = {
             {
                 heading = T("Cheat sheet"),
-                body = T("Keep your disease active. Build the resources your current talents expect before major cooldowns. Avoid capping Runic Power. Spend procs promptly. Coordinate Army of the Dead and Dark Transformation with your planned burst package, and use Epidemic instead of Death Coil when the active target count makes it appropriate."),
+                body = T("Keep your disease state healthy when it is readable. Build Lesser Ghouls with Festering Strike and convert them with Scourge Strike, avoid capping Runic Power, and spend procs promptly. Coordinate Army of the Dead and Dark Transformation with your planned burst package; use Putrefy when your build and pet window call for it, and use Epidemic instead of Death Coil when target count makes it appropriate."),
             },
             {
                 heading = T("Beginner opener"),
-                body = T("A current beginner-friendly pattern is: Outbreak, build initial resources with Festering Strike, then commit Army of the Dead + Dark Transformation with potion/trinkets, follow with Soul Reaper when appropriate, and enter the Putrefy / Scourge Strike / Death Coil or Epidemic priority for your build. Exact sequencing changes with Hero Talents and target count."),
+                body = T("A current beginner-friendly pattern is: establish your disease, build Lesser Ghoul stacks with Festering Strike, commit Army of the Dead + Dark Transformation with your planned cooldowns, then convert Lesser Ghouls through Scourge Strike and Putrefy when appropriate while spending Runic Power with Death Coil or Epidemic. Exact sequencing changes with Hero Talents and target count."),
             },
             {
                 heading = T("Cooldown handbook — burst"),

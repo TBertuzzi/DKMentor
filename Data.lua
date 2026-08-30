@@ -5,9 +5,9 @@ local Data = DKM.Data
 local T = DKM.T or function(value) return value end
 
 Data.addonName = ADDON_NAME
-Data.version = "2.0.11"
+Data.version = "3.0.17"
 Data.interface = 120100
-Data.dataVersion = "2026-08-25"
+Data.dataVersion = "2026-08-30"
 Data.patch = "12.1.0"
 
 Data.specNames = {
@@ -65,6 +65,7 @@ Data.spells = {
     DEATH_AND_DECAY = 43265,
     GOREFIENDS_GRASP = 108199,
     BONE_SHIELD = 195181,
+    COAGULATING_BLOOD = 463730,
     BLOOD_BOIL = 50842,
     HEART_STRIKE = 206930,
     OBLITERATE = 49020,
@@ -78,6 +79,10 @@ Data.spells = {
     VIRULENT_PLAGUE = 191587,
     DEATH_COIL = 47541,
     EPIDEMIC = 207317,
+    LESSER_GHOUL = 1254252,
+    DARK_TRANSFORMATION = 1233448,
+    PUTREFY = 1247378,
+    DREAD_PLAGUE = 1240996,
 }
 
 local S = Data.spells
@@ -355,6 +360,7 @@ Data.buffTracking = {
     },
     [250] = {
         195181,  -- Bone Shield
+        463730,  -- Coagulating Blood (Death Strike recent-damage pool)
         81141,   -- Crimson Scourge
         273947,  -- Hemostasis
         1265790, -- Boiling Point
@@ -425,5 +431,12 @@ Data.abilityTracking = {
         343294,  -- Soul Reaper
         46585,   -- Raise Dead
     },
+}
+
+-- Blizzard Assisted Combat can briefly expose stale or cross-spec entries while
+-- the spellbook/talent state is refreshing. Keep explicit Midnight spec ownership
+-- for abilities that must never be required by another specialization.
+Data.assistedCombatSpecRestrictions = {
+    [343294] = 252, -- Soul Reaper: Unholy-only in Midnight 12.1.
 }
 

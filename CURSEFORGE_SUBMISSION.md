@@ -1,16 +1,13 @@
-# CurseForge submission — DK Mentor 2.0.11
+# CurseForge submission - DK Mentor 3.0.11
 
-- **Game:** World of Warcraft
-- **Project:** DK Mentor
-- **File:** `DKMentor-v2.0.11-CurseForge.zip`
-- **Release state:** Release (localization hotfix)
-- **Retail interface:** 120100
-- **License:** MIT
+## File
 
-## Suggested display name
+- File: `DKMentor-v3.0.11-CurseForge.zip`
+- Game: World of Warcraft Retail
+- Interface: 120100
 
-`DK Mentor 2.0.11`
+Suggested display name:
 
-## Release positioning
+`DK Mentor 3.0.11 - Visual Gear Mentor`
 
-Focused 2.0 localization hotfix. Manual English/Português selection now consistently controls addon-owned context labels, specialization labels, Survival/Coach guidance, Codex/Guide static text, and the compact status HUD after `/reload`. WoW-provided spell/item names continue to use the game client's locale by design. No combat behavior or SavedVariables schema changed from 2.0.10.
+Use `CURSEFORGE_CHANGELOG_v3.0.11.md` as the file changelog.

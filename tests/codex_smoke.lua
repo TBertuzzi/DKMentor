@@ -13,6 +13,13 @@ assert(DKM.Codex.patch == "12.1.0", "Unexpected Codex patch")
 assert(#DKM.Codex.sectionOrder == 7, "Expected seven Codex sections")
 assert(DKM.Codex.sectionOrder[2] == "builds", "Build recommendations must be a first-class Codex section")
 assert(DKM.Codex.sectionLabels.builds == "Builds", "Builds section label missing")
+assert(DKM.Codex.sectionLabels.stats == "Gear Mentor", "Gear Mentor section label missing")
+local unholyText = ""
+for _, row in ipairs(DKM.Codex.specs[252].rotation or {}) do unholyText = unholyText .. " " .. tostring(row.body or "") end
+assert(unholyText:find("Lesser Ghoul", 1, true), "Unholy Codex must describe current Lesser Ghoul gameplay")
+local frostText = ""
+for _, row in ipairs(DKM.Codex.specs[251].rotation or {}) do frostText = frostText .. " " .. tostring(row.body or "") end
+assert(frostText:find("continuous Runic Power drain", 1, true), "Frost Codex must document Midnight Breath resource model")
 
 for _, specID in ipairs({ 250, 251, 252 }) do
     local spec = assert(DKM.Codex.specs[specID], "Missing Codex spec " .. tostring(specID))
@@ -24,4 +31,4 @@ for _, specID in ipairs({ 250, 251, 252 }) do
     assert(DKM.Codex.checkNotes[specID], "Character Check note missing for " .. tostring(specID))
 end
 
-print("DK Codex 2.0 smoke test passed")
+print("DK Codex 3.0.11 smoke test passed")

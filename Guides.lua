@@ -58,7 +58,7 @@ DKM.Guides = {
             },
             {
                 heading = T("Cooldown windows"),
-                body = T("Pillar of Frost defines an important damage window. Enter it with resources available, keep attacking, and avoid spending the entire window moving or recovering from preventable mechanics."),
+                body = T("Pillar of Frost defines an important damage window. For Breath of Sindragosa builds in Midnight, the key extension loop is consuming Killing Machine and Rime procs rather than feeding a continuous Runic Power drain. Keep attacking and avoid spending the whole window repositioning."),
             },
             {
                 heading = T("Beginner priority"),
@@ -71,15 +71,15 @@ DKM.Guides = {
         sections = {
             {
                 heading = T("Unholy Death Knight"),
-                body = T("Unholy combines diseases, wounds, pets, and Runic Power spenders. Its damage often comes from setting up several systems before the payoff, so avoid pressing major cooldowns with no preparation."),
+                body = T("Midnight Unholy combines diseases, Lesser Ghouls, pet windows, Rune spenders, and Runic Power spenders. Its damage rewards preparing the minion/disease state before committing major cooldowns."),
             },
             {
-                heading = T("Festering Wounds"),
-                body = T("Build Festering Wounds on important targets and burst them with your wound-consuming attacks. Avoid creating far more wounds than you can realistically consume before the target dies."),
+                heading = T("Lesser Ghouls"),
+                body = T("Festering Strike builds readable Lesser Ghoul stacks and Scourge Strike turns those stacks into summoned attackers. Avoid sitting at an obvious stack ceiling or entering a major pet window with no setup."),
             },
             {
-                heading = T("Pets and major cooldowns"),
-                body = T("Dark Transformation, Apocalypse, and Army of the Dead reward planning. Use them when the target will live long enough for the summons and empowered pet time to matter."),
+                heading = T("Dark Transformation and Putrefy"),
+                body = T("Dark Transformation creates an important pet window. When your build includes Putrefy, use the readable Lesser Ghoul state to avoid wasting the conversion opportunity. Dread Plague remains important, but Midnight can restrict target-aura visibility, so DK Mentor does not pretend to know it when the API hides it."),
             },
             {
                 heading = T("Runic Power"),

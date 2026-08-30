@@ -1,19 +1,22 @@
-# Publishing DK Mentor 2.0.11
+# Publishing DK Mentor 3.0.11
 
-DK Mentor 2.0.11 is a focused localization hotfix on top of the stable 2.0.10 release. It does not change combat logic or SavedVariables schema.
+DK Mentor 3.0.11 redesigns the 3.0.10 Gear Mentor as an item-first visual interface while preserving the existing Season 2 dataset and the complete 3.0 combat/review/interrupt feature set.
 
-## Release focus
+## Before publishing
 
-- Make the manual Auto / Português / English setting authoritative for addon-owned UI text after `/reload`.
-- Fix World / Delve / Dungeon / Mythic+ / Raid / PvP labels in the Combat page and compact DK Status HUD.
-- Fix addon specialization labels and static Survival / Coach / Codex / Guide data that could be materialized before SavedVariables were available.
-- Preserve WoW-client localization for spell/item names returned directly by Blizzard APIs.
-- Preserve all 2.0.10 combat, Midnight Secret Value, HUD, Adaptive Coach, and schema-30 behavior.
+1. Run `python3 scripts/validate.py`.
+2. Run the Lua smoke tests in `tests/`.
+3. Confirm all runtime Lua files parse.
+4. Complete `TESTING_v3.0.11.md` in a live Retail 12.1.0 client.
 
-## CurseForge package
+## CurseForge
 
-Run `TESTING_v2.0.11.md`, especially the ptBR-client + English-addon scenario, then upload `DKMentor-v2.0.11-CurseForge.zip`.
+Upload `DKMentor-v3.0.11-CurseForge.zip`.
 
-Suggested display name: `DK Mentor 2.0.11`
+Suggested display name: `DK Mentor 3.0.11 - Visual Gear Mentor`
 
-Suggested release type: `Release`.
+## GitHub
+
+Tag: `v3.0.11`
+
+Attach the release ZIP and use `RELEASE_NOTES_v3.0.11.md` as the release body/base.

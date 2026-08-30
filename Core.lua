@@ -4,6 +4,7 @@ local Data = DKM.Data or {}
 local Builds = DKM.Builds or {}
 local Voices = DKM.Voices or {}
 local Guides = DKM.Guides or {}
+local GearData = DKM.GearData or {}
 local T = DKM.T or function(value, ...)
     if select("#", ...) > 0 then
         return string.format(value, ...)
@@ -50,6 +51,9 @@ local activeProcGlows = {}
 local activeProcGlowOrder = {}
 local cooldownManagerProfileCache = {}
 local targetInterruptEventState = nil
+addon.interruptActionGlowTargets = {}
+addon.interruptGlowFrames = setmetatable({}, { __mode = "k" })
+addon.interruptGlowRefreshToken = 0
 local runtimeBuffState = {}
 local buffRefreshElapsed = 0
 local contextPollElapsed = 0
@@ -277,7 +281,7 @@ local function ApplyDefaults(target, defaults)
 end
 
 local DEFAULTS = {
-    schema = 30,
+    schema = 31,
     firstRun = true,
     majorReleaseNotice = "",
     languageOverride = "auto",
@@ -287,6 +291,8 @@ local DEFAULTS = {
     mainTab = "combat",
     codexSpecID = 0,
     codexSection = "overview",
+    codexBuildContext = "auto",
+    codexGearView = "overview",
     hudLocked = true,
     main = {
         point = "CENTER",
@@ -371,9 +377,12 @@ local DEFAULTS = {
         y = 85,
         scale = 1,
         opacity = 1,
+        visibilityMode = "combat",
+        fadeAlpha = 0.20,
     },
     interruptAlert = {
         enabled = true,
+        actionGlow = true,
         point = "CENTER",
         relativePoint = "CENTER",
         x = 0,
@@ -826,6 +835,18 @@ function addon:GetSpecializationInfoByIndex(index)
     return nil
 end
 
+function addon:GetSpecIconByID(specID)
+    specID = tonumber(specID)
+    if specID == 250 then
+        return select(3, self:GetSpecializationInfoByIndex(1)) or QUESTION_MARK_ICON
+    elseif specID == 251 then
+        return select(3, self:GetSpecializationInfoByIndex(2)) or QUESTION_MARK_ICON
+    elseif specID == 252 then
+        return select(3, self:GetSpecializationInfoByIndex(3)) or QUESTION_MARK_ICON
+    end
+    return QUESTION_MARK_ICON
+end
+
 function addon:GetSpecializationIndexByID(specID)
     specID = tonumber(specID)
     if not specID then return nil end
@@ -972,8 +993,58 @@ function addon:GetRotationSpells()
     return {}
 end
 
+local function GetKnownRotationSpellID(spellID)
+    if type(spellID) ~= "number" or spellID <= 0 then
+        return nil
+    end
+
+    if IsSpellKnownSafe(spellID) then
+        return spellID
+    end
+
+    -- Some action-bar entries use the currently active override rather than the
+    -- base spell returned by Assisted Combat. Accept the override only when the
+    -- player actually knows it in the active spellbook/talent configuration.
+    if C_Spell and C_Spell.GetOverrideSpell then
+        local ok, overrideSpellID = pcall(C_Spell.GetOverrideSpell, spellID)
+        if ok and type(overrideSpellID) == "number" and overrideSpellID > 0 and overrideSpellID ~= spellID then
+            if IsSpellKnownSafe(overrideSpellID) then
+                return overrideSpellID
+            end
+        end
+    end
+
+    return nil
+end
+
+function addon:GetRelevantRotationSpells()
+    local rawSpells = self:GetRotationSpells()
+    if #rawSpells == 0 then
+        return {}
+    end
+
+    local activeSpecID = select(1, self:GetSpecInfo())
+    local restrictions = Data.assistedCombatSpecRestrictions or {}
+    local relevant, seen = {}, {}
+
+    for _, spellID in ipairs(rawSpells) do
+        local requiredSpecID = restrictions[spellID]
+        if not requiredSpecID or requiredSpecID == activeSpecID then
+            local knownSpellID = GetKnownRotationSpellID(spellID)
+            if knownSpellID and not seen[knownSpellID] then
+                seen[knownSpellID] = true
+                relevant[#relevant + 1] = knownSpellID
+            end
+        end
+    end
+
+    return relevant
+end
+
 function addon:CheckActionBarCoverage(silent)
-    local rotationSpells = self:GetRotationSpells()
+    -- Coverage is about the active specialization/loadout, not every spell that
+    -- Assisted Combat may momentarily report while its data is refreshing.
+    local rotationSpells = self:GetRelevantRotationSpells()
     if #rotationSpells == 0 then
         self.coverageText = T("Action bars: the native rotation has not provided a spell list yet.")
         self:UpdateAssistedCombatSection()
@@ -1668,6 +1739,81 @@ local function CreateSection(parent, title, topOffset, height)
     return section
 end
 
+local ACTION_BUTTON_BACKDROP = {
+    bgFile = "Interface\\Buttons\\WHITE8X8",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = false,
+    edgeSize = 10,
+    insets = { left = 2, right = 2, top = 2, bottom = 2 },
+}
+
+local function StyleActionButton(button)
+    if not button or not button.SetBackdropColor then return end
+    local enabled = true
+    if button.IsEnabled then
+        local ok, value = pcall(button.IsEnabled, button)
+        if ok then enabled = value ~= false end
+    end
+    local selected = button.__dkSelected == true
+    local hover = button.__dkHover == true
+    local pressed = button.__dkPressed == true
+    local fontString = button.GetFontString and button:GetFontString() or button.label
+
+    if not enabled then
+        button:SetBackdropColor(0.018, 0.035, 0.045, 0.86)
+        button:SetBackdropBorderColor(0.10, 0.20, 0.24, 0.72)
+        if fontString then fontString:SetTextColor(0.42, 0.48, 0.50) end
+    elseif selected then
+        button:SetBackdropColor(0.035, 0.20, 0.27, pressed and 0.90 or 0.98)
+        button:SetBackdropBorderColor(0.35, 0.82, 1.00, 1)
+        if fontString then fontString:SetTextColor(0.78, 0.95, 1.00) end
+    elseif pressed then
+        button:SetBackdropColor(0.035, 0.13, 0.17, 0.98)
+        button:SetBackdropBorderColor(0.24, 0.62, 0.76, 0.98)
+        if fontString then fontString:SetTextColor(0.90, 0.97, 1.00) end
+    elseif hover then
+        button:SetBackdropColor(0.045, 0.14, 0.18, 0.98)
+        button:SetBackdropBorderColor(0.28, 0.68, 0.82, 0.98)
+        if fontString then fontString:SetTextColor(0.94, 0.99, 1.00) end
+    else
+        button:SetBackdropColor(0.025, 0.075, 0.10, 0.94)
+        button:SetBackdropBorderColor(0.15, 0.42, 0.54, 0.88)
+        if fontString then fontString:SetTextColor(0.86, 0.93, 0.96) end
+    end
+end
+
+local function SetActionButtonSelected(button, selected)
+    if not button then return end
+    button.__dkSelected = selected == true
+    StyleActionButton(button)
+end
+
+local function CreateActionButton(parent, width, height, label)
+    local button = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    button:SetSize(width or 120, height or 28)
+    button:SetBackdrop(ACTION_BUTTON_BACKDROP)
+
+    local fontString = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    fontString:SetPoint("LEFT", button, "LEFT", 8, 0)
+    fontString:SetPoint("RIGHT", button, "RIGHT", -8, 0)
+    fontString:SetJustifyH("CENTER")
+    fontString:SetJustifyV("MIDDLE")
+    button:SetFontString(fontString)
+    button.label = fontString
+    button:SetText(label and T(label) or "")
+
+    button:HookScript("OnEnter", function(self) self.__dkHover = true; StyleActionButton(self) end)
+    button:HookScript("OnLeave", function(self) self.__dkHover = false; self.__dkPressed = false; StyleActionButton(self) end)
+    button:HookScript("OnMouseDown", function(self) self.__dkPressed = true; StyleActionButton(self) end)
+    button:HookScript("OnMouseUp", function(self) self.__dkPressed = false; StyleActionButton(self) end)
+    StyleActionButton(button)
+    return button
+end
+
+DKM.CreateActionButton = CreateActionButton
+DKM.SetActionButtonSelected = SetActionButtonSelected
+DKM.StyleActionButton = StyleActionButton
+
 local function StyleTabButton(button, active)
     if not button then return end
     button.isSelected = active == true
@@ -1675,10 +1821,12 @@ local function StyleTabButton(button, active)
         button:SetBackdropColor(0.035, 0.20, 0.27, 0.98)
         button:SetBackdropBorderColor(0.35, 0.82, 1.00, 1)
         button.label:SetTextColor(0.72, 0.94, 1.00)
+        if button.icon then button.icon:SetDesaturated(false) end
     else
         button:SetBackdropColor(0.025, 0.065, 0.085, 0.90)
         button:SetBackdropBorderColor(0.16, 0.38, 0.48, 0.82)
         button.label:SetTextColor(0.92, 0.84, 0.58)
+        if button.icon then button.icon:SetDesaturated(false) end
     end
 end
 
@@ -1706,6 +1854,50 @@ local function CreateFlatTabButton(parent, width, height, label)
     end)
     StyleTabButton(button, false)
     return button
+end
+
+local function EnsureFlatTabButtonIcon(button, size)
+    if not button then return nil end
+    if not button.icon then
+        button.icon = button:CreateTexture(nil, "ARTWORK")
+        button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    end
+    button.icon:SetSize(size or 18, size or 18)
+    button.icon:Show()
+    return button.icon
+end
+
+local function SetFlatTabButtonIcon(button, texture, size)
+    if not button then return end
+    if texture and texture ~= 0 then
+        local icon = EnsureFlatTabButtonIcon(button, size)
+        icon:SetTexture(texture)
+        icon:ClearAllPoints()
+        icon:SetPoint("LEFT", button, "LEFT", 9, 0)
+
+        button.label:ClearAllPoints()
+        button.label:SetPoint("LEFT", icon, "RIGHT", 7, 0)
+        button.label:SetPoint("RIGHT", button, "RIGHT", -8, 0)
+        button.label:SetJustifyH("LEFT")
+        button.label:SetJustifyV("MIDDLE")
+    else
+        if button.icon then button.icon:Hide() end
+        button.label:ClearAllPoints()
+        button.label:SetPoint("CENTER", button, "CENTER", 0, 0)
+        button.label:SetJustifyH("CENTER")
+        button.label:SetJustifyV("MIDDLE")
+    end
+end
+
+local function SetFlatTabButtonMultiline(button, inset)
+    if not button or not button.label then return end
+    local leftInset = inset or 8
+    button.label:ClearAllPoints()
+    button.label:SetPoint("TOPLEFT", button, "TOPLEFT", leftInset, -4)
+    button.label:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -8, 4)
+    button.label:SetJustifyH("CENTER")
+    button.label:SetJustifyV("MIDDLE")
+    button.label:SetWordWrap(true)
 end
 
 local function CreateContextSelector(parent, labelText, options)
@@ -1793,7 +1985,7 @@ end
 
 local function CreateLanguagePickerFrame()
     local frame = CreateFrame("Frame", "DKMentorLanguagePicker", UIParent, "BackdropTemplate")
-    frame:SetSize(390, 250)
+    frame:SetSize(450, 250)
     -- This picker is modal-like and must always render above the DK Mentor main window.
     -- The main window itself uses DIALOG, so FULLSCREEN_DIALOG prevents the picker
     -- from being visually/mouse-obscured by the parent settings UI.
@@ -1811,14 +2003,14 @@ local function CreateLanguagePickerFrame()
 
     frame.description = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     frame.description:SetPoint("TOPLEFT", frame.title, "BOTTOMLEFT", 0, -10)
-    frame.description:SetWidth(350)
+    frame.description:SetWidth(410)
     frame.description:SetJustifyH("LEFT")
     frame.description:SetJustifyV("TOP")
     frame.description:SetText(T("Choose the DK Mentor language. Automatic follows the WoW client language; unsupported client languages use English."))
 
     frame.current = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     frame.current:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -92)
-    frame.current:SetWidth(350)
+    frame.current:SetWidth(410)
     frame.current:SetJustifyH("LEFT")
 
     local choices = {
@@ -1828,9 +2020,9 @@ local function CreateLanguagePickerFrame()
     }
     frame.choiceButtons = {}
     for index, choice in ipairs(choices) do
-        local button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-        button:SetSize(110, 30)
-        button:SetPoint("TOPLEFT", frame, "TOPLEFT", 16 + ((index - 1) * 118), -120)
+        local button = CreateActionButton(frame)
+        button:SetSize(128, 30)
+        button:SetPoint("TOPLEFT", frame, "TOPLEFT", 16 + ((index - 1) * 136), -120)
         button.languageValue = choice.value
         button.languageLabelKey = choice.label
         button:SetText(T(choice.label))
@@ -1840,7 +2032,7 @@ local function CreateLanguagePickerFrame()
         frame.choiceButtons[index] = button
     end
 
-    frame.cancel = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.cancel = CreateActionButton(frame)
     frame.cancel:SetSize(120, 28)
     frame.cancel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, 16)
     frame.cancel:SetText(T("Cancel"))
@@ -1947,12 +2139,12 @@ local function CreateMainFrame()
     offense.status:SetJustifyH("LEFT")
     offense.status:SetJustifyV("TOP")
 
-    offense.toggleButton = CreateFrame("Button", nil, offense, "UIPanelButtonTemplate")
+    offense.toggleButton = CreateActionButton(offense)
     offense.toggleButton:SetSize(205, 26)
     offense.toggleButton:SetPoint("TOPRIGHT", offense, "TOPRIGHT", -12, -30)
     offense.toggleButton:SetScript("OnClick", function() addon:ToggleNativeHighlight() end)
 
-    offense.checkButton = CreateFrame("Button", nil, offense, "UIPanelButtonTemplate")
+    offense.checkButton = CreateActionButton(offense)
     offense.checkButton:SetSize(205, 26)
     offense.checkButton:SetPoint("TOPRIGHT", offense, "TOPRIGHT", -12, -62)
     offense.checkButton:SetText(T("Check action bars"))
@@ -1964,12 +2156,12 @@ local function CreateMainFrame()
     offense.hint:SetJustifyH("LEFT")
     offense.hint:SetText(T("The offensive highlight comes from Blizzard Assisted Combat. DK Mentor does not calculate a custom APL during combat."))
 
-    frame.survivalSection = CreateSection(combatPage, T("Survival — when to use it"), -194, 322)
+    frame.survivalSection = CreateSection(combatPage, T("DK Toolkit — reference"), -194, 322)
     local survival = frame.survivalSection
 
     survival.scopeHint = survival:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     survival.scopeHint:SetPoint("TOPRIGHT", survival, "TOPRIGHT", -10, -9)
-    survival.scopeHint:SetText(T("HUD visibility is configured in Settings"))
+    survival.scopeHint:SetText(T("Reference list; Live Mentor shows only relevant calls."))
 
     for index = 1, 6 do
         local row = CreateFrame("Frame", nil, survival)
@@ -2025,104 +2217,175 @@ local function CreateMainFrame()
     -- DK CODEX TAB ---------------------------------------------------------
     guidePage.scope = guidePage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     guidePage.scope:SetPoint("TOPLEFT", guidePage, "TOPLEFT", 12, -8)
-    guidePage.scope:SetWidth(760)
+    guidePage.scope:SetWidth(780)
     guidePage.scope:SetJustifyH("LEFT")
-    guidePage.scope:SetText(T("DK Codex is an in-game Death Knight reference for Patch 12.1. Browse any DK specialization without changing the specialization you are playing."))
-    guidePage.scope:SetTextColor(0.55, 0.84, 0.95)
+    guidePage.scope:SetText(T("DK Codex is an in-game Death Knight reference for Patch 12.1. Browse any DK specialization without changing the specialization you are playing. Choose a specialization above, then use the left menu to move between sections."))
+    guidePage.scope:SetTextColor(0.68, 0.88, 0.97)
+    guidePage.scope:SetShadowColor(0, 0, 0, 0.85)
+    guidePage.scope:SetShadowOffset(1, -1)
 
     guidePage.specButtons = {}
     local codexSpecChoices = {
-        { id = 0, label = T("Current") },
-        { id = 250, label = T("Blood") },
-        { id = 251, label = T("Frost") },
-        { id = 252, label = T("Unholy") },
+        { id = 0, labelKey = "Current" },
+        { id = 250, labelKey = "Blood" },
+        { id = 251, labelKey = "Frost" },
+        { id = 252, labelKey = "Unholy" },
     }
+    local specButtonGap = 8
+    local specButtonWidth = math.floor((760 - (specButtonGap * (#codexSpecChoices - 1))) / #codexSpecChoices)
     for index, choice in ipairs(codexSpecChoices) do
-        local button = CreateFlatTabButton(guidePage, 184, 26, choice.label)
-        button:SetPoint("TOPLEFT", guidePage, "TOPLEFT", 14 + ((index - 1) * 192), -34)
+        local button = CreateFlatTabButton(guidePage, specButtonWidth, 28, T(choice.labelKey))
+        button:SetPoint("TOPLEFT", guidePage, "TOPLEFT", 14 + ((index - 1) * (specButtonWidth + specButtonGap)), -34)
         button.codexSpecID = choice.id
+        button.labelKey = choice.labelKey
+        button.label:SetWordWrap(false)
         button:SetScript("OnClick", function(self) addon:SetCodexSpecID(self.codexSpecID) end)
         guidePage.specButtons[choice.id] = button
     end
 
     guidePage.sectionButtons = {}
-    local codexSections = (DKM.Codex and DKM.Codex.sectionOrder) or { "overview", "builds", "stats", "rotation", "survival", "utility", "check" }
-    -- Row one contains labels that remain compact in both English and ptBR.
-    -- Row two reserves wide buttons for the longer localized labels.
+    local codexSections = { "overview", "stats", "builds", "rotation", "survival", "utility", "check" }
+    local codexSectionMenuLabels = {
+        overview = "Overview",
+        stats = "Equipment",
+        builds = "Builds",
+        rotation = "Rotation",
+        survival = "Survival",
+        utility = "Utility",
+        check = "Character check short",
+    }
+
+    frame.guideSection = CreateSection(guidePage, T("DK Codex"), -81, 498)
+    local guide = frame.guideSection
+    guide.navWidth = 144
+    guide.contentLeft = 166
+    guide.contentWidth = 600
+
+    guide.navHint = guide:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    guide.navHint:SetPoint("TOPLEFT", guide, "TOPLEFT", 16, -31)
+    guide.navHint:SetWidth(guide.navWidth - 8)
+    guide.navHint:SetJustifyH("LEFT")
+    guide.navHint:SetText(T("Sections"))
+    guide.navHint:SetTextColor(0.68, 0.88, 0.97)
+    guide.navHint:SetShadowColor(0, 0, 0, 0.85)
+    guide.navHint:SetShadowOffset(1, -1)
+
+    guide.navPanel = CreateFrame("Frame", nil, guide)
+    guide.navPanel:SetPoint("TOPLEFT", guide, "TOPLEFT", 12, -54)
+    guide.navPanel:SetPoint("BOTTOMLEFT", guide, "BOTTOMLEFT", 12, 18)
+    guide.navPanel:SetWidth(guide.navWidth)
+
     for index, sectionKey in ipairs(codexSections) do
-        local label = ((DKM.Codex and DKM.Codex.sectionLabels) and (DKM.Codex and DKM.Codex.sectionLabels)[sectionKey]) or sectionKey
-        local width, x, y
-        if index <= 4 then
-            width = 184
-            x = 14 + ((index - 1) * 192)
-            y = -66
-        else
-            local column = index - 5
-            width = 252
-            x = 14 + (column * 260)
-            y = -98
-        end
-        local button = CreateFlatTabButton(guidePage, width, 26, label)
-        button:SetPoint("TOPLEFT", guidePage, "TOPLEFT", x, y)
-        button.label:SetWidth(width - 16)
-        button.label:SetJustifyH("CENTER")
+        local labelKey = codexSectionMenuLabels[sectionKey]
+        local label = labelKey and T(labelKey) or (((DKM.Codex and DKM.Codex.sectionLabels) and (DKM.Codex and DKM.Codex.sectionLabels)[sectionKey]) or sectionKey)
+        local button = CreateFlatTabButton(guide.navPanel, 134, 38, label)
+        button:SetPoint("TOPLEFT", guide.navPanel, "TOPLEFT", 4, -((index - 1) * 42))
+        local buttonFont = button.label
+        if buttonFont and GameFontNormalSmall then buttonFont:SetFontObject(GameFontNormalSmall) end
+        SetFlatTabButtonMultiline(button, 6)
         button.codexSection = sectionKey
+        button.menuLabelKey = labelKey
         button:SetScript("OnClick", function(self) addon:SetCodexSection(self.codexSection) end)
         guidePage.sectionButtons[sectionKey] = button
     end
 
-    -- Preserve the old section bottom edge while making room for the second
-    -- navigation row above it.
-    frame.guideSection = CreateSection(guidePage, T("DK Codex"), -133, 446)
-    local guide = frame.guideSection
-
     guide.specTitle = guide:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    guide.specTitle:SetPoint("TOPLEFT", guide, "TOPLEFT", 14, -31)
-    guide.specTitle:SetWidth(720)
+    guide.specTitle:SetPoint("TOPLEFT", guide, "TOPLEFT", guide.contentLeft, -31)
+    guide.specTitle:SetWidth(guide.contentWidth - 10)
     guide.specTitle:SetJustifyH("LEFT")
     guide.specTitle:SetTextColor(0.60, 0.88, 1)
+    guide.specTitle:SetShadowColor(0, 0, 0, 0.90)
+    guide.specTitle:SetShadowOffset(1, -1)
 
     guide.scroll = CreateFrame("ScrollFrame", nil, guide, "UIPanelScrollFrameTemplate")
-    guide.scroll:SetPoint("TOPLEFT", guide, "TOPLEFT", 12, -62)
+    guide.scroll:SetPoint("TOPLEFT", guide, "TOPLEFT", guide.contentLeft, -64)
     guide.scroll:SetPoint("BOTTOMRIGHT", guide, "BOTTOMRIGHT", -31, 18)
 
     guide.content = CreateFrame("Frame", nil, guide.scroll)
-    guide.content:SetSize(715, 1)
+    guide.content:SetSize(guide.contentWidth, 1)
     guide.scroll:SetScrollChild(guide.content)
 
     guide.text = guide.content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     guide.text:SetPoint("TOPLEFT", guide.content, "TOPLEFT", 2, 0)
-    guide.text:SetWidth(700)
+    guide.text:SetWidth(guide.contentWidth - 28)
     guide.text:SetJustifyH("LEFT")
     guide.text:SetJustifyV("TOP")
+    guide.text:SetWordWrap(true)
+    guide.text:SetTextColor(0.92, 0.96, 1.00)
+    guide.text:SetShadowColor(0, 0, 0, 0.80)
+    guide.text:SetShadowOffset(1, -1)
 
     guide.buildActions = CreateFrame("Frame", nil, guide)
-    guide.buildActions:SetPoint("TOPLEFT", guide, "TOPLEFT", 12, -58)
+    guide.buildActions:SetPoint("TOPLEFT", guide, "TOPLEFT", guide.contentLeft, -58)
     guide.buildActions:SetPoint("TOPRIGHT", guide, "TOPRIGHT", -12, -58)
-    guide.buildActions:SetHeight(30)
+    guide.buildActions:SetHeight(58)
     guide.buildActions:Hide()
 
+    guide.buildContextButtons = {}
+    local buildContexts = {
+        { key="auto", labelKey="Auto" },
+        { key="world", labelKey="World" },
+        { key="delve", labelKey="Delve" },
+        { key="dungeon", labelKey="Dungeon" },
+        { key="mythicplus", labelKey="Mythic+" },
+        { key="raid", labelKey="Raid" },
+        { key="pvp", labelKey="PvP" },
+    }
+    local buildContextGap = 4
+    local buildContextWidth = math.floor(((guide.contentWidth - 8) - (buildContextGap * (#buildContexts - 1))) / #buildContexts)
+    for index, choice in ipairs(buildContexts) do
+        local button = CreateFlatTabButton(guide.buildActions, buildContextWidth, 24, T(choice.labelKey))
+        button:SetPoint("TOPLEFT", guide.buildActions, "TOPLEFT", 2 + ((index - 1) * (buildContextWidth + buildContextGap)), 0)
+        button.buildContext = choice.key
+        button.labelKey = choice.labelKey
+        local font = button.label
+        if font and GameFontNormalSmall then font:SetFontObject(GameFontNormalSmall) end
+        button:SetScript("OnClick", function(self) addon:SetCodexBuildContext(self.buildContext) end)
+        guide.buildContextButtons[choice.key] = button
+    end
+
     guide.sourceURLBox = CreateFrame("EditBox", nil, guide.buildActions, "InputBoxTemplate")
-    -- Keep enough room for localized action labels without changing the total row width.
-    guide.sourceURLBox:SetSize(395, 24)
-    guide.sourceURLBox:SetPoint("LEFT", guide.buildActions, "LEFT", 2, 0)
+    guide.sourceURLBox:SetSize(238, 22)
+    guide.sourceURLBox:SetPoint("TOPLEFT", guide.buildActions, "TOPLEFT", 2, -31)
     guide.sourceURLBox:SetAutoFocus(false)
     guide.sourceURLBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
-    guide.selectSourceButton = CreateFrame("Button", nil, guide.buildActions, "UIPanelButtonTemplate")
-    guide.selectSourceButton:SetSize(170, 24)
+    guide.selectSourceButton = CreateActionButton(guide.buildActions)
+    guide.selectSourceButton:SetSize(152, 22)
     guide.selectSourceButton:SetPoint("LEFT", guide.sourceURLBox, "RIGHT", 8, 0)
-    guide.selectSourceButton:SetText(T("Select source URL"))
+    guide.selectSourceButton:SetText(T("Select URL"))
     guide.selectSourceButton:SetScript("OnClick", function()
         guide.sourceURLBox:SetFocus()
         guide.sourceURLBox:HighlightText()
     end)
 
-    guide.openPilotButton = CreateFrame("Button", nil, guide.buildActions, "UIPanelButtonTemplate")
-    guide.openPilotButton:SetSize(155, 24)
+    guide.openPilotButton = CreateActionButton(guide.buildActions)
+    guide.openPilotButton:SetSize(160, 22)
     guide.openPilotButton:SetPoint("LEFT", guide.selectSourceButton, "RIGHT", 8, 0)
     guide.openPilotButton:SetText(T("Open Loadout Pilot"))
     guide.openPilotButton:SetScript("OnClick", function() addon:OpenLoadoutPilot() end)
+
+    guide.gearActions = CreateFrame("Frame", nil, guide)
+    guide.gearActions:SetPoint("TOPLEFT", guide, "TOPLEFT", guide.contentLeft, -58)
+    guide.gearActions:SetPoint("TOPRIGHT", guide, "TOPRIGHT", -12, -58)
+    guide.gearActions:SetHeight(30)
+    guide.gearActions:Hide()
+    guide.gearViewButtons = {}
+    local gearViews = {
+        { key = "overview", label = T("Overview") },
+        { key = "targets", label = T("Gear") },
+        { key = "crafting", label = T("Crafting") },
+        { key = "sources", label = T("Sources") },
+        { key = "trinkets", label = T("Trinkets") },
+        { key = "upgrades", label = T("Upgrades") },
+    }
+    for index, choice in ipairs(gearViews) do
+        local button = CreateFlatTabButton(guide.gearActions, 98, 24, choice.label)
+        button:SetPoint("LEFT", guide.gearActions, "LEFT", 2 + ((index - 1) * 101), 0)
+        button.gearView = choice.key
+        button:SetScript("OnClick", function(self) addon:SetCodexGearView(self.gearView) end)
+        guide.gearViewButtons[choice.key] = button
+    end
 
     -- SETTINGS TAB ---------------------------------------------------------
     settingsPage.scope = settingsPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -2132,7 +2395,7 @@ local function CreateMainFrame()
     settingsPage.scope:SetText(T("Global addon settings for Death Knight combat HUDs, guidance, and commentary."))
     settingsPage.scope:SetTextColor(0.55, 0.84, 0.95)
 
-    frame.languageButton = CreateFrame("Button", nil, settingsPage, "UIPanelButtonTemplate")
+    frame.languageButton = CreateActionButton(settingsPage)
     frame.languageButton:SetSize(235, 27)
     frame.languageButton:SetPoint("TOPRIGHT", settingsPage, "TOPRIGHT", -12, -2)
     frame.languageButton:SetScript("OnClick", function() addon:ToggleLanguagePicker() end)
@@ -2150,7 +2413,7 @@ local function CreateMainFrame()
     hud.description:SetJustifyV("TOP")
     hud.description:SetText(T("Choose which combat HUDs are visible. Unlock them only while arranging the interface, then lock them again to prevent accidental dragging."))
 
-    hud.combatOnlyButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
+    hud.combatOnlyButton = CreateActionButton(hud)
     hud.combatOnlyButton:SetSize(330, 27)
     hud.combatOnlyButton:SetPoint("TOPRIGHT", hud, "TOPRIGHT", -12, -31)
     hud.combatOnlyButton:SetScript("OnClick", function() addon:SetCombatBarsOnlyInCombat(not DB.combatBarsOnlyInCombat) end)
@@ -2161,8 +2424,8 @@ local function CreateMainFrame()
 
     local function AddHudRow(y, description)
         local text = hud:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        text:SetPoint("TOPLEFT", hud, "TOPLEFT", 205, y)
-        text:SetWidth(540)
+        text:SetPoint("TOPLEFT", hud, "TOPLEFT", 213, y)
+        text:SetWidth(532)
         text:SetHeight(24)
         text:SetJustifyH("LEFT")
         text:SetJustifyV("MIDDLE")
@@ -2170,72 +2433,93 @@ local function CreateMainFrame()
         return text
     end
 
-    hud.buildButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
-    hud.buildButton:SetSize(180, 24)
+    hud.buildButton = CreateActionButton(hud)
+    hud.buildButton:SetSize(190, 24)
     hud.buildButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -72)
     hud.buildButton:SetScript("OnClick", function() addon:SetStatusWidgetEnabled(not DB.statusWidget.enabled) end)
     AddHudRow(-68, T("Shows detected content and DK Ready status beside your specialization icon."))
 
-    hud.coachButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
-    hud.coachButton:SetSize(180, 24)
+    hud.coachButton = CreateActionButton(hud)
+    hud.coachButton:SetSize(190, 24)
     hud.coachButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -97)
     hud.coachButton:SetScript("OnClick", function() addon:SetCoachEnabled(not DB.coach.enabled) end)
     AddHudRow(-93, T("Shows defensive and recovery recommendations, including health-adaptive priorities."))
 
-    hud.buffButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
-    hud.buffButton:SetSize(180, 24)
+    hud.buffButton = CreateActionButton(hud)
+    hud.buffButton:SetSize(190, 24)
     hud.buffButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -122)
     hud.buffButton:SetScript("OnClick", function() addon:SetBuffBarEnabled(not DB.buffBar.enabled) end)
     AddHudRow(-118, T("Shows important Death Knight buffs in a compact movable row."))
 
-    hud.externalBuffButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
-    hud.externalBuffButton:SetSize(180, 24)
+    hud.externalBuffButton = CreateActionButton(hud)
+    hud.externalBuffButton:SetSize(190, 24)
     hud.externalBuffButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -147)
     hud.externalBuffButton:SetScript("OnClick", function() addon:SetExternalBuffBarEnabled(not DB.externalBuffBar.enabled) end)
     AddHudRow(-143, T("Shows helpful effects on you that were applied by other players or NPCs."))
 
-    hud.debuffButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
-    hud.debuffButton:SetSize(180, 24)
+    hud.debuffButton = CreateActionButton(hud)
+    hud.debuffButton:SetSize(190, 24)
     hud.debuffButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -172)
     hud.debuffButton:SetScript("OnClick", function() addon:SetDebuffBarEnabled(not DB.debuffBar.enabled) end)
     AddHudRow(-168, T("Shows harmful effects currently affecting your character."))
 
-    hud.abilityButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
-    hud.abilityButton:SetSize(180, 24)
+    hud.abilityButton = CreateActionButton(hud)
+    hud.abilityButton:SetSize(190, 24)
     hud.abilityButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -197)
     hud.abilityButton:SetScript("OnClick", function() addon:SetAbilityBarEnabled(not DB.abilityBar.enabled) end)
     AddHudRow(-193, T("Shows important abilities and whether they are ready, cooling down, or temporarily unusable."))
 
-    hud.resourceButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
-    hud.resourceButton:SetSize(180, 24)
+    hud.resourceButton = CreateActionButton(hud)
+    hud.resourceButton:SetSize(190, 24)
     hud.resourceButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -222)
     hud.resourceButton:SetScript("OnClick", function() addon:SetResourceHUDEnabled(not DB.resourceHUD.enabled) end)
     hud.resourceDescription = AddHudRow(-218, T("Shows all six Runes plus Runic Power in a compact movable Death Knight resource HUD."))
 
-    hud.interruptButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
-    hud.interruptButton:SetSize(180, 24)
+    hud.interruptButton = CreateActionButton(hud)
+    hud.interruptButton:SetSize(190, 24)
     hud.interruptButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -247)
     hud.interruptButton:SetScript("OnClick", function() addon:SetInterruptAlertEnabled(not DB.interruptAlert.enabled) end)
-    AddHudRow(-243, T("Shows the Mind Freeze icon only when your current target has a confirmed interruptible cast or channel."))
+    hud.interruptDescription = AddHudRow(-243, T("Shows the Mind Freeze icon only when your current target has a confirmed interruptible cast or channel."))
+    hud.interruptDescription:SetWidth(400)
+
+    hud.interruptOptionsButton = CreateActionButton(hud)
+    hud.interruptOptionsButton:SetSize(120, 24)
+    hud.interruptOptionsButton:SetPoint("TOPRIGHT", hud, "TOPRIGHT", -12, -247)
+    hud.interruptOptionsButton:SetText(T("Interrupt options..."))
+    hud.interruptOptionsButton:SetScript("OnClick", function()
+        if DKM.MentorStudio and DKM.MentorStudio.OpenInterrupt then
+            DKM.MentorStudio.OpenInterrupt(mainFrame)
+        end
+    end)
+
+    -- These are compact state toggles. Keep labels to one line; the explanatory
+    -- text lives in the description column to the right.
+    for _, button in ipairs({ hud.buildButton, hud.coachButton, hud.buffButton, hud.externalBuffButton, hud.debuffButton, hud.abilityButton, hud.resourceButton, hud.interruptButton, hud.interruptOptionsButton }) do
+        local fontString = button.GetFontString and button:GetFontString()
+        if fontString then
+            if GameFontNormalSmall then fontString:SetFontObject(GameFontNormalSmall) end
+            if fontString.SetWordWrap then fontString:SetWordWrap(false) end
+        end
+    end
 
     -- Keep the layout controls on one clean row even with localized labels.
-    hud.lockButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
+    hud.lockButton = CreateActionButton(hud)
     hud.lockButton:SetSize(170, 27)
     hud.lockButton:SetPoint("BOTTOMLEFT", hud, "BOTTOMLEFT", 12, 12)
     hud.lockButton:SetScript("OnClick", function() addon:ToggleHUDLock() end)
 
-    hud.previewButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
+    hud.previewButton = CreateActionButton(hud)
     hud.previewButton:SetSize(180, 27)
     hud.previewButton:SetPoint("LEFT", hud.lockButton, "RIGHT", 8, 0)
     hud.previewButton:SetScript("OnClick", function() addon:ToggleHUDPreview() end)
 
-    hud.barLayoutButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
+    hud.barLayoutButton = CreateActionButton(hud)
     hud.barLayoutButton:SetSize(180, 27)
     hud.barLayoutButton:SetPoint("LEFT", hud.previewButton, "RIGHT", 8, 0)
     hud.barLayoutButton:SetText(T("HUD appearance..."))
     hud.barLayoutButton:SetScript("OnClick", function() addon:ToggleBarLayoutFrame() end)
 
-    hud.resetButton = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
+    hud.resetButton = CreateActionButton(hud)
     hud.resetButton:SetSize(200, 27)
     hud.resetButton:SetPoint("LEFT", hud.barLayoutButton, "RIGHT", 8, 0)
     hud.resetButton:SetText(T("Reset HUD positions"))
@@ -2257,7 +2541,7 @@ local function CreateMainFrame()
     pilot.description:SetJustifyH("LEFT")
     pilot.description:SetJustifyV("TOP")
 
-    pilot.openButton = CreateFrame("Button", nil, pilot, "UIPanelButtonTemplate")
+    pilot.openButton = CreateActionButton(pilot)
     pilot.openButton:SetSize(190, 28)
     pilot.openButton:SetPoint("TOPRIGHT", pilot, "TOPRIGHT", -12, -37)
     pilot.openButton:SetScript("OnClick", function() addon:OpenLoadoutPilot() end)
@@ -2272,12 +2556,12 @@ local function CreateMainFrame()
     voice.status:SetJustifyH("LEFT")
     voice.status:SetJustifyV("TOP")
 
-    voice.toggleButton = CreateFrame("Button", nil, voice, "UIPanelButtonTemplate")
+    voice.toggleButton = CreateActionButton(voice)
     voice.toggleButton:SetSize(190, 27)
     voice.toggleButton:SetPoint("TOPRIGHT", voice, "TOPRIGHT", -12, -30)
     voice.toggleButton:SetScript("OnClick", function() addon:ToggleVoice() end)
 
-    voice.situationalButton = CreateFrame("Button", nil, voice, "UIPanelButtonTemplate")
+    voice.situationalButton = CreateActionButton(voice)
     voice.situationalButton:SetSize(150, 27)
     voice.situationalButton:SetPoint("TOPLEFT", voice, "TOPLEFT", 12, -88)
     voice.situationalButton:SetScript("OnClick", function()
@@ -2286,19 +2570,19 @@ local function CreateMainFrame()
         Print(T(DB.voice.situational and "Situational Lich King comments enabled." or "Situational Lich King comments disabled."))
     end)
 
-    voice.mapButton = CreateFrame("Button", nil, voice, "UIPanelButtonTemplate")
+    voice.mapButton = CreateActionButton(voice)
     voice.mapButton:SetSize(150, 27)
     voice.mapButton:SetPoint("LEFT", voice.situationalButton, "RIGHT", 8, 0)
     voice.mapButton:SetText(T("Voice mapping..."))
     voice.mapButton:SetScript("OnClick", function() addon:ToggleVoiceConfigFrame() end)
 
-    voice.previewButton = CreateFrame("Button", nil, voice, "UIPanelButtonTemplate")
+    voice.previewButton = CreateActionButton(voice)
     voice.previewButton:SetSize(140, 27)
     voice.previewButton:SetPoint("LEFT", voice.mapButton, "RIGHT", 8, 0)
     voice.previewButton:SetText(T("Preview voice"))
     voice.previewButton:SetScript("OnClick", function() addon:PreviewVoice() end)
 
-    voice.frequencyButton = CreateFrame("Button", nil, voice, "UIPanelButtonTemplate")
+    voice.frequencyButton = CreateActionButton(voice)
     voice.frequencyButton:SetSize(170, 27)
     voice.frequencyButton:SetPoint("LEFT", voice.previewButton, "RIGHT", 8, 0)
     voice.frequencyButton:SetScript("OnClick", function() addon:CycleVoiceFrequency() end)
@@ -2350,12 +2634,12 @@ end
 
 local function CreateCoachFrame()
     local frame = CreateFrame("Frame", "DKMentorCoachFrame", UIParent, "BackdropTemplate")
-    frame:SetSize(480, 138)
+    frame:SetSize(330, 96)
     frame:SetFrameStrata("HIGH")
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
     frame:EnableMouse(true)
-    ApplyBackdrop(frame, 0.94)
+    ApplyBackdrop(frame, 0.78)
 
     local function StartCoachDrag(self)
         local owner = self.owner or self
@@ -2403,17 +2687,17 @@ local function CreateCoachFrame()
 
     for index = 1, 3 do
         local card = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-        card:SetSize(148, 96)
+        card:SetSize(102, 64)
         card:SetPoint("TOPLEFT", frame, "TOPLEFT", 8 + ((index - 1) * 157), -34)
         card:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8X8",
             edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
             tile = false,
-            edgeSize = 9,
+            edgeSize = 6,
             insets = { left = 2, right = 2, top = 2, bottom = 2 },
         })
-        card:SetBackdropColor(0.025, 0.08, 0.11, 0.82)
-        card:SetBackdropBorderColor(0.16, 0.47, 0.62, 0.85)
+        card:SetBackdropColor(0.018, 0.055, 0.075, 0.88)
+        card:SetBackdropBorderColor(0.12, 0.40, 0.54, 0.72)
         card:EnableMouse(true)
         card.owner = frame
         card:RegisterForDrag("LeftButton")
@@ -2421,27 +2705,31 @@ local function CreateCoachFrame()
         card:SetScript("OnDragStop", StopCoachDrag)
 
         card.icon = card:CreateTexture(nil, "ARTWORK")
-        card.icon:SetSize(36, 36)
-        card.icon:SetPoint("TOPLEFT", card, "TOPLEFT", 7, -8)
+        card.icon:SetSize(24, 24)
+        card.icon:SetPoint("TOPLEFT", card, "TOPLEFT", 5, -5)
         card.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
         card.action = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        card.action:SetPoint("TOPLEFT", card.icon, "TOPRIGHT", 6, -1)
-        card.action:SetWidth(91)
+        card.action:SetPoint("TOPLEFT", card.icon, "TOPRIGHT", 4, 0)
+        card.action:SetWidth(65)
         card.action:SetJustifyH("LEFT")
         card.action:SetTextColor(0.46, 0.86, 1)
 
         card.spell = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        card.spell:SetPoint("TOPLEFT", card.icon, "TOPRIGHT", 6, -18)
-        card.spell:SetWidth(91)
-        card.spell:SetHeight(28)
+        card.spell:SetPoint("TOPLEFT", card.icon, "TOPRIGHT", 4, -14)
+        card.spell:SetWidth(65)
+        card.spell:SetHeight(22)
         card.spell:SetJustifyH("LEFT")
         card.spell:SetJustifyV("TOP")
 
         card.when = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        card.when:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 7, 8)
-        card.when:SetWidth(134)
+        card.when:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 5, 5)
+        card.when:SetWidth(92)
+        card.when:SetHeight(18)
         card.when:SetJustifyH("LEFT")
+        card.when:SetJustifyV("BOTTOM")
+        if GameFontDisableSmall then card.when:SetFontObject(GameFontDisableSmall) end
+        card.when:SetTextColor(0.78, 0.86, 0.90)
 
         card:SetScript("OnEnter", function(self)
             self:SetBackdropColor(0.07, 0.19, 0.25, 0.92)
@@ -2471,9 +2759,13 @@ local function CreateCoachFrame()
 
         coachCards[index] = card
     end
+    -- 3.0 Alert Studio consumes the existing cards instead of creating a
+    -- competing combat HUD. The table remains owned by Core; modules only style it.
+    frame.cards = coachCards
 
     frame:Hide()
     RestoreFramePosition(frame, "coach")
+    if addon.ApplyMentorCoachLayout then addon:ApplyMentorCoachLayout() end
     return frame
 end
 
@@ -3189,6 +3481,12 @@ local function NormalizeResourceHUDStyle(value)
     return value
 end
 
+local function NormalizeResourceVisibilityMode(value)
+    value = string.lower(tostring(value or "combat"))
+    if value == "always" or value == "fade" or value == "combat" then return value end
+    return "combat"
+end
+
 local function LayoutResourceHUDComponents(frame, showRunes, showRunicPower)
     if not frame then return end
 
@@ -3875,6 +4173,8 @@ function addon:ResetResourceHUDLayout()
     DB.resourceHUD.arcSpacing = DEFAULTS.resourceHUD.arcSpacing
     DB.resourceHUD.scale = DEFAULTS.resourceHUD.scale
     DB.resourceHUD.opacity = DEFAULTS.resourceHUD.opacity
+    DB.resourceHUD.visibilityMode = DEFAULTS.resourceHUD.visibilityMode
+    DB.resourceHUD.fadeAlpha = DEFAULTS.resourceHUD.fadeAlpha
     DB.resourceHUD.point = DEFAULTS.resourceHUD.point
     DB.resourceHUD.relativePoint = DEFAULTS.resourceHUD.relativePoint
     DB.resourceHUD.x = DEFAULTS.resourceHUD.x
@@ -3888,6 +4188,40 @@ function addon:ResetResourceHUDLayout()
     self:UpdateBarLayoutFrame()
     self:UpdateHUDSettings()
     Print(T("DK Resources HUD restored to defaults."))
+end
+
+local function BuildOrderedRuneDisplayStates(now)
+    local states = {}
+    if not GetRuneCooldown then return states end
+
+    for runeID = 1, 6 do
+        local ok, startTime, duration, rawReady = pcall(GetRuneCooldown, runeID)
+        local ready = ok and GetAccessibleBoolean(rawReady) or nil
+        local progress = 0
+        if ready == true then
+            progress = 1
+        elseif ok and IsAccessibleNumber(startTime) and IsAccessibleNumber(duration) and duration > 0 then
+            progress = Clamp((now - startTime) / duration, 0, 1)
+        end
+        states[#states + 1] = {
+            runeID = runeID,
+            ready = ready == true,
+            progress = progress,
+            known = ok == true,
+        }
+    end
+
+    -- Blizzard presents DK Runes as an ordered pool rather than exposing the
+    -- underlying Rune IDs visually: available Runes stay on the left, spending
+    -- consumes from the right, and the next Rune to finish recharging appears
+    -- first in the depleted group. Sorting by readiness/progress reproduces that
+    -- stable visual behavior without changing or predicting the real game state.
+    table.sort(states, function(a, b)
+        if a.ready ~= b.ready then return a.ready end
+        if a.progress ~= b.progress then return a.progress > b.progress end
+        return a.runeID < b.runeID
+    end)
+    return states
 end
 
 function addon:UpdateResourceRunes()
@@ -3922,22 +4256,17 @@ function addon:UpdateResourceRunes()
     end
 
     if not GetRuneCooldown then return end
-    local now = GetNow()
-    for index, rune in ipairs(activeFrame.runes or {}) do
-        local ok, startTime, duration, rawReady = pcall(GetRuneCooldown, index)
-        local ready = ok and GetAccessibleBoolean(rawReady) or nil
-        if ready == true then
-            rune:SetMinMaxValues(0, 1)
-            rune:SetValue(1)
+    local states = BuildOrderedRuneDisplayStates(GetNow())
+    for displayIndex, rune in ipairs(activeFrame.runes or {}) do
+        local state = states[displayIndex]
+        local progress = state and state.progress or 0
+        rune:SetMinMaxValues(0, 1)
+        rune:SetValue(progress)
+        if state and state.ready then
             rune:SetStatusBarColor(readyColor[1], readyColor[2], readyColor[3], readyColor[4])
-        elseif ok and IsAccessibleNumber(startTime) and IsAccessibleNumber(duration) and duration > 0 then
-            local elapsed = Clamp(now - startTime, 0, duration)
-            rune:SetMinMaxValues(0, duration)
-            rune:SetValue(elapsed)
+        elseif progress > 0 then
             rune:SetStatusBarColor(chargingColor[1], chargingColor[2], chargingColor[3], chargingColor[4])
         else
-            rune:SetMinMaxValues(0, 1)
-            rune:SetValue(0)
             rune:SetStatusBarColor(emptyColor[1], emptyColor[2], emptyColor[3], emptyColor[4])
         end
     end
@@ -4159,6 +4488,14 @@ function addon:UpdateResourceHUD()
 
     local spacingKey = NormalizeResourceRuneSpacing(DB.resourceHUD.runeSpacing)
     local showPowerText = DB.resourceHUD.showPowerText ~= false
+    local configuredOpacity = NormalizeCombatBarOpacity(DB.resourceHUD.opacity)
+    local visibilityMode = NormalizeResourceVisibilityMode(DB.resourceHUD.visibilityMode)
+    local displayOpacity = configuredOpacity
+    if not preview and visibilityMode == "fade" and not self:IsPlayerInCombat() then
+        displayOpacity = configuredOpacity * Clamp(tonumber(DB.resourceHUD.fadeAlpha) or 0.20, 0.05, 0.80)
+    end
+    if resourceFrame then resourceFrame:SetAlpha(displayOpacity) end
+    if resourceArcFrame then resourceArcFrame:SetAlpha(displayOpacity) end
     local lockdown = InCombatLockdown and InCombatLockdown()
 
     if style == "arcs" then
@@ -4322,7 +4659,7 @@ local function CreateBarLayoutFrame()
         row.label:SetJustifyH("LEFT")
         row.label:SetText(definition.label)
 
-        row.scaleMinus = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        row.scaleMinus = CreateActionButton(row)
         row.scaleMinus:SetSize(30, 26)
         row.scaleMinus:SetPoint("LEFT", row, "LEFT", 166, 0)
         row.scaleMinus:SetText("-")
@@ -4335,7 +4672,7 @@ local function CreateBarLayoutFrame()
         row.scaleValue:SetWidth(58)
         row.scaleValue:SetJustifyH("CENTER")
 
-        row.scalePlus = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        row.scalePlus = CreateActionButton(row)
         row.scalePlus:SetSize(30, 26)
         row.scalePlus:SetPoint("LEFT", row.scaleValue, "RIGHT", 5, 0)
         row.scalePlus:SetText("+")
@@ -4343,7 +4680,7 @@ local function CreateBarLayoutFrame()
             addon:SetCombatBarScale(row.dbKey, (DB[row.dbKey].scale or 1) + 0.1)
         end)
 
-        row.opacityMinus = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        row.opacityMinus = CreateActionButton(row)
         row.opacityMinus:SetSize(30, 26)
         row.opacityMinus:SetPoint("LEFT", row, "LEFT", 316, 0)
         row.opacityMinus:SetText("-")
@@ -4356,7 +4693,7 @@ local function CreateBarLayoutFrame()
         row.opacityValue:SetWidth(58)
         row.opacityValue:SetJustifyH("CENTER")
 
-        row.opacityPlus = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        row.opacityPlus = CreateActionButton(row)
         row.opacityPlus:SetSize(30, 26)
         row.opacityPlus:SetPoint("LEFT", row.opacityValue, "RIGHT", 5, 0)
         row.opacityPlus:SetText("+")
@@ -4364,7 +4701,7 @@ local function CreateBarLayoutFrame()
             addon:SetCombatBarOpacity(row.dbKey, (DB[row.dbKey].opacity or 1) + 0.1)
         end)
 
-        row.columnsMinus = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        row.columnsMinus = CreateActionButton(row)
         row.columnsMinus:SetSize(30, 26)
         row.columnsMinus:SetPoint("LEFT", row, "LEFT", 510, 0)
         row.columnsMinus:SetText("-")
@@ -4377,7 +4714,7 @@ local function CreateBarLayoutFrame()
         row.columnsValue:SetWidth(64)
         row.columnsValue:SetJustifyH("CENTER")
 
-        row.columnsPlus = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        row.columnsPlus = CreateActionButton(row)
         row.columnsPlus:SetSize(30, 26)
         row.columnsPlus:SetPoint("LEFT", row.columnsValue, "RIGHT", 5, 0)
         row.columnsPlus:SetText("+")
@@ -4389,7 +4726,7 @@ local function CreateBarLayoutFrame()
             row.columnsMinus:Hide()
             row.columnsValue:Hide()
             row.columnsPlus:Hide()
-            row.resourceModeButton = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+            row.resourceModeButton = CreateActionButton(row)
             row.resourceModeButton:SetSize(240, 26)
             row.resourceModeButton:SetPoint("LEFT", row, "LEFT", 500, 0)
             row.resourceModeButton:SetScript("OnClick", function() addon:CycleResourceHUDMode() end)
@@ -4405,24 +4742,24 @@ local function CreateBarLayoutFrame()
     frame.resourceOptionsTitle:SetText(T("DK Resources appearance"))
     frame.resourceOptionsTitle:SetTextColor(0.55, 0.84, 0.95)
 
-    frame.resourceTextButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.resourceTextButton = CreateActionButton(frame)
     frame.resourceTextButton:SetSize(165, 28)
     frame.resourceTextButton:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -374)
     frame.resourceTextButton:SetScript("OnClick", function()
         addon:SetResourceHUDPowerTextEnabled(not DB.resourceHUD.showPowerText)
     end)
 
-    frame.resourceStyleButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.resourceStyleButton = CreateActionButton(frame)
     frame.resourceStyleButton:SetSize(165, 28)
     frame.resourceStyleButton:SetPoint("LEFT", frame.resourceTextButton, "RIGHT", 8, 0)
     frame.resourceStyleButton:SetScript("OnClick", function() addon:CycleResourceHUDStyle() end)
 
-    frame.resourceSpacingButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.resourceSpacingButton = CreateActionButton(frame)
     frame.resourceSpacingButton:SetSize(190, 28)
     frame.resourceSpacingButton:SetPoint("LEFT", frame.resourceStyleButton, "RIGHT", 8, 0)
     frame.resourceSpacingButton:SetScript("OnClick", function() addon:CycleResourceRuneSpacing() end)
 
-    frame.resourceResetButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.resourceResetButton = CreateActionButton(frame)
     frame.resourceResetButton:SetSize(190, 28)
     frame.resourceResetButton:SetPoint("LEFT", frame.resourceSpacingButton, "RIGHT", 8, 0)
     frame.resourceResetButton:SetText(T("Restore DK Resources"))
@@ -4434,7 +4771,7 @@ local function CreateBarLayoutFrame()
     frame.resourceArcSpacingLabel:SetJustifyH("LEFT")
     frame.resourceArcSpacingLabel:SetText(T("Arc opening"))
 
-    frame.resourceArcSpacingMinus = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.resourceArcSpacingMinus = CreateActionButton(frame)
     frame.resourceArcSpacingMinus:SetSize(32, 26)
     frame.resourceArcSpacingMinus:SetPoint("TOPLEFT", frame, "TOPLEFT", 174, -407)
     frame.resourceArcSpacingMinus:SetText("-")
@@ -4447,7 +4784,7 @@ local function CreateBarLayoutFrame()
     frame.resourceArcSpacingValue:SetWidth(70)
     frame.resourceArcSpacingValue:SetJustifyH("CENTER")
 
-    frame.resourceArcSpacingPlus = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.resourceArcSpacingPlus = CreateActionButton(frame)
     frame.resourceArcSpacingPlus:SetSize(32, 26)
     frame.resourceArcSpacingPlus:SetPoint("LEFT", frame.resourceArcSpacingValue, "RIGHT", 6, 0)
     frame.resourceArcSpacingPlus:SetText("+")
@@ -4470,18 +4807,18 @@ local function CreateBarLayoutFrame()
     frame.resourceStatus:SetJustifyV("TOP")
     frame.resourceStatus:SetTextColor(0.62, 0.76, 0.86)
 
-    frame.resetButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.resetButton = CreateActionButton(frame)
     frame.resetButton:SetSize(245, 28)
     frame.resetButton:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 16)
     frame.resetButton:SetText(T("Restore HUD appearance"))
     frame.resetButton:SetScript("OnClick", function() addon:ResetCombatBarLayout() end)
 
-    frame.previewButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.previewButton = CreateActionButton(frame)
     frame.previewButton:SetSize(245, 28)
     frame.previewButton:SetPoint("LEFT", frame.resetButton, "RIGHT", 10, 0)
     frame.previewButton:SetScript("OnClick", function() addon:ToggleHUDPreview() end)
 
-    frame.doneButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.doneButton = CreateActionButton(frame)
     frame.doneButton:SetSize(245, 28)
     frame.doneButton:SetPoint("LEFT", frame.previewButton, "RIGHT", 10, 0)
     frame.doneButton:SetText(T("Close"))
@@ -4511,11 +4848,13 @@ function addon:UpdateBarLayoutFrame()
             row.scaleValue:SetText(string.format("%d%%", math.floor((scale * 100) + 0.5)))
             row.scaleMinus:SetEnabled(scale > 0.7)
             row.scalePlus:SetEnabled(scale < 1.6)
+            StyleActionButton(row.scaleMinus); StyleActionButton(row.scalePlus)
 
             local opacity = NormalizeCombatBarOpacity(config.opacity)
             row.opacityValue:SetText(string.format("%d%%", math.floor((opacity * 100) + 0.5)))
             row.opacityMinus:SetEnabled(opacity > 0.3)
             row.opacityPlus:SetEnabled(opacity < 1)
+            StyleActionButton(row.opacityMinus); StyleActionButton(row.opacityPlus)
 
             if limits.resourceMode then
                 if row.resourceModeButton then row.resourceModeButton:SetText(self:GetResourceHUDModeLabel()) end
@@ -4524,6 +4863,7 @@ function addon:UpdateBarLayoutFrame()
                 row.columnsValue:SetText(tostring(columns))
                 row.columnsMinus:SetEnabled(columns > limits.minColumns)
                 row.columnsPlus:SetEnabled(columns < limits.maxColumns)
+                StyleActionButton(row.columnsMinus); StyleActionButton(row.columnsPlus)
             end
         end
     end
@@ -4543,6 +4883,7 @@ function addon:UpdateBarLayoutFrame()
         barLayoutFrame.resourceArcSpacingValue:SetText(self:GetResourceArcSpacingLabel())
         barLayoutFrame.resourceArcSpacingMinus:SetEnabled(arcMode and arcSpacing > 65)
         barLayoutFrame.resourceArcSpacingPlus:SetEnabled(arcMode and arcSpacing < 165)
+        StyleActionButton(barLayoutFrame.resourceArcSpacingMinus); StyleActionButton(barLayoutFrame.resourceArcSpacingPlus)
         if barLayoutFrame.resourceArcSpacingLabel then
             barLayoutFrame.resourceArcSpacingLabel:SetTextColor(arcMode and 1 or 0.45, arcMode and 0.82 or 0.45, arcMode and 0.25 or 0.45)
         end
@@ -4632,7 +4973,7 @@ local function CreateVoiceConfigFrame()
         row.label:SetJustifyH("LEFT")
         row.label:SetText((Voices.categoryLabels and Voices.categoryLabels[categoryKey]) or categoryKey)
 
-        row.prev = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        row.prev = CreateActionButton(row)
         row.prev:SetSize(28, 22)
         row.prev:SetPoint("LEFT", row, "LEFT", 184, 0)
         row.prev:SetText("<")
@@ -4643,19 +4984,19 @@ local function CreateVoiceConfigFrame()
         row.selection:SetWidth(105)
         row.selection:SetJustifyH("CENTER")
 
-        row.next = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        row.next = CreateActionButton(row)
         row.next:SetSize(28, 22)
         row.next:SetPoint("LEFT", row.selection, "RIGHT", 5, 0)
         row.next:SetText(">")
         row.next:SetScript("OnClick", function() addon:CycleVoiceSelection(categoryKey, 1) end)
 
-        row.preview = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        row.preview = CreateActionButton(row)
         row.preview:SetSize(76, 22)
         row.preview:SetPoint("LEFT", row.next, "RIGHT", 9, 0)
         row.preview:SetText(T("Preview"))
         row.preview:SetScript("OnClick", function() addon:PreviewVoiceCategory(categoryKey) end)
 
-        row.random = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        row.random = CreateActionButton(row)
         row.random:SetSize(72, 22)
         row.random:SetPoint("LEFT", row.preview, "RIGHT", 7, 0)
         row.random:SetText(T("Random"))
@@ -4664,7 +5005,7 @@ local function CreateVoiceConfigFrame()
         voiceRows[categoryKey] = row
     end
 
-    frame.resetButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.resetButton = CreateActionButton(frame)
     frame.resetButton:SetSize(140, 25)
     frame.resetButton:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 14, 14)
     frame.resetButton:SetText(T("Reset all to Random"))
@@ -4937,6 +5278,34 @@ function addon:SyncCombatEventState()
     return self:IsPlayerInCombat()
 end
 
+local RESOURCE_VISIBILITY_ORDER = { "combat", "fade", "always" }
+
+function addon:GetResourceVisibilityModeLabel()
+    if not DB or not DB.resourceHUD then return T("Combat Only") end
+    local mode = NormalizeResourceVisibilityMode(DB.resourceHUD.visibilityMode)
+    if mode == "always" then return T("Always") end
+    if mode == "fade" then return T("Fade out of combat") end
+    return T("Combat Only")
+end
+
+function addon:SetResourceVisibilityMode(mode)
+    if not DB or not DB.resourceHUD then return end
+    DB.resourceHUD.visibilityMode = NormalizeResourceVisibilityMode(mode)
+    self:UpdateResourceHUD()
+    self:UpdateHUDSettings()
+end
+
+function addon:CycleResourceVisibilityMode()
+    if not DB or not DB.resourceHUD then return end
+    local current = NormalizeResourceVisibilityMode(DB.resourceHUD.visibilityMode)
+    local nextMode = "combat"
+    for index, value in ipairs(RESOURCE_VISIBILITY_ORDER) do
+        if value == current then nextMode = RESOURCE_VISIBILITY_ORDER[(index % #RESOURCE_VISIBILITY_ORDER) + 1] break end
+    end
+    self:SetResourceVisibilityMode(nextMode)
+    Print(T("DK resource visibility: %s", self:GetResourceVisibilityModeLabel()))
+end
+
 function addon:ShouldShowCombatBar(config)
     -- Preview is a hard layout override. It intentionally ignores both the
     -- individual ON/OFF toggle and Bars only in combat so every combat HUD can
@@ -4946,6 +5315,11 @@ function addon:ShouldShowCombatBar(config)
     end
     if not config or config.enabled ~= true then
         return false
+    end
+    if DB and DB.resourceHUD and config == DB.resourceHUD then
+        local mode = NormalizeResourceVisibilityMode(config.visibilityMode)
+        if mode == "combat" then return self:IsPlayerInCombat() end
+        return true
     end
     if DB and DB.combatBarsOnlyInCombat == true then
         return self:IsPlayerInCombat()
@@ -4965,7 +5339,7 @@ function addon:UpdateHUDMoveHints()
     if not DB then return end
     local canMove = self:CanMoveHUDs()
     local text = canMove and T("Drag to move") or ""
-    if coachFrame and coachFrame.dragHint then coachFrame.dragHint:SetText(text) end
+    if coachFrame and coachFrame.dragHint then coachFrame.dragHint:SetText(canMove and T("Move") or "") end
     if buffFrame and buffFrame.dragHint then buffFrame.dragHint:SetText(text) end
     if externalBuffFrame and externalBuffFrame.dragHint then externalBuffFrame.dragHint:SetText(text) end
     if debuffFrame and debuffFrame.dragHint then debuffFrame.dragHint:SetText(text) end
@@ -5078,6 +5452,7 @@ function addon:UpdateVoiceConfigFrame()
                 row.selection:SetTextColor(1, 0.82, 0)
             end
             row.preview:SetEnabled(PlaySoundFile ~= nil and selection ~= -1)
+            StyleActionButton(row.preview)
         end
     end
 end
@@ -5144,8 +5519,9 @@ function addon:UpdateVoiceSection()
     section.toggleButton:SetText(T(DB.voice.enabled and "Disable commentary" or "Enable commentary"))
     section.frequencyButton:SetText(T("Frequency: %s", tostring(config.label or DB.voice.frequency)))
     section.previewButton:SetEnabled(PlaySoundFile ~= nil)
+    StyleActionButton(section.previewButton)
     section.situationalButton:SetText(T(DB.voice.situational and "Situations: ON" or "Situations: OFF"))
-    if section.mapButton then section.mapButton:SetEnabled(PlaySoundFile ~= nil) end
+    if section.mapButton then section.mapButton:SetEnabled(PlaySoundFile ~= nil); StyleActionButton(section.mapButton) end
     self:UpdateVoiceConfigFrame()
 end
 
@@ -5182,7 +5558,7 @@ function addon:UpdateSurvivalTips()
     end
 
     if mainFrame.survivalSection and mainFrame.survivalSection.title then
-        mainFrame.survivalSection.title:SetText(T("Survival — %s / %s", tostring(specName), tostring(contextName)))
+        mainFrame.survivalSection.title:SetText(T("DK Toolkit — %s / %s", tostring(specName), tostring(contextName)))
     end
 end
 
@@ -5282,6 +5658,7 @@ function addon:UpdateCoach()
     local generalCoach = Data.coach and Data.coach.general
     local baseEntries = (specCoach and (specCoach[context] or specCoach.world)) or (generalCoach and (generalCoach[context] or generalCoach.world)) or {}
     local entries, health, state = self:GetAdaptiveCoachEntries(specID, context, baseEntries)
+    coachFrame.hasVisibleCards = type(entries) == "table" and #entries > 0
 
     coachFrame.title:SetText(string.format("DK Mentor — %s / %s", specName, contextName))
     if health then
@@ -5303,13 +5680,21 @@ function addon:UpdateCoach()
             card.action:SetText(T(entry.title or "USE"))
             card.spell:SetText(spellName .. suffix)
             card.when:SetText(T(entry.when or ""))
-            if index == 1 and health and health <= 70 then
+            card.mentorKind = entry.kind
+            if entry.kind == "rotation" then
+                -- Card 1 can be pinned to Blizzard Assisted Combat's next spell.
+                -- Give it a stable, subtle cyan identity without making it look
+                -- like an urgent defensive or interrupt warning.
+                card:SetBackdropColor(0.018, 0.075, 0.105, 0.90)
+                card:SetBackdropBorderColor(0.25, 0.72, 0.88, 0.92)
+            elseif health and health <= 70 and entry.kind == "defensive" then
                 card:SetBackdropColor(0.10, 0.18, 0.22, 0.96)
                 card:SetBackdropBorderColor(0.95, 0.72, 0.18, 1)
             else
                 card:SetBackdropColor(0.025, 0.08, 0.11, 0.82)
                 card:SetBackdropBorderColor(0.16, 0.47, 0.62, 0.85)
             end
+            if self.ApplyMentorCardStyle then self:ApplyMentorCardStyle(card, entry) end
             card:Show()
         else
             card.spellID = nil
@@ -5357,6 +5742,7 @@ function addon:ShowMentorAlertPreview()
             card:Hide()
         end
     end
+    if self.ApplyMentorCoachLayout then self:ApplyMentorCoachLayout() end
     coachFrame:Show()
 
     local mindFreeze = (Data.spells and Data.spells.MIND_FREEZE) or 47528
@@ -5370,10 +5756,11 @@ function addon:ShowMentorAlertPreview()
         pcall(interruptFrame.cooldown.SetCooldown, interruptFrame.cooldown, 0, 0)
     end
     interruptFrame:Show()
+    self:UpdateInterruptActionGlows(true, false, nil, true)
 
-    Print(T("Alert preview active for 8 seconds."))
+    Print(T("Alert preview active for 4 seconds."))
     if C_Timer and C_Timer.After then
-        C_Timer.After(8, function()
+        C_Timer.After(4, function()
             if addon.mentorAlertPreviewToken ~= token then return end
             if coachFrame then
                 addon:UpdateCoach()
@@ -5399,8 +5786,12 @@ function addon:RefreshCoachVisibility()
     end
 
     if shouldShow then
-        coachFrame:Show()
         self:UpdateCoach()
+        if preview or coachFrame.hasVisibleCards ~= false then
+            coachFrame:Show()
+        else
+            coachFrame:Hide()
+        end
     else
         coachFrame:Hide()
     end
@@ -6827,10 +7218,298 @@ local function GetSpellCooldownPresentation(spellID)
     return cooldownInfo, chargeInfo, chargeDuration or cooldownDuration, usable, insufficientPower
 end
 
+function addon:_GetInterruptSoundConfig()
+    if not DB then return nil end
+    DB.mentor = type(DB.mentor) == "table" and DB.mentor or {}
+    DB.mentor.studio = type(DB.mentor.studio) == "table" and DB.mentor.studio or {}
+    DB.mentor.studio.kinds = type(DB.mentor.studio.kinds) == "table" and DB.mentor.studio.kinds or {}
+    DB.mentor.studio.kinds.interrupt = type(DB.mentor.studio.kinds.interrupt) == "table" and DB.mentor.studio.kinds.interrupt or {}
+    local cfg = DB.mentor.studio.kinds.interrupt
+    if cfg.sound == nil then cfg.sound = false end
+    return cfg
+end
+
+function addon:GetInterruptSoundEnabled()
+    local cfg = self:_GetInterruptSoundConfig()
+    return cfg and cfg.sound == true or false
+end
+
+function addon:SetInterruptSoundEnabled(enabled)
+    local cfg = self:_GetInterruptSoundConfig()
+    if not cfg then return end
+    cfg.sound = enabled == true
+    if DKM.MentorStudio and DKM.MentorStudio.Refresh then DKM.MentorStudio.Refresh() end
+    Print(T(cfg.sound and "Interrupt sound enabled." or "Interrupt sound disabled."))
+end
+
+function addon:_GetMacroSpellIDSafe(macroID)
+    if not GetMacroSpell or not macroID then return nil end
+    local ok, a, b, c = pcall(GetMacroSpell, macroID)
+    if not ok then return nil end
+    if IsAccessibleNumber(c) then return c end
+    if IsAccessibleNumber(a) then return a end
+    return nil
+end
+
+function addon:_GetActionButtonSlotSafe(button)
+    if not button then return nil end
+    if IsAccessibleNumber(button.action) then return button.action end
+    if button.GetAttribute then
+        local ok, action = pcall(button.GetAttribute, button, "action")
+        if ok and IsAccessibleNumber(action) then return action end
+    end
+    return nil
+end
+
+function addon:_GetActionInfoSafe(slot)
+    if not IsAccessibleNumber(slot) then return nil, nil, nil end
+    if C_ActionBar and C_ActionBar.GetActionInfo then
+        local ok, actionType, id, subType = pcall(C_ActionBar.GetActionInfo, slot)
+        if ok then return actionType, id, subType end
+    end
+    if GetActionInfo then
+        local ok, actionType, id, subType = pcall(GetActionInfo, slot)
+        if ok then return actionType, id, subType end
+    end
+    return nil, nil, nil
+end
+
+function addon:_SpellMatchesMindFreeze(spellID)
+    local mindFreeze = (Data.spells and Data.spells.MIND_FREEZE) or 47528
+    if not IsAccessibleNumber(spellID) then return false end
+    if spellID == mindFreeze then return true end
+    if C_Spell and C_Spell.GetBaseSpell then
+        local okA, baseA = pcall(C_Spell.GetBaseSpell, spellID)
+        local okB, baseB = pcall(C_Spell.GetBaseSpell, mindFreeze)
+        if okA and okB and IsAccessibleNumber(baseA) and IsAccessibleNumber(baseB) and baseA == baseB then
+            return true
+        end
+    end
+    return false
+end
+
+function addon:_ActionSlotContainsMindFreeze(slot, directSlots)
+    if not IsAccessibleNumber(slot) then return false end
+    if directSlots and directSlots[slot] then return true end
+    local actionType, id = addon:_GetActionInfoSafe(slot)
+    if actionType == "spell" then
+        return addon:_SpellMatchesMindFreeze(id)
+    elseif actionType == "macro" then
+        return addon:_SpellMatchesMindFreeze(addon:_GetMacroSpellIDSafe(id))
+    end
+    return false
+end
+
+function addon:_CreateInterruptGlowFrame(button)
+    if not button then return nil end
+    local existing = addon.interruptGlowFrames[button]
+    if existing then return existing end
+    if InCombatLockdown and InCombatLockdown() then return nil end
+
+    local glow = CreateFrame("Frame", nil, button)
+    glow:SetPoint("TOPLEFT", button, "TOPLEFT", -3, 3)
+    glow:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 3, -3)
+    glow:SetFrameLevel((button.GetFrameLevel and button:GetFrameLevel() or 0) + 18)
+    glow:EnableMouse(false)
+
+    local visual = CreateFrame("Frame", nil, glow)
+    visual:SetAllPoints(glow)
+    visual:EnableMouse(false)
+    glow.visual = visual
+
+    local thickness = 2
+    local function Edge(point1, relativePoint1, x1, y1, point2, relativePoint2, x2, y2)
+        local texture = visual:CreateTexture(nil, "OVERLAY")
+        texture:SetColorTexture(0.10, 0.88, 1.00, 0.95)
+        texture:SetPoint(point1, visual, relativePoint1, x1, y1)
+        texture:SetPoint(point2, visual, relativePoint2, x2, y2)
+        return texture
+    end
+    glow.top = Edge("TOPLEFT", "TOPLEFT", 0, 0, "TOPRIGHT", "TOPRIGHT", 0, -thickness)
+    glow.bottom = Edge("BOTTOMLEFT", "BOTTOMLEFT", 0, thickness, "BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0)
+    glow.left = Edge("TOPLEFT", "TOPLEFT", 0, -thickness, "BOTTOMLEFT", "BOTTOMLEFT", thickness, thickness)
+    glow.right = Edge("TOPRIGHT", "TOPRIGHT", -thickness, -thickness, "BOTTOMRIGHT", "BOTTOMRIGHT", 0, thickness)
+
+    if visual.CreateAnimationGroup then
+        local pulse = visual:CreateAnimationGroup()
+        pulse:SetLooping("REPEAT")
+        local fadeOut = pulse:CreateAnimation("Alpha")
+        fadeOut:SetFromAlpha(1)
+        fadeOut:SetToAlpha(0.45)
+        fadeOut:SetDuration(0.28)
+        fadeOut:SetOrder(1)
+        local fadeIn = pulse:CreateAnimation("Alpha")
+        fadeIn:SetFromAlpha(0.45)
+        fadeIn:SetToAlpha(1)
+        fadeIn:SetDuration(0.28)
+        fadeIn:SetOrder(2)
+        glow.pulse = pulse
+    end
+
+    glow:Hide()
+    addon.interruptGlowFrames[button] = glow
+    return glow
+end
+
+function addon:HideInterruptActionGlows()
+    for _, entry in ipairs(self.interruptActionGlowTargets or {}) do
+        local glow = entry and entry.glow
+        if glow then
+            if glow.pulse and glow.pulse.IsPlaying and glow.pulse:IsPlaying() then glow.pulse:Stop() end
+            if glow.visual then glow.visual:SetAlpha(1) end
+            glow:SetAlpha(1)
+            glow:Hide()
+        end
+    end
+end
+
+function addon:RefreshInterruptActionGlowTargets()
+    if not DB or not DB.interruptAlert then return false end
+    if InCombatLockdown and InCombatLockdown() then return false end
+
+    self:HideInterruptActionGlows()
+    self.interruptActionGlowTargets = {}
+
+    local directSlots = {}
+    local mindFreeze = (Data.spells and Data.spells.MIND_FREEZE) or 47528
+    if C_ActionBar and C_ActionBar.FindSpellActionButtons then
+        local ok, slots = pcall(C_ActionBar.FindSpellActionButtons, mindFreeze)
+        if ok and type(slots) == "table" then
+            for _, slot in ipairs(slots) do
+                if IsAccessibleNumber(slot) then directSlots[slot] = true end
+            end
+        end
+    end
+
+    local seen = setmetatable({}, { __mode = "k" })
+    local function Consider(button)
+        if not button or seen[button] then return end
+        seen[button] = true
+        local slot = self:_GetActionButtonSlotSafe(button)
+        if not self:_ActionSlotContainsMindFreeze(slot, directSlots) then return end
+        local glow = self:_CreateInterruptGlowFrame(button)
+        if glow then
+            self.interruptActionGlowTargets[#self.interruptActionGlowTargets + 1] = { button = button, glow = glow, slot = slot }
+        end
+    end
+
+    local registry = _G.ActionBarButtonEventsFrame
+    if registry and type(registry.frames) == "table" then
+        for _, button in pairs(registry.frames) do Consider(button) end
+    end
+
+    for _, prefix in ipairs({
+        "ActionButton", "MultiBarBottomLeftButton", "MultiBarBottomRightButton",
+        "MultiBarRightButton", "MultiBarLeftButton", "MultiBar5Button", "MultiBar6Button", "MultiBar7Button",
+    }) do
+        for index = 1, 12 do Consider(_G[prefix .. index]) end
+    end
+
+    return #self.interruptActionGlowTargets > 0
+end
+
+function addon:ScheduleInterruptActionGlowRefresh()
+    self.interruptGlowRefreshToken = (tonumber(self.interruptGlowRefreshToken) or 0) + 1
+    local token = self.interruptGlowRefreshToken
+    local function Refresh()
+        if token ~= addon.interruptGlowRefreshToken or not addon.active then return end
+        if InCombatLockdown and InCombatLockdown() then return end
+        addon:RefreshInterruptActionGlowTargets()
+        addon:UpdateInterruptAlert()
+    end
+    if C_Timer and C_Timer.After then C_Timer.After(0.20, Refresh) else Refresh() end
+end
+
+function addon:SetInterruptActionGlowEnabled(enabled)
+    if not DB or not DB.interruptAlert then return end
+    DB.interruptAlert.actionGlow = enabled == true
+    if DB.interruptAlert.actionGlow then
+        self:ScheduleInterruptActionGlowRefresh()
+    else
+        self:HideInterruptActionGlows()
+    end
+    self:UpdateHUDSettings()
+    if DKM.MentorStudio and DKM.MentorStudio.Refresh then DKM.MentorStudio.Refresh() end
+    Print(T(DB.interruptAlert.actionGlow and "Interrupt action-bar glow enabled." or "Interrupt action-bar glow disabled."))
+end
+
+function addon:_SetInterruptActionGlowFromNotInterruptible(glow, notInterruptible)
+    if not glow then return false end
+    if IsSecretValue(notInterruptible) then
+        if glow.SetAlphaFromBoolean then
+            return pcall(glow.SetAlphaFromBoolean, glow, notInterruptible, 0, 1) == true
+        end
+        return false
+    end
+    local guarded = GetAccessibleBoolean(notInterruptible)
+    if guarded == nil then return false end
+    if glow.SetAlphaFromBoolean and pcall(glow.SetAlphaFromBoolean, glow, guarded, 0, 1) then return true end
+    glow:SetAlpha(guarded and 0 or 1)
+    return true
+end
+
+function addon:_IsMindFreezeReadyForActionGlow(cooldownInfo, usable)
+    local usableBool = GetAccessibleBoolean(usable)
+    if usableBool == false then return false end
+    if cooldownInfo and IsAccessibleNumber(cooldownInfo.startTime) and IsAccessibleNumber(cooldownInfo.duration) then
+        local startTime = cooldownInfo.startTime
+        local duration = cooldownInfo.duration
+        if startTime > 0 and duration > 1.6 then
+            local now = GetNow()
+            if IsAccessibleNumber(now) and now < (startTime + duration - 0.05) then return false end
+        end
+    end
+    return true
+end
+
+function addon:UpdateInterruptActionGlows(hasCast, rawNotInterruptible, cooldownInfo, usable)
+    if not DB or not DB.interruptAlert or DB.interruptAlert.enabled ~= true or DB.interruptAlert.actionGlow ~= true then
+        self:HideInterruptActionGlows()
+        return
+    end
+    if hasCast ~= true or not self:_IsMindFreezeReadyForActionGlow(cooldownInfo, usable) then
+        self:HideInterruptActionGlows()
+        return
+    end
+    if #(self.interruptActionGlowTargets or {}) == 0 and not (InCombatLockdown and InCombatLockdown()) then
+        self:RefreshInterruptActionGlowTargets()
+    end
+
+    for _, entry in ipairs(self.interruptActionGlowTargets or {}) do
+        local button, glow = entry.button, entry.glow
+        if button and glow then
+            -- Macros can resolve dynamically and action pages can change.
+            -- Re-check the current slot before showing a cached glow so a
+            -- button that no longer represents Mind Freeze never lights up.
+            local stillMindFreeze = self:_ActionSlotContainsMindFreeze(entry.slot, nil)
+            local visible = stillMindFreeze == true
+            if visible and button.IsShown then
+                local ok, shown = pcall(button.IsShown, button)
+                if ok then visible = shown == true end
+            end
+            if visible then
+                glow:Show()
+                if glow.pulse and glow.pulse.IsPlaying and not glow.pulse:IsPlaying() then glow.pulse:Play() end
+                local bound = self:_SetInterruptActionGlowFromNotInterruptible(glow, rawNotInterruptible)
+                if not bound then
+                    if targetInterruptEventState == true then
+                        glow:SetAlpha(1)
+                    else
+                        glow:Hide()
+                    end
+                end
+            else
+                glow:Hide()
+            end
+        end
+    end
+end
+
 function addon:SetInterruptAlertEnabled(enabled)
     if not DB or not DB.interruptAlert then return end
     DB.interruptAlert.enabled = enabled == true
     targetInterruptEventState = nil
+    if DB.interruptAlert.enabled ~= true then self:HideInterruptActionGlows() end
     self:UpdateInterruptAlert()
     self:UpdateHUDSettings()
     Print(T(DB.interruptAlert.enabled and "Interrupt alert enabled." or "Interrupt alert disabled."))
@@ -6943,16 +7622,19 @@ function addon:UpdateInterruptAlert()
         if interruptFrame.icon.SetDesaturated then interruptFrame.icon:SetDesaturated(false) end
         ClearTrackingCooldown(interruptFrame)
         interruptFrame:Show()
+        self:UpdateInterruptActionGlows(true, false, nil, true)
         return
     end
 
     if not DB.interruptAlert or DB.interruptAlert.enabled ~= true then
         interruptFrame:Hide()
+        self:HideInterruptActionGlows()
         return
     end
 
     if DB.combatBarsOnlyInCombat == true and not self:IsPlayerInCombat() then
         interruptFrame:Hide()
+        self:HideInterruptActionGlows()
         return
     end
 
@@ -6962,6 +7644,7 @@ function addon:UpdateInterruptAlert()
         -- Never keep an event latch alive after the NeverSecret cast-presence
         -- signal says the target is no longer casting/channeling.
         interruptFrame:Hide()
+        self:HideInterruptActionGlows()
         return
     end
 
@@ -6975,6 +7658,7 @@ function addon:UpdateInterruptAlert()
         else
             -- false = confirmed non-interruptible; nil = no safe signal yet.
             interruptFrame:Hide()
+            self:HideInterruptActionGlows()
             return
         end
     end
@@ -6998,6 +7682,8 @@ function addon:UpdateInterruptAlert()
     else
         ClearTrackingCooldown(interruptFrame)
     end
+
+    self:UpdateInterruptActionGlows(hasCast, rawNotInterruptible, cooldownInfo, usable)
 
     local usableBool = GetAccessibleBoolean(usable)
     if usableBool == false then
@@ -7184,11 +7870,9 @@ function addon:UpdateLanguagePicker()
     end
     for _, button in ipairs(languagePickerFrame.choiceButtons or {}) do
         local label = T(button.languageLabelKey or "")
-        if NormalizeAddonLanguage(button.languageValue) == selected then
-            button:SetText("|cff69d8ff✓|r " .. label)
-        else
-            button:SetText(label)
-        end
+        local isSelected = NormalizeAddonLanguage(button.languageValue) == selected
+        button:SetText(label)
+        SetActionButtonSelected(button, isSelected)
     end
 end
 
@@ -7258,9 +7942,11 @@ function addon:UpdateLoadoutPilotIntegration()
     if section.openButton then
         section.openButton:SetText(available and T("Open Loadout Pilot") or T("Loadout Pilot not detected"))
         section.openButton:SetEnabled(available)
+        StyleActionButton(section.openButton)
     end
     if mainFrame.guideSection and mainFrame.guideSection.openPilotButton then
         mainFrame.guideSection.openPilotButton:SetEnabled(available)
+        StyleActionButton(mainFrame.guideSection.openPilotButton)
         mainFrame.guideSection.openPilotButton:SetText(available and T("Open Loadout Pilot") or T("Pilot not detected"))
     end
 end
@@ -7269,26 +7955,28 @@ function addon:UpdateHUDSettings()
     if not mainFrame or not mainFrame.hudSection or not DB then return end
     self:UpdateLanguageSettings()
     local hud = mainFrame.hudSection
-    if hud.buildButton then hud.buildButton:SetText(DB.statusWidget.enabled and T("DK status HUD: ON") or T("DK status HUD: OFF")) end
-    if hud.coachButton then hud.coachButton:SetText(DB.coach.enabled and T("Coach HUD: ON") or T("Coach HUD: OFF")) end
-    if hud.buffButton then hud.buffButton:SetText(DB.buffBar.enabled and T("Buff bar: ON") or T("Buff bar: OFF")) end
-    if hud.externalBuffButton then hud.externalBuffButton:SetText(DB.externalBuffBar.enabled and T("External buffs: ON") or T("External buffs: OFF")) end
-    if hud.debuffButton then hud.debuffButton:SetText(DB.debuffBar.enabled and T("Debuffs: ON") or T("Debuffs: OFF")) end
-    if hud.abilityButton then hud.abilityButton:SetText(DB.abilityBar.enabled and T("Ability bar: ON") or T("Ability bar: OFF")) end
-    if hud.resourceButton then hud.resourceButton:SetText(DB.resourceHUD.enabled and T("DK resources: ON") or T("DK resources: OFF")) end
+    if hud.buildButton then hud.buildButton:SetText(DB.statusWidget.enabled and T("DK status: ON") or T("DK status: OFF")); SetActionButtonSelected(hud.buildButton, DB.statusWidget.enabled) end
+    if hud.coachButton then hud.coachButton:SetText(DB.coach.enabled and T("Coach: ON") or T("Coach: OFF")); SetActionButtonSelected(hud.coachButton, DB.coach.enabled) end
+    if hud.buffButton then hud.buffButton:SetText(DB.buffBar.enabled and T("DK buffs: ON") or T("DK buffs: OFF")); SetActionButtonSelected(hud.buffButton, DB.buffBar.enabled) end
+    if hud.externalBuffButton then hud.externalBuffButton:SetText(DB.externalBuffBar.enabled and T("External: ON") or T("External: OFF")); SetActionButtonSelected(hud.externalBuffButton, DB.externalBuffBar.enabled) end
+    if hud.debuffButton then hud.debuffButton:SetText(DB.debuffBar.enabled and T("Debuffs: ON") or T("Debuffs: OFF")); SetActionButtonSelected(hud.debuffButton, DB.debuffBar.enabled) end
+    if hud.abilityButton then hud.abilityButton:SetText(DB.abilityBar.enabled and T("Abilities: ON") or T("Abilities: OFF")); SetActionButtonSelected(hud.abilityButton, DB.abilityBar.enabled) end
+    if hud.resourceButton then hud.resourceButton:SetText(DB.resourceHUD.enabled and T("Resources: ON") or T("Resources: OFF")); SetActionButtonSelected(hud.resourceButton, DB.resourceHUD.enabled) end
     if hud.resourceDescription then
         hud.resourceDescription:SetText(T(
-            "Resources: %s • Style: %s • Text: %s • Rune spacing: %s",
+            "Resources: %s • Style: %s • Text: %s • Rune spacing: %s • Visibility: %s",
             self:GetResourceHUDModeLabel(),
             self:GetResourceHUDStyleLabel(),
             T(DB.resourceHUD.showPowerText ~= false and "ON" or "OFF"),
-            self:GetResourceRuneSpacingLabel()
+            self:GetResourceRuneSpacingLabel(),
+            self:GetResourceVisibilityModeLabel()
         ))
     end
-    if hud.interruptButton then hud.interruptButton:SetText(DB.interruptAlert.enabled and T("Interrupt alert: ON") or T("Interrupt alert: OFF")) end
-    if hud.combatOnlyButton then hud.combatOnlyButton:SetText(DB.combatBarsOnlyInCombat and T("Bars only in combat: ON") or T("Bars only in combat: OFF")) end
-    if hud.lockButton then hud.lockButton:SetText(DB.hudLocked and T("HUDs: LOCKED") or T("HUDs: UNLOCKED")) end
-    if hud.previewButton then hud.previewButton:SetText(self.hudPreviewMode == true and T("Preview HUDs: ON") or T("Preview HUDs: OFF")) end
+    if hud.interruptButton then hud.interruptButton:SetText(DB.interruptAlert.enabled and T("Interrupt: ON") or T("Interrupt: OFF")); SetActionButtonSelected(hud.interruptButton, DB.interruptAlert.enabled) end
+    if hud.interruptOptionsButton then hud.interruptOptionsButton:SetText(T("Interrupt options...")) end
+    if hud.combatOnlyButton then hud.combatOnlyButton:SetText(DB.combatBarsOnlyInCombat and T("Bars only in combat: ON") or T("Bars only in combat: OFF")); SetActionButtonSelected(hud.combatOnlyButton, DB.combatBarsOnlyInCombat) end
+    if hud.lockButton then hud.lockButton:SetText(DB.hudLocked and T("HUDs: LOCKED") or T("HUDs: UNLOCKED")); SetActionButtonSelected(hud.lockButton, DB.hudLocked == false) end
+    if hud.previewButton then hud.previewButton:SetText(self.hudPreviewMode == true and T("Preview HUDs: ON") or T("Preview HUDs: OFF")); SetActionButtonSelected(hud.previewButton, self.hudPreviewMode == true) end
     self:UpdateHUDMoveHints()
     self:UpdateLoadoutPilotIntegration()
 end
@@ -7317,6 +8005,36 @@ function addon:SetCodexSection(sectionKey)
     local valid = { overview = true, builds = true, stats = true, rotation = true, survival = true, utility = true, check = true }
     if not valid[sectionKey] then sectionKey = "overview" end
     DB.codexSection = sectionKey
+    self:UpdateGuideSection()
+end
+
+function addon:GetCodexBuildContext()
+    local selected = DB and tostring(DB.codexBuildContext or "auto") or "auto"
+    local valid = { auto=true, world=true, delve=true, dungeon=true, mythicplus=true, raid=true, pvp=true }
+    if not valid[selected] then selected = "auto" end
+    if selected == "auto" then
+        return self:DetectActualContext(), true
+    end
+    return selected, false
+end
+
+function addon:SetCodexBuildContext(contextKey)
+    if not DB then return end
+    contextKey = tostring(contextKey or "auto")
+    local valid = { auto=true, world=true, delve=true, dungeon=true, mythicplus=true, raid=true, pvp=true }
+    if not valid[contextKey] then contextKey = "auto" end
+    DB.codexBuildContext = contextKey
+    DB.codexSection = "builds"
+    self:UpdateGuideSection()
+end
+
+function addon:SetCodexGearView(viewKey)
+    if not DB then return end
+    if viewKey == "plan" then viewKey = "upgrades" end
+    local valid = { overview = true, targets = true, crafting = true, sources = true, trinkets = true, upgrades = true }
+    if not valid[viewKey] then viewKey = "overview" end
+    DB.codexGearView = viewKey
+    DB.codexSection = "stats"
     self:UpdateGuideSection()
 end
 
@@ -7389,6 +8107,1393 @@ function addon:CountEmptySocketsOnEquippedItems()
     return total, unknown
 end
 
+function addon:GetCommonEnchantCoverage()
+    local missingEnchantSlots = {}
+    local enchantUnknown = 0
+    for _, slot in ipairs(self.CODEX_ENCHANT_SLOTS or {}) do
+        local itemID, itemLink = GetEquippedItemData(slot.id)
+        if itemID or itemLink then
+            if not itemLink then
+                enchantUnknown = enchantUnknown + 1
+            else
+                local enchantID = GetPermanentEnchantID(itemLink)
+                if enchantID == nil then
+                    enchantUnknown = enchantUnknown + 1
+                elseif enchantID <= 0 then
+                    table.insert(missingEnchantSlots, T(slot.label))
+                end
+            end
+        end
+    end
+    return missingEnchantSlots, enchantUnknown
+end
+
+local function GetEquippedAverageItemLevel()
+    if not GetAverageItemLevel then return nil end
+    local ok, overall, equipped = pcall(GetAverageItemLevel)
+    if not ok then return nil end
+    if IsAccessibleNumber(equipped) then return equipped end
+    if IsAccessibleNumber(overall) then return overall end
+    return nil
+end
+
+function addon:IsGearTargetEquipped(itemID)
+    itemID = tonumber(itemID)
+    if not itemID or itemID <= 0 or not GetInventoryItemID then return false end
+    for slotID = 1, 19 do
+        local ok, equippedID = pcall(GetInventoryItemID, "player", slotID)
+        if ok and IsAccessibleNumber(equippedID) and equippedID == itemID then
+            return true
+        end
+    end
+    return false
+end
+
+function addon:GetGearTargetOwnedCount(itemID)
+    itemID = tonumber(itemID)
+    if not itemID or itemID <= 0 then return 0 end
+
+    if C_Item and C_Item.GetItemCount then
+        local ok, count = pcall(C_Item.GetItemCount, itemID, true, false, true, true)
+        if ok and IsAccessibleNumber(count) then return math.max(0, count) end
+        ok, count = pcall(C_Item.GetItemCount, itemID)
+        if ok and IsAccessibleNumber(count) then return math.max(0, count) end
+    end
+    if GetItemCount then
+        local ok, count = pcall(GetItemCount, itemID, true)
+        if ok and IsAccessibleNumber(count) then return math.max(0, count) end
+    end
+
+    local count = 0
+    if C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemID then
+        for bag = 0, 5 do
+            local okSlots, slots = pcall(C_Container.GetContainerNumSlots, bag)
+            if okSlots and IsAccessibleNumber(slots) then
+                for slot = 1, slots do
+                    local okItem, bagItemID = pcall(C_Container.GetContainerItemID, bag, slot)
+                    if okItem and IsAccessibleNumber(bagItemID) and bagItemID == itemID then
+                        count = count + 1
+                    end
+                end
+            end
+        end
+    end
+    return count
+end
+
+function addon:GetGearTargetName(target)
+    if not target then return T("Unknown item") end
+    local itemID = tonumber(target.itemID)
+    if itemID and C_Item and C_Item.GetItemNameByID then
+        local ok, name = pcall(C_Item.GetItemNameByID, itemID)
+        if ok and type(name) == "string" and name ~= "" then return name end
+    end
+    if itemID and GetItemInfo then
+        local ok, name = pcall(GetItemInfo, itemID)
+        if ok and type(name) == "string" and name ~= "" then return name end
+    end
+    if itemID and C_Item and C_Item.RequestLoadItemDataByID then
+        pcall(C_Item.RequestLoadItemDataByID, itemID)
+    end
+    return tostring(target.fallbackName or T("Unknown item"))
+end
+
+function addon:GetGearTargetState(target)
+    if not target or not target.itemID then return "missing", 0 end
+    if self:IsGearTargetEquipped(target.itemID) then return "equipped", 1 end
+    local owned = self:GetGearTargetOwnedCount(target.itemID)
+    if owned > 0 then return "owned", owned end
+    return "missing", 0
+end
+
+
+addon.GEAR_VISUAL_BACKDROP = {
+    bgFile = "Interface\\Buttons\\WHITE8X8",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = false,
+    edgeSize = 9,
+    insets = { left = 2, right = 2, top = 2, bottom = 2 },
+}
+
+function addon:CompactGearText(text, maxChars)
+    text = tostring(text or "")
+    text = text:gsub("%s+", " ")
+    maxChars = tonumber(maxChars) or 64
+    if #text <= maxChars then return text end
+    return text:sub(1, math.max(1, maxChars - 3)) .. "..."
+end
+
+function addon:FirstGearSentence(text)
+    text = tostring(text or ""):gsub("%s+", " ")
+    local first = text:match("^(.-%.)%s")
+    return first or text
+end
+
+function addon:GetGearTargetIcon(target)
+    local itemID = target and tonumber(target.itemID) or nil
+    if not itemID or itemID <= 0 then return QUESTION_MARK_ICON end
+    local icon
+    if C_Item and C_Item.GetItemIconByID then
+        local ok, value = pcall(C_Item.GetItemIconByID, itemID)
+        if ok and IsAccessibleNumber(value) then icon = value end
+    end
+    if not icon and GetItemIcon then
+        local ok, value = pcall(GetItemIcon, itemID)
+        if ok and IsAccessibleNumber(value) then icon = value end
+    end
+    if not icon and C_Item and C_Item.RequestLoadItemDataByID then
+        pcall(C_Item.RequestLoadItemDataByID, itemID)
+    end
+    return icon or QUESTION_MARK_ICON
+end
+
+function addon:GetGearTargetQualityColor(target)
+    local itemID = target and tonumber(target.itemID) or nil
+    if not itemID or itemID <= 0 then return 0.26, 0.60, 0.74 end
+    local quality
+    if C_Item and C_Item.GetItemInfo then
+        local ok, _, _, value = pcall(C_Item.GetItemInfo, itemID)
+        if ok and IsAccessibleNumber(value) then quality = value end
+    end
+    if not quality and GetItemInfo then
+        local ok, _, _, value = pcall(GetItemInfo, itemID)
+        if ok and IsAccessibleNumber(value) then quality = value end
+    end
+    if quality and GetItemQualityColor then
+        local ok, r, g, b = pcall(GetItemQualityColor, quality)
+        if ok and IsAccessibleNumber(r) and IsAccessibleNumber(g) and IsAccessibleNumber(b) then
+            return r, g, b
+        end
+    end
+    return 0.26, 0.60, 0.74
+end
+
+function addon:GetItemSetID(itemInfo)
+    if not itemInfo then return nil end
+    local function ReadSetID(fn)
+        if not fn then return nil end
+        local values = { pcall(fn, itemInfo) }
+        if not values[1] then return nil end
+        local setID = values[17]
+        if IsAccessibleNumber(setID) then return setID end
+        return nil
+    end
+    local setID = C_Item and ReadSetID(C_Item.GetItemInfo) or nil
+    if setID then return setID end
+    return ReadSetID(GetItemInfo)
+end
+
+function addon:GetEquippedTierSetState()
+    local tier = GearData and GearData.tierSet or nil
+    local setID = tier and tonumber(tier.setID) or nil
+    local equipped = {}
+    local count = 0
+    if not setID then return count, equipped end
+
+    for _, piece in ipairs(tier.pieces or {}) do
+        local slotID = tonumber(piece.inventorySlot)
+        local itemLink = slotID and GetInventoryItemLink and GetInventoryItemLink("player", slotID) or nil
+        local equippedSetID = itemLink and self:GetItemSetID(itemLink) or nil
+        local matches = equippedSetID == setID
+        if not matches and slotID and GetInventoryItemID then
+            local ok, itemID = pcall(GetInventoryItemID, "player", slotID)
+            matches = ok and IsAccessibleNumber(itemID) and itemID == tonumber(piece.itemID)
+        end
+        if matches then
+            count = count + 1
+            equipped[slotID] = itemLink or ("item:" .. tostring(piece.itemID))
+        end
+    end
+    return count, equipped
+end
+
+function addon:GetTierSetName()
+    local tier = GearData and GearData.tierSet or nil
+    if not tier then return T("Season 2 tier set") end
+    if C_Item and C_Item.GetItemSetInfo and tier.setID then
+        local ok, name = pcall(C_Item.GetItemSetInfo, tier.setID)
+        if ok and type(name) == "string" and name ~= "" then return name end
+    end
+    return tostring(tier.fallbackName or T("Season 2 tier set"))
+end
+
+function addon:HideGearTooltip(owner)
+    if not GameTooltip then return end
+    if not owner or not GameTooltip.IsOwned or GameTooltip:IsOwned(owner) then
+        GameTooltip:Hide()
+    end
+    local root = mainFrame and mainFrame.guideSection and mainFrame.guideSection.gearVisual
+    if root and (not owner or root.tooltipOwner == owner) then root.tooltipOwner = nil end
+end
+
+function addon:ShowGearItemTooltip(owner, target, itemLinkOverride)
+    if not GameTooltip or not owner or not target then return end
+    local itemID = tonumber(target.itemID)
+    if not itemID or itemID <= 0 then return end
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    local hyperlink = itemLinkOverride or ("item:" .. tostring(itemID))
+    local shown = pcall(GameTooltip.SetHyperlink, GameTooltip, hyperlink)
+    if not shown then GameTooltip:SetText(self:GetGearTargetName(target)) end
+    GameTooltip:AddLine(" ")
+    if target.priority then
+        GameTooltip:AddLine(T("Priority: %s", T(target.priority)), 1.00, 0.82, 0.35, true)
+    end
+    if target.slot then
+        GameTooltip:AddLine(T("Slot: %s", T(target.slot)), 0.55, 0.84, 0.95, true)
+    end
+    if target.source then
+        GameTooltip:AddLine(T("Source: %s", T(target.source)), 0.78, 0.88, 0.93, true)
+    end
+    if target.embellishment then
+        GameTooltip:AddLine(T("Embellishment: %s", T(target.embellishment)), 0.78, 0.88, 0.93, true)
+    end
+    if target.reason then
+        GameTooltip:AddLine(T(target.reason), 0.96, 0.96, 0.96, true)
+    end
+    GameTooltip:Show()
+    local root = mainFrame and mainFrame.guideSection and mainFrame.guideSection.gearVisual
+    if root then root.tooltipOwner = owner end
+end
+
+function addon:ResetGearVisual(root)
+    root.itemUsed = 0
+    root.panelUsed = 0
+    root.textUsed = 0
+    root.metricUsed = 0
+    root.tierUsed = 0
+    root.bonusUsed = 0
+    self:HideGearTooltip(root.tooltipOwner)
+    for _, frame in ipairs(root.itemPool or {}) do frame:Hide() end
+    for _, frame in ipairs(root.panelPool or {}) do frame:Hide() end
+    for _, text in ipairs(root.textPool or {}) do text:Hide() end
+    for _, frame in ipairs(root.metricPool or {}) do frame:Hide() end
+    for _, frame in ipairs(root.tierPool or {}) do frame:Hide() end
+    for _, frame in ipairs(root.bonusPool or {}) do frame:Hide() end
+end
+
+function addon:AcquireGearText(root, fontObject)
+    root.textUsed = (root.textUsed or 0) + 1
+    local text = root.textPool[root.textUsed]
+    if not text then
+        text = root:CreateFontString(nil, "OVERLAY", fontObject or "GameFontHighlightSmall")
+        root.textPool[root.textUsed] = text
+    elseif fontObject then
+        local resolvedFont = type(fontObject) == "string" and _G[fontObject] or fontObject
+        if resolvedFont then text:SetFontObject(resolvedFont) end
+    end
+    text:ClearAllPoints()
+    text:SetText("")
+    text:SetTextColor(0.90, 0.95, 0.98)
+    text:SetJustifyH("LEFT")
+    text:SetJustifyV("TOP")
+    text:SetShadowColor(0, 0, 0, 0.85)
+    text:SetShadowOffset(1, -1)
+    text:Show()
+    return text
+end
+
+function addon:AcquireGearPanel(root)
+    root.panelUsed = (root.panelUsed or 0) + 1
+    local panel = root.panelPool[root.panelUsed]
+    if not panel then
+        panel = CreateFrame("Frame", nil, root, "BackdropTemplate")
+        panel:SetBackdrop(addon.GEAR_VISUAL_BACKDROP)
+        panel.textPool = {}
+        root.panelPool[root.panelUsed] = panel
+    end
+    panel:ClearAllPoints()
+    panel:SetBackdropColor(0.018, 0.055, 0.075, 0.84)
+    panel:SetBackdropBorderColor(0.12, 0.38, 0.50, 0.78)
+    panel.textPool = panel.textPool or {}
+    panel.textUsed = 0
+    for _, text in ipairs(panel.textPool) do text:Hide() end
+    panel:Show()
+    return panel
+end
+
+function addon:AcquireGearPanelText(panel, fontObject)
+    panel.textPool = panel.textPool or {}
+    panel.textUsed = (panel.textUsed or 0) + 1
+    local text = panel.textPool[panel.textUsed]
+    if not text then
+        text = panel:CreateFontString(nil, "OVERLAY", fontObject or "GameFontHighlightSmall")
+        panel.textPool[panel.textUsed] = text
+    elseif fontObject then
+        local resolvedFont = type(fontObject) == "string" and _G[fontObject] or fontObject
+        if resolvedFont then text:SetFontObject(resolvedFont) end
+    end
+    text:ClearAllPoints()
+    text:SetText("")
+    text:SetTextColor(0.94, 0.97, 0.99)
+    text:SetJustifyH("LEFT")
+    text:SetJustifyV("TOP")
+    text:SetShadowColor(0, 0, 0, 0.85)
+    text:SetShadowOffset(1, -1)
+    text:Show()
+    return text
+end
+
+function addon:AcquireGearMetric(root)
+    root.metricUsed = (root.metricUsed or 0) + 1
+    local card = root.metricPool[root.metricUsed]
+    if not card then
+        card = CreateFrame("Frame", nil, root, "BackdropTemplate")
+        card:SetBackdrop(addon.GEAR_VISUAL_BACKDROP)
+        card.label = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        card.label:SetPoint("TOPLEFT", card, "TOPLEFT", 8, -7)
+        card.label:SetPoint("TOPRIGHT", card, "TOPRIGHT", -8, -7)
+        card.label:SetJustifyH("LEFT")
+        card.value = card:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        card.value:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 8, 7)
+        card.value:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -8, 7)
+        card.value:SetJustifyH("LEFT")
+        root.metricPool[root.metricUsed] = card
+    end
+    card:ClearAllPoints()
+    card:SetBackdropColor(0.02, 0.065, 0.085, 0.90)
+    card:SetBackdropBorderColor(0.16, 0.42, 0.54, 0.86)
+    card.label:SetTextColor(0.76, 0.88, 0.93)
+    card.value:SetTextColor(0.88, 0.96, 1.00)
+    card:Show()
+    return card
+end
+
+function addon:AcquireGearItemCard(root)
+    root.itemUsed = (root.itemUsed or 0) + 1
+    local card = root.itemPool[root.itemUsed]
+    if not card then
+        card = CreateFrame("Button", nil, root, "BackdropTemplate")
+        card:SetBackdrop(addon.GEAR_VISUAL_BACKDROP)
+        card:RegisterForClicks("LeftButtonUp")
+
+        card.iconFrame = CreateFrame("Frame", nil, card, "BackdropTemplate")
+        card.iconFrame:SetSize(46, 46)
+        card.iconFrame:SetPoint("LEFT", card, "LEFT", 7, 0)
+        card.iconFrame:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8X8",
+            edgeFile = "Interface\\Buttons\\WHITE8X8",
+            edgeSize = 2,
+        })
+        card.iconFrame:SetBackdropColor(0.01, 0.025, 0.035, 1)
+        card.icon = card.iconFrame:CreateTexture(nil, "ARTWORK")
+        card.icon:SetPoint("TOPLEFT", card.iconFrame, "TOPLEFT", 3, -3)
+        card.icon:SetPoint("BOTTOMRIGHT", card.iconFrame, "BOTTOMRIGHT", -3, 3)
+        card.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+        card.name = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        card.name:SetPoint("TOPLEFT", card, "TOPLEFT", 61, -6)
+        card.name:SetPoint("TOPRIGHT", card, "TOPRIGHT", -8, -3)
+        card.name:SetHeight(30)
+        card.name:SetJustifyH("LEFT")
+        card.name:SetJustifyV("TOP")
+        card.name:SetWordWrap(true)
+
+        card.meta = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        card.meta:SetPoint("TOPLEFT", card, "TOPLEFT", 61, -38)
+        card.meta:SetPoint("TOPRIGHT", card, "TOPRIGHT", -8, -35)
+        card.meta:SetHeight(16)
+        card.meta:SetJustifyH("LEFT")
+        card.meta:SetWordWrap(false)
+        card.meta:SetTextColor(0.82, 0.90, 0.94)
+
+        card.status = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        card.status:SetPoint("TOPLEFT", card, "TOPLEFT", 61, -55)
+        card.status:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -8, 4)
+        card.status:SetJustifyH("LEFT")
+        card.status:SetJustifyV("TOP")
+        card.status:SetWordWrap(true)
+
+        card:EnableMouse(true)
+        if card.iconFrame.EnableMouse then card.iconFrame:EnableMouse(false) end
+        card.ResetGearHover = function(self)
+            if self.baseBorder then
+                self:SetBackdropBorderColor(self.baseBorder[1], self.baseBorder[2], self.baseBorder[3], self.baseBorder[4])
+            end
+            self:SetBackdropColor(0.018, 0.055, 0.075, 0.90)
+            addon:HideGearTooltip(self)
+        end
+        card:SetScript("OnEnter", function(self)
+            self:SetBackdropColor(0.045, 0.13, 0.17, 0.98)
+            self:SetBackdropBorderColor(0.30, 0.74, 0.90, 1)
+            addon:ShowGearItemTooltip(self, self.target, self.itemLinkOverride)
+        end)
+        card:SetScript("OnLeave", function(self) self:ResetGearHover() end)
+        card:SetScript("OnHide", function(self) addon:HideGearTooltip(self) end)
+        root.itemPool[root.itemUsed] = card
+    end
+    card:ClearAllPoints()
+    card.target = nil
+    card.itemLinkOverride = nil
+    card:SetBackdropColor(0.018, 0.055, 0.075, 0.90)
+    card:SetBackdropBorderColor(0.12, 0.38, 0.50, 0.82)
+    card.baseBorder = { 0.12, 0.38, 0.50, 0.82 }
+    card:Show()
+    return card
+end
+
+function addon:ConfigureGearItemCard(card, target, width, height)
+    card:SetSize(width or 336, math.max(height or 60, 82))
+    card.target = target
+    local state = addon:GetGearTargetState(target)
+    local statusText, sr, sg, sb
+    if state == "equipped" then
+        statusText, sr, sg, sb = T("EQUIPPED"), 0.40, 1.00, 0.60
+        card.baseBorder = { 0.22, 0.72, 0.42, 0.95 }
+    elseif state == "owned" then
+        statusText, sr, sg, sb = T("OWNED"), 0.42, 0.82, 1.00
+        card.baseBorder = { 0.22, 0.60, 0.76, 0.95 }
+    else
+        statusText, sr, sg, sb = target.craft and T("CRAFT") or T("TARGET"), 1.00, 0.82, 0.35
+        card.baseBorder = { 0.52, 0.42, 0.18, 0.92 }
+    end
+    card:SetBackdropBorderColor(card.baseBorder[1], card.baseBorder[2], card.baseBorder[3], card.baseBorder[4])
+    card.icon:SetTexture(addon:GetGearTargetIcon(target))
+    local qr, qg, qb = addon:GetGearTargetQualityColor(target)
+    card.iconFrame:SetBackdropBorderColor(qr, qg, qb, 1)
+    card.name:SetText(addon:GetGearTargetName(target))
+    card.name:SetTextColor(qr, qg, qb)
+    card.meta:SetText(string.format("%s  •  %s", T(target.slot or "Gear"), T(target.priority or "HIGH")))
+    local detail = target.craft and (target.embellishment or T("Crafting")) or (target.source or "")
+    card.status:SetText(statusText .. ((detail and detail ~= "") and ("  •  " .. T(detail)) or ""))
+    card.status:SetTextColor(sr, sg, sb)
+end
+
+function addon:AcquireGearTierCard(root)
+    root.tierUsed = (root.tierUsed or 0) + 1
+    local card = root.tierPool[root.tierUsed]
+    if not card then
+        card = CreateFrame("Button", nil, root, "BackdropTemplate")
+        card:SetBackdrop(addon.GEAR_VISUAL_BACKDROP)
+        card:EnableMouse(true)
+        card.icon = card:CreateTexture(nil, "ARTWORK")
+        card.icon:SetSize(38, 38)
+        card.icon:SetPoint("LEFT", card, "LEFT", 6, 0)
+        card.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        card.label = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        card.label:SetPoint("TOPLEFT", card.icon, "TOPRIGHT", 6, -3)
+        card.label:SetPoint("TOPRIGHT", card, "TOPRIGHT", -5, -3)
+        card.label:SetJustifyH("LEFT")
+        card.label:SetWordWrap(false)
+        card.state = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        card.state:SetPoint("BOTTOMLEFT", card.icon, "BOTTOMRIGHT", 6, 3)
+        card.state:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -5, 3)
+        card.state:SetJustifyH("LEFT")
+        card.ResetGearHover = function(self)
+            self:SetBackdropColor(0.018, 0.055, 0.075, 0.92)
+            addon:HideGearTooltip(self)
+        end
+        card:SetScript("OnEnter", function(self)
+            self:SetBackdropColor(0.045, 0.13, 0.17, 0.98)
+            addon:ShowGearItemTooltip(self, self.target, self.itemLinkOverride)
+        end)
+        card:SetScript("OnLeave", function(self) self:ResetGearHover() end)
+        card:SetScript("OnHide", function(self) addon:HideGearTooltip(self) end)
+        root.tierPool[root.tierUsed] = card
+    end
+    card:ClearAllPoints()
+    card.target = nil
+    card.itemLinkOverride = nil
+    card:SetBackdropColor(0.018, 0.055, 0.075, 0.92)
+    card:SetBackdropBorderColor(0.14, 0.40, 0.52, 0.86)
+    card:Show()
+    return card
+end
+
+function addon:ConfigureGearTierCard(card, piece, equippedLinks, width)
+    card:SetSize(width or 128, 50)
+    local target = {
+        itemID = piece.itemID,
+        fallbackName = piece.fallbackName,
+        slot = piece.slot,
+        source = "Season 2: Raid / Great Vault / Catalyst",
+        reason = "Part of the Death Knight Season 2 class set. Four equipped pieces activate the full tier bonus.",
+    }
+    card.target = target
+    local slotID = tonumber(piece.inventorySlot)
+    local equippedLink = equippedLinks and equippedLinks[slotID] or nil
+    local state = equippedLink and "equipped" or (self:GetGearTargetOwnedCount(piece.itemID) > 0 and "owned" or "missing")
+    if equippedLink then card.itemLinkOverride = equippedLink end
+    card.icon:SetTexture(self:GetGearTargetIcon(target))
+    local qr, qg, qb = self:GetGearTargetQualityColor(target)
+    card.label:SetText(T(piece.slot or "Gear"))
+    card.label:SetTextColor(0.90, 0.95, 0.98)
+    if state == "equipped" then
+        card.state:SetText(T("EQUIPPED"))
+        card.state:SetTextColor(0.40, 1.00, 0.60)
+        card:SetBackdropBorderColor(0.22, 0.72, 0.42, 0.95)
+    elseif state == "owned" then
+        card.state:SetText(T("OWNED"))
+        card.state:SetTextColor(0.42, 0.82, 1.00)
+        card:SetBackdropBorderColor(0.22, 0.60, 0.76, 0.95)
+    else
+        card.state:SetText(T("TARGET"))
+        card.state:SetTextColor(1.00, 0.82, 0.35)
+        card:SetBackdropBorderColor(qr, qg, qb, 0.88)
+    end
+end
+
+function addon:AcquireGearBonusCard(root)
+    root.bonusUsed = (root.bonusUsed or 0) + 1
+    local card = root.bonusPool[root.bonusUsed]
+    if not card then
+        card = CreateFrame("Button", nil, root, "BackdropTemplate")
+        card:SetBackdrop(addon.GEAR_VISUAL_BACKDROP)
+        card:EnableMouse(true)
+        card.label = card:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        card.label:SetPoint("LEFT", card, "LEFT", 10, 0)
+        card.label:SetPoint("RIGHT", card, "RIGHT", -10, 0)
+        card.label:SetJustifyH("LEFT")
+        card.ResetGearHover = function(self)
+            self:SetBackdropColor(0.018, 0.055, 0.075, 0.92)
+            addon:HideGearTooltip(self)
+        end
+        card:SetScript("OnEnter", function(self)
+            self:SetBackdropColor(0.045, 0.13, 0.17, 0.98)
+            if GameTooltip then
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(addon:GetTierSetName())
+                GameTooltip:AddLine(self.bonusTitle or "", self.active and 0.40 or 1.00, self.active and 1.00 or 0.78, self.active and 0.60 or 0.35, true)
+                GameTooltip:AddLine(self.bonusText or "", 0.96, 0.96, 0.96, true)
+                GameTooltip:Show()
+                root.tooltipOwner = self
+            end
+        end)
+        card:SetScript("OnLeave", function(self) self:ResetGearHover() end)
+        card:SetScript("OnHide", function(self) addon:HideGearTooltip(self) end)
+        root.bonusPool[root.bonusUsed] = card
+    end
+    card:ClearAllPoints()
+    card:SetBackdropColor(0.018, 0.055, 0.075, 0.92)
+    card:Show()
+    return card
+end
+
+function addon:ConfigureGearBonusCard(card, piecesRequired, equippedCount, bonusText, width)
+    local active = (equippedCount or 0) >= piecesRequired
+    card:SetSize(width or 330, 34)
+    card.active = active
+    card.bonusTitle = T("%d-piece bonus: %s", piecesRequired, active and T("ACTIVE") or T("INACTIVE"))
+    card.bonusText = T(bonusText or "")
+    card.label:SetText(card.bonusTitle)
+    if active then
+        card.label:SetTextColor(0.48, 1.00, 0.66)
+        card:SetBackdropBorderColor(0.22, 0.72, 0.42, 0.95)
+    else
+        card.label:SetTextColor(0.96, 0.91, 0.78)
+        card:SetBackdropBorderColor(0.50, 0.40, 0.18, 0.86)
+    end
+end
+
+function addon:EnsureGearMentorVisual()
+    local guide = mainFrame and mainFrame.guideSection
+    if not guide or not guide.content then return nil end
+    if guide.gearVisual then return guide.gearVisual end
+
+    local root = CreateFrame("Frame", nil, guide.content)
+    root:SetPoint("TOPLEFT", guide.content, "TOPLEFT", 2, 0)
+    root:SetPoint("TOPRIGHT", guide.content, "TOPRIGHT", -13, 0)
+    root:SetHeight(1)
+    root.itemPool = {}
+    root.panelPool = {}
+    root.textPool = {}
+    root.metricPool = {}
+    root.tierPool = {}
+    root.bonusPool = {}
+    root:SetScript("OnUpdate", function(self)
+        local owner = self.tooltipOwner
+        if not owner or not GameTooltip then return end
+        if GameTooltip.IsOwned and not GameTooltip:IsOwned(owner) then
+            self.tooltipOwner = nil
+            return
+        end
+        if owner.IsMouseOver then
+            local ok, over = pcall(owner.IsMouseOver, owner)
+            if ok and not over then
+                if owner.ResetGearHover then owner:ResetGearHover() else addon:HideGearTooltip(owner) end
+            end
+        end
+    end)
+    root:SetScript("OnHide", function(self) addon:HideGearTooltip(self.tooltipOwner) end)
+    root:Hide()
+    guide.gearVisual = root
+    return root
+end
+
+function addon:RenderGearMentorVisual(specID, viewKey)
+    local root = self:EnsureGearMentorVisual()
+    if not root then return nil end
+    local spec = GearData and GearData.specs and GearData.specs[specID] or nil
+    if not spec then return nil end
+    viewKey = tostring(viewKey or "overview")
+    if viewKey == "plan" then viewKey = "upgrades" end
+    self:ResetGearVisual(root)
+    root:Show()
+
+    local targets = spec.targets or {}
+    local y = 0
+    local contentWidth = math.max(560, (root:GetWidth() or 620) - 4)
+    local splitGap = 10
+    local splitWidth = math.floor((contentWidth - splitGap) / 2)
+    local metricGap = 8
+    local metricWidth = math.floor((contentWidth - (metricGap * 3)) / 4)
+    local tierGap = 6
+    local tierCardWidth = math.floor((contentWidth - 16 - (tierGap * 4)) / 5)
+    local bonusGap = 8
+    local bonusWidth = math.floor((contentWidth - 24) / 2)
+
+    local title = self:AcquireGearText(root, "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
+    title:SetWidth(contentWidth)
+    title:SetHeight(24)
+    title:SetTextColor(0.55, 0.88, 1.00)
+
+    local hint = self:AcquireGearText(root, "GameFontHighlightSmall")
+    hint:SetPoint("TOPRIGHT", root, "TOPRIGHT", -2, y - 3)
+    hint:SetWidth(math.min(190, math.floor(contentWidth * 0.34)))
+    hint:SetHeight(18)
+    hint:SetJustifyH("RIGHT")
+    hint:SetText(T("Hover for item details"))
+    hint:SetTextColor(0.82, 0.90, 0.96)
+    y = y - 32
+
+    local function AddSectionLabel(label)
+        local text = self:AcquireGearText(root, "GameFontNormal")
+        text:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
+        text:SetWidth(contentWidth)
+        text:SetHeight(20)
+        text:SetTextColor(0.92, 0.80, 0.45)
+        text:SetText(T(label))
+        y = y - 25
+        return text
+    end
+
+    local function AddItemGrid(list, cardHeight)
+        local h = math.max(cardHeight or 60, 82)
+        local columns = contentWidth >= 540 and 2 or 1
+        local cardWidth = columns == 2 and math.floor((contentWidth - splitGap) / 2) or contentWidth
+        for index, target in ipairs(list) do
+            local col = (index - 1) % columns
+            local row = math.floor((index - 1) / columns)
+            local card = self:AcquireGearItemCard(root)
+            self:ConfigureGearItemCard(card, target, cardWidth, h)
+            card:SetPoint("TOPLEFT", root, "TOPLEFT", 2 + col * (cardWidth + splitGap), y - row * (h + 8))
+        end
+        local rows = math.max(1, math.ceil(#list / columns))
+        y = y - rows * (h + 8)
+    end
+
+    local function AddReadablePanelRow(textValue, minHeight)
+        local panel = self:AcquireGearPanel(root)
+        panel:SetWidth(contentWidth)
+        panel:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
+        local text = self:AcquireGearPanelText(panel, "GameFontNormalSmall")
+        text:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, -9)
+        text:SetWidth(contentWidth - 20)
+        text:SetJustifyH("LEFT")
+        text:SetJustifyV("TOP")
+        text:SetWordWrap(true)
+        text:SetTextColor(0.94, 0.97, 0.99)
+        text:SetHeight(200)
+        text:SetText("• " .. T(textValue or ""))
+        local stringHeight = text.GetStringHeight and text:GetStringHeight() or 28
+        local panelHeight = math.max(minHeight or 42, math.ceil(stringHeight or 28) + 18)
+        text:SetHeight(panelHeight - 16)
+        panel:SetHeight(panelHeight)
+        y = y - panelHeight - 7
+        return panelHeight
+    end
+
+    local function AddSourceNote()
+        y = y - 2
+        local note = self:AcquireGearText(root, "GameFontHighlightSmall")
+        note:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
+        note:SetWidth(contentWidth)
+        note:SetHeight(32)
+        note:SetTextColor(0.92, 0.95, 0.97)
+        note:SetText(T(GearData.sourceNote or "Guide-backed targets are a farming reference, not a replacement for simming your character."))
+        y = y - 38
+    end
+
+    if viewKey == "targets" then
+        title:SetText(T("Recommended gear targets"))
+        AddItemGrid(targets, 62)
+        local tier = GearData and GearData.tierSet or nil
+        if tier then
+            AddSectionLabel("Season 2 tier set")
+            local tierCount, equippedTierLinks = self:GetEquippedTierSetState()
+            local setPanel = self:AcquireGearPanel(root)
+            setPanel:SetSize(contentWidth, 84)
+            setPanel:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
+            local setName = self:AcquireGearPanelText(setPanel, "GameFontNormal")
+            setName:SetPoint("TOPLEFT", setPanel, "TOPLEFT", 9, -7)
+            setName:SetWidth(contentWidth - 170)
+            setName:SetHeight(20)
+            setName:SetTextColor(0.92, 0.95, 0.98)
+            setName:SetText(self:GetTierSetName())
+            local progress = self:AcquireGearPanelText(setPanel, "GameFontHighlightSmall")
+            progress:SetPoint("TOPRIGHT", setPanel, "TOPRIGHT", -9, -9)
+            progress:SetWidth(150)
+            progress:SetHeight(18)
+            progress:SetJustifyH("RIGHT")
+            progress:SetTextColor(tierCount >= 4 and 0.40 or 1.00, tierCount >= 4 and 1.00 or 0.82, tierCount >= 4 and 0.60 or 0.35)
+            progress:SetText(T("%d/5 equipped", tierCount))
+            for index, piece in ipairs(tier.pieces or {}) do
+                local tierCard = self:AcquireGearTierCard(root)
+                self:ConfigureGearTierCard(tierCard, piece, equippedTierLinks, tierCardWidth)
+                tierCard:SetPoint("TOPLEFT", setPanel, "TOPLEFT", 8 + (index - 1) * (tierCardWidth + tierGap), -29)
+            end
+            y = y - 94
+        end
+        AddSourceNote()
+    elseif viewKey == "sources" then
+        title:SetText(T("Loot sources"))
+        local grouped, order = {}, {}
+        for _, target in ipairs(targets) do
+            local source = tostring(target.source or T("Unknown source"))
+            if not grouped[source] then grouped[source], order[#order + 1] = {}, source end
+            grouped[source][#grouped[source] + 1] = target
+        end
+        for _, source in ipairs(order) do
+            local group = grouped[source]
+            local columns = contentWidth >= 540 and 2 or 1
+            local cardWidth = columns == 2 and math.floor((contentWidth - 24) / 2) or (contentWidth - 16)
+            local rows = math.ceil(#group / columns)
+            local panelHeight = 40 + rows * 90
+            local panel = self:AcquireGearPanel(root)
+            panel:SetSize(contentWidth, panelHeight)
+            panel:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
+            local label = self:AcquireGearPanelText(panel, "GameFontNormal")
+            label:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, -9)
+            label:SetWidth(contentWidth - 20)
+            label:SetHeight(20)
+            label:SetTextColor(0.92, 0.80, 0.45)
+            label:SetText(source)
+            for index, target in ipairs(group) do
+                local col = (index - 1) % columns
+                local row = math.floor((index - 1) / columns)
+                local card = self:AcquireGearItemCard(root)
+                self:ConfigureGearItemCard(card, target, cardWidth, 82)
+                card:SetPoint("TOPLEFT", panel, "TOPLEFT", 8 + col * (cardWidth + 8), -34 - row * 90)
+            end
+            y = y - panelHeight - 10
+        end
+        AddSourceNote()
+    elseif viewKey == "trinkets" then
+        title:SetText(T("Trinkets"))
+        local trinkets = {}
+        for _, target in ipairs(targets) do if target.slot == "Trinket" then trinkets[#trinkets + 1] = target end end
+        AddItemGrid(trinkets, 82)
+        AddSectionLabel("Quick guidance")
+        for _, row in ipairs(spec.trinkets or {}) do
+            AddReadablePanelRow(row, 42)
+        end
+        AddSourceNote()
+    elseif viewKey == "crafting" then
+        title:SetText(T("Crafted fallback gear"))
+        AddSectionLabel("Recommended crafts")
+        local craftTargets = spec.craftTargets or {}
+        AddItemGrid(craftTargets, 82)
+        y = y - 2
+        AddReadablePanelRow("Crafted pieces are a fallback path when key drops have not appeared yet. Hover each item to see the native WoW tooltip and the DK Mentor recommendation.", 48)
+        AddSourceNote()
+    elseif viewKey == "upgrades" then
+        title:SetText(T("Upgrade plan"))
+        AddSectionLabel("Crests & upgrades")
+        for _, row in ipairs(spec.upgrades or {}) do
+            AddReadablePanelRow(row, 44)
+        end
+        AddSourceNote()
+    else
+        title:SetText(T("Gear Mentor overview"))
+        local ilvl = GetEquippedAverageItemLevel()
+        local ready = self:GetReadyCheckStatus()
+        local acquired = 0
+        for _, target in ipairs(targets) do if self:GetGearTargetState(target) ~= "missing" then acquired = acquired + 1 end end
+        local tierCount, equippedTierLinks = self:GetEquippedTierSetState()
+        local tierColor = tierCount >= 4 and { 0.40, 1.00, 0.60 } or (tierCount >= 2 and { 0.42, 0.82, 1.00 } or { 1.00, 0.82, 0.35 })
+        local metrics = {
+            { T("Item level"), ilvl and string.format("%.1f", ilvl) or "?", 0.88, 0.96, 1.00 },
+            { T("Runeforge"), ready.runeforge and ready.runeforge.ready and T("READY") or T("CHECK"), ready.runeforge and ready.runeforge.ready and 0.40 or 1.00, ready.runeforge and ready.runeforge.ready and 1.00 or 0.72, ready.runeforge and ready.runeforge.ready and 0.60 or 0.32 },
+            { T("Targets"), string.format("%d / %d", acquired, #targets), 0.42, 0.82, 1.00 },
+            { T("Season 2 set"), string.format("%d / 5", tierCount), tierColor[1], tierColor[2], tierColor[3] },
+        }
+        for index, data in ipairs(metrics) do
+            local card = self:AcquireGearMetric(root)
+            card:SetSize(metricWidth, 48)
+            card:SetPoint("TOPLEFT", root, "TOPLEFT", 2 + (index - 1) * (metricWidth + metricGap), y)
+            card.label:SetText(data[1])
+            card.value:SetText(data[2])
+            card.value:SetTextColor(data[3], data[4], data[5])
+        end
+        y = y - 62
+
+        AddSectionLabel("Season 2 tier set")
+        local tier = GearData and GearData.tierSet or nil
+        if tier then
+            local setPanel = self:AcquireGearPanel(root)
+            setPanel:SetSize(contentWidth, 130)
+            setPanel:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
+            local setName = self:AcquireGearPanelText(setPanel, "GameFontNormal")
+            setName:SetPoint("TOPLEFT", setPanel, "TOPLEFT", 9, -7)
+            setName:SetWidth(contentWidth - 170)
+            setName:SetHeight(20)
+            setName:SetTextColor(0.92, 0.95, 0.98)
+            setName:SetText(self:GetTierSetName())
+            local progress = self:AcquireGearPanelText(setPanel, "GameFontHighlightSmall")
+            progress:SetPoint("TOPRIGHT", setPanel, "TOPRIGHT", -9, -9)
+            progress:SetWidth(150)
+            progress:SetHeight(18)
+            progress:SetJustifyH("RIGHT")
+            progress:SetTextColor(tierColor[1], tierColor[2], tierColor[3])
+            progress:SetText(T("%d/5 equipped", tierCount))
+            for index, piece in ipairs(tier.pieces or {}) do
+                local tierCard = self:AcquireGearTierCard(root)
+                self:ConfigureGearTierCard(tierCard, piece, equippedTierLinks, tierCardWidth)
+                tierCard:SetPoint("TOPLEFT", setPanel, "TOPLEFT", 8 + (index - 1) * (tierCardWidth + tierGap), -31)
+            end
+            local bonusData = tier.bonuses and tier.bonuses[specID] or {}
+            local two = self:AcquireGearBonusCard(root)
+            self:ConfigureGearBonusCard(two, 2, tierCount, bonusData.twoPiece, bonusWidth)
+            two:SetPoint("TOPLEFT", setPanel, "TOPLEFT", 8, -82)
+            local four = self:AcquireGearBonusCard(root)
+            self:ConfigureGearBonusCard(four, 4, tierCount, bonusData.fourPiece, bonusWidth)
+            four:SetPoint("TOPLEFT", setPanel, "TOPLEFT", 16 + bonusWidth, -82)
+            y = y - 140
+        end
+
+        AddSectionLabel("Recommended gear")
+        AddItemGrid(targets, 58)
+
+        AddSectionLabel("Stat direction")
+        local codexSpec = DKM.Codex and DKM.Codex.specs and DKM.Codex.specs[specID]
+        local firstStats = codexSpec and codexSpec.stats and codexSpec.stats[1] or nil
+        local statPanel = self:AcquireGearPanel(root)
+        statPanel:SetSize(contentWidth, 62)
+        statPanel:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
+        local priority = self:AcquireGearPanelText(statPanel, "GameFontNormal")
+        priority:SetPoint("TOPLEFT", statPanel, "TOPLEFT", 10, -9)
+        priority:SetWidth(contentWidth - 20)
+        priority:SetHeight(21)
+        priority:SetTextColor(0.92, 0.80, 0.45)
+        priority:SetText(firstStats and self:FirstGearSentence(T(firstStats.body or "")) or T("Simulate close upgrades."))
+        local stats = self:GetCurrentStatSnapshot()
+        local current = self:AcquireGearPanelText(statPanel, "GameFontHighlightSmall")
+        current:SetPoint("BOTTOMLEFT", statPanel, "BOTTOMLEFT", 10, 9)
+        current:SetWidth(contentWidth - 20)
+        current:SetHeight(18)
+        current:SetTextColor(0.92, 0.95, 0.97)
+        current:SetText(T("Current: Crit %s  •  Haste %s  •  Mastery %s  •  Vers %s",
+            self:FormatStatPercent(stats.crit), self:FormatStatPercent(stats.haste), self:FormatStatPercent(stats.mastery), self:FormatStatPercent(stats.versatility)))
+        y = y - 74
+        AddSourceNote()
+    end
+
+    local usedHeight = math.max(1, math.abs(y) + 6)
+    root:SetHeight(usedHeight)
+    return usedHeight
+end
+
+function addon:GetGearMentorReport(specID, viewKey)
+    local spec = GearData and GearData.specs and GearData.specs[specID] or nil
+    if not spec then return { T("No Gear Mentor data is available for this specialization yet.") } end
+    viewKey = tostring(viewKey or "overview")
+    if viewKey == "plan" then viewKey = "upgrades" end
+    local lines = {}
+    local targets = spec.targets or {}
+
+    local function AddHeader(text)
+        table.insert(lines, "|cff89d8ff" .. T(text) .. "|r")
+    end
+    local function AddTarget(target, detailed)
+        local state = self:GetGearTargetState(target)
+        local statusText, statusColor
+        if state == "equipped" then
+            statusText, statusColor = T("EQUIPPED"), "|cff66ff99"
+        elseif state == "owned" then
+            statusText, statusColor = T("OWNED"), "|cff69ccf0"
+        else
+            statusText, statusColor = target.craft and T("CRAFT") or T("TARGET"), "|cffffcc55"
+        end
+        local name = self:GetGearTargetName(target)
+        table.insert(lines, string.format("%s[%s]|r |cffffcc55[%s]|r %s", statusColor, statusText, T(target.priority or "HIGH"), tostring(name)))
+        table.insert(lines, T("%s | %s", T(target.slot or "Gear"), tostring(target.source or "-")))
+        if detailed and target.embellishment then
+            table.insert(lines, T("Embellishment: %s", T(target.embellishment)))
+        end
+        if detailed and target.reason then
+            table.insert(lines, T(target.reason))
+        end
+        table.insert(lines, "")
+    end
+
+    if viewKey == "targets" then
+        AddHeader("Priority targets")
+        table.insert(lines, T("These are high-value Season 2 targets, not guaranteed upgrades. DK Mentor marks whether the exact item is equipped, owned, or still a target."))
+        table.insert(lines, "")
+        for _, target in ipairs(targets) do AddTarget(target, true) end
+    elseif viewKey == "sources" then
+        AddHeader("Loot sources")
+        table.insert(lines, T("Use this view as a short farming route: targets are grouped by the source currently associated with the Season 2 recommendation."))
+        table.insert(lines, "")
+        local grouped, order = {}, {}
+        for _, target in ipairs(targets) do
+            local source = tostring(target.source or T("Unknown source"))
+            if not grouped[source] then
+                grouped[source] = {}
+                order[#order + 1] = source
+            end
+            grouped[source][#grouped[source] + 1] = target
+        end
+        for _, source in ipairs(order) do
+            table.insert(lines, "|cffffcc55" .. source .. "|r")
+            for _, target in ipairs(grouped[source]) do
+                local state = self:GetGearTargetState(target)
+                local stateText = state == "equipped" and T("EQUIPPED") or (state == "owned" and T("OWNED") or T("TARGET"))
+                table.insert(lines, string.format("- [%s] %s - %s", stateText, self:GetGearTargetName(target), T(target.slot or "Gear")))
+            end
+            table.insert(lines, "")
+        end
+    elseif viewKey == "trinkets" then
+        AddHeader("Trinket plan")
+        for _, row in ipairs(spec.trinkets or {}) do table.insert(lines, "- " .. T(row)) end
+        table.insert(lines, "")
+        AddHeader("Tracked headline trinkets")
+        for _, target in ipairs(targets) do
+            if target.slot == "Trinket" then AddTarget(target, false) end
+        end
+    elseif viewKey == "crafting" then
+        AddHeader("Recommended crafts")
+        table.insert(lines, T("Crafted pieces are a fallback path when key drops have not appeared yet. Hover each item to see the native WoW tooltip and the DK Mentor recommendation."))
+        table.insert(lines, "")
+        for _, target in ipairs(spec.craftTargets or {}) do AddTarget(target, true) end
+    elseif viewKey == "upgrades" then
+        AddHeader("Crafting plan")
+        for _, row in ipairs(spec.crafting or {}) do table.insert(lines, "- " .. T(row)) end
+        table.insert(lines, "")
+        AddHeader("Crest and upgrade plan")
+        for _, row in ipairs(spec.upgrades or {}) do table.insert(lines, "- " .. T(row)) end
+        table.insert(lines, "")
+        table.insert(lines, "|cff999999" .. T("Upgrade priorities are intentionally broad. Close item choices should be simulated because your current gear can change the answer.") .. "|r")
+    else
+        local ilvl = GetEquippedAverageItemLevel()
+        local ready = self:GetReadyCheckStatus()
+        local missingEnchants, enchantUnknown = self:GetCommonEnchantCoverage()
+        local emptySockets, socketUnknown = self:CountEmptySocketsOnEquippedItems()
+        local acquired = 0
+        local nextTarget
+        for _, target in ipairs(targets) do
+            local state = self:GetGearTargetState(target)
+            if state ~= "missing" then acquired = acquired + 1 elseif not nextTarget then nextTarget = target end
+        end
+
+        AddHeader("Gear Mentor dashboard")
+        table.insert(lines, T("Patch %s | Season data reviewed %s | Source updated %s", tostring(GearData.patch or "?"), tostring(GearData.reviewed or "?"), tostring(spec.sourceUpdated or "?")))
+        table.insert(lines, T(spec.summary or ""))
+        table.insert(lines, "")
+        AddHeader("Live setup snapshot")
+        table.insert(lines, T("Equipped item level: %s", ilvl and string.format("%.1f", ilvl) or "?"))
+        table.insert(lines, T("Runeforge: %s", ready.runeforge and ready.runeforge.ready and T("READY") or T("CHECK")))
+        if #missingEnchants > 0 then
+            table.insert(lines, T("Common enchants: %d missing", #missingEnchants))
+        elseif enchantUnknown > 0 then
+            table.insert(lines, T("Common enchants: waiting for %d item(s)", enchantUnknown))
+        else
+            table.insert(lines, T("Common enchants: complete"))
+        end
+        if emptySockets == nil then
+            table.insert(lines, T("Sockets: unavailable"))
+        elseif emptySockets > 0 then
+            table.insert(lines, T("Sockets: %d empty", emptySockets))
+        elseif socketUnknown > 0 then
+            table.insert(lines, T("Sockets: none empty; %d item(s) still loading", socketUnknown))
+        else
+            table.insert(lines, T("Sockets: no empty sockets detected"))
+        end
+        table.insert(lines, T("Headline target progress: %d/%d owned or equipped", acquired, #targets))
+        local tierCount = self:GetEquippedTierSetState()
+        table.insert(lines, T("Season 2 tier set: %d/5 equipped | 2-piece %s | 4-piece %s", tierCount, tierCount >= 2 and T("ACTIVE") or T("INACTIVE"), tierCount >= 4 and T("ACTIVE") or T("INACTIVE")))
+        if specID == 251 then
+            local offhand
+            if GetInventoryItemID then
+                local ok, value = pcall(GetInventoryItemID, "player", _G.INVSLOT_OFFHAND or 17)
+                if ok and IsAccessibleNumber(value) then offhand = value end
+            end
+            table.insert(lines, T("Weapon setup: %s", offhand and T("Dual-wield") or T("Single weapon")))
+        end
+        table.insert(lines, "")
+        AddHeader("Weapon direction")
+        table.insert(lines, T(spec.weaponNote or ""))
+        table.insert(lines, "")
+        AddHeader("Next target")
+        if nextTarget then
+            AddTarget(nextTarget, true)
+        else
+            table.insert(lines, "|cff66ff99[OK]|r " .. T("All headline targets in this Season 2 dataset are already owned or equipped."))
+            table.insert(lines, "")
+        end
+        AddHeader("Current stat guidance")
+        local codexSpec = DKM.Codex and DKM.Codex.specs and DKM.Codex.specs[specID]
+        if codexSpec and codexSpec.stats then
+            for index, section in ipairs(codexSpec.stats) do
+                if index <= 2 then
+                    table.insert(lines, "|cffffcc55" .. T(section.heading or "") .. "|r")
+                    table.insert(lines, T(section.body or ""))
+                end
+            end
+        end
+    end
+
+    table.insert(lines, "")
+    table.insert(lines, "|cff999999" .. T(GearData.sourceNote or "Guide-backed targets are a farming reference, not a replacement for simming your character.") .. "|r")
+    return lines
+end
+
+function addon:HideBuildTooltip(owner)
+    if not GameTooltip then return end
+    if not owner or not GameTooltip.IsOwned or GameTooltip:IsOwned(owner) then
+        GameTooltip:Hide()
+    end
+    local root = mainFrame and mainFrame.guideSection and mainFrame.guideSection.buildVisual
+    if root and (not owner or root.tooltipOwner == owner) then root.tooltipOwner = nil end
+end
+
+function addon:ShowBuildSpellTooltip(owner, spellID, fallbackName)
+    spellID = tonumber(spellID)
+    if not GameTooltip or not owner or not spellID then return end
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    local shown = false
+    if GameTooltip.SetSpellByID then
+        local ok = pcall(GameTooltip.SetSpellByID, GameTooltip, spellID)
+        shown = ok == true
+    end
+    if not shown then
+        local name = select(1, GetSpellData(spellID, fallbackName and T(fallbackName) or fallbackName))
+        GameTooltip:SetText(name or T("Talent"))
+    end
+    GameTooltip:Show()
+    local root = mainFrame and mainFrame.guideSection and mainFrame.guideSection.buildVisual
+    if root then root.tooltipOwner = owner end
+end
+
+function addon:ResetBuildVisual(root)
+    if not root then return end
+    root.textUsed = 0
+    root.panelUsed = 0
+    root.profileUsed = 0
+    root.talentUsed = 0
+    self:HideBuildTooltip(root.tooltipOwner)
+    for _, text in ipairs(root.textPool or {}) do text:Hide() end
+    for _, panel in ipairs(root.panelPool or {}) do panel:Hide() end
+    for _, frame in ipairs(root.profilePool or {}) do frame:Hide() end
+    for _, frame in ipairs(root.talentPool or {}) do frame:Hide() end
+end
+
+function addon:AcquireBuildTalentCard(root)
+    root.talentUsed = (root.talentUsed or 0) + 1
+    local card = root.talentPool[root.talentUsed]
+    if not card then
+        card = CreateFrame("Button", nil, root, "BackdropTemplate")
+        card:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8X8",
+            edgeFile = "Interface\\Buttons\\WHITE8X8",
+            edgeSize = 2,
+        })
+        card:SetBackdropColor(0.012, 0.035, 0.050, 0.98)
+        card.icon = card:CreateTexture(nil, "ARTWORK")
+        card.icon:SetPoint("TOPLEFT", card, "TOPLEFT", 3, -3)
+        card.icon:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -3, 3)
+        card.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        card:EnableMouse(true)
+        card:SetScript("OnEnter", function(self)
+            self:SetBackdropBorderColor(0.35, 0.82, 1.00, 1.00)
+            addon:ShowBuildSpellTooltip(self, self.spellID, self.fallbackName)
+        end)
+        card:SetScript("OnLeave", function(self)
+            local c = self.baseBorder or { 0.22, 0.52, 0.64, 0.92 }
+            self:SetBackdropBorderColor(c[1], c[2], c[3], c[4])
+            addon:HideBuildTooltip(self)
+        end)
+        card:SetScript("OnHide", function(self) addon:HideBuildTooltip(self) end)
+        root.talentPool[root.talentUsed] = card
+    end
+    card:ClearAllPoints()
+    card.spellID = nil
+    card.fallbackName = nil
+    card.baseBorder = { 0.22, 0.52, 0.64, 0.92 }
+    card:SetBackdropColor(0.012, 0.035, 0.050, 0.98)
+    card:SetBackdropBorderColor(card.baseBorder[1], card.baseBorder[2], card.baseBorder[3], card.baseBorder[4])
+    card:Show()
+    return card
+end
+
+function addon:ConfigureBuildTalentCard(card, talent, size)
+    if not card or not talent then return end
+    local spellID = tonumber(talent.spellID)
+    local _, icon = GetSpellData(spellID, talent.fallbackName and T(talent.fallbackName) or talent.fallbackName)
+    card:SetSize(size or 40, size or 40)
+    card.spellID = spellID
+    card.fallbackName = talent.fallbackName
+    card.icon:SetTexture(icon or QUESTION_MARK_ICON)
+    card.baseBorder = { 0.20, 0.56, 0.70, 0.92 }
+    card:SetBackdropBorderColor(card.baseBorder[1], card.baseBorder[2], card.baseBorder[3], card.baseBorder[4])
+end
+
+function addon:AcquireBuildProfileCard(root)
+    root.profileUsed = (root.profileUsed or 0) + 1
+    local card = root.profilePool[root.profileUsed]
+    if not card then
+        card = CreateFrame("Frame", nil, root, "BackdropTemplate")
+        card:SetBackdrop(addon.GEAR_VISUAL_BACKDROP)
+        card:SetBackdropColor(0.018, 0.055, 0.075, 0.94)
+        card:SetBackdropBorderColor(0.14, 0.42, 0.54, 0.90)
+
+        card.heroButton = CreateFrame("Button", nil, card, "BackdropTemplate")
+        card.heroButton:SetSize(46, 46)
+        card.heroButton:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8X8",
+            edgeFile = "Interface\\Buttons\\WHITE8X8",
+            edgeSize = 2,
+        })
+        card.heroButton:SetBackdropColor(0.01, 0.03, 0.045, 1)
+        card.heroButton:SetBackdropBorderColor(0.35, 0.72, 0.88, 0.95)
+        card.heroButton.icon = card.heroButton:CreateTexture(nil, "ARTWORK")
+        card.heroButton.icon:SetPoint("TOPLEFT", card.heroButton, "TOPLEFT", 3, -3)
+        card.heroButton.icon:SetPoint("BOTTOMRIGHT", card.heroButton, "BOTTOMRIGHT", -3, 3)
+        card.heroButton.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        card.heroButton:SetScript("OnEnter", function(self)
+            self:SetBackdropBorderColor(0.55, 0.90, 1.00, 1)
+            addon:ShowBuildSpellTooltip(self, self.spellID, self.fallbackName)
+        end)
+        card.heroButton:SetScript("OnLeave", function(self)
+            self:SetBackdropBorderColor(0.35, 0.72, 0.88, 0.95)
+            addon:HideBuildTooltip(self)
+        end)
+        card.heroButton:SetScript("OnHide", function(self) addon:HideBuildTooltip(self) end)
+
+        card.name = card:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        card.name:SetJustifyH("LEFT")
+        card.name:SetTextColor(0.92, 0.95, 0.98)
+        card.name:SetWordWrap(true)
+
+        card.badge = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        card.badge:SetJustifyH("RIGHT")
+
+        card.heroLabel = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        card.heroLabel:SetJustifyH("LEFT")
+        card.heroLabel:SetTextColor(0.55, 0.84, 0.95)
+
+        card.focus = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        card.focus:SetJustifyH("LEFT")
+        card.focus:SetTextColor(0.90, 0.94, 0.97)
+        card.focus:SetWordWrap(true)
+
+        card.note = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        card.note:SetJustifyH("LEFT")
+        card.note:SetJustifyV("TOP")
+        card.note:SetTextColor(0.88, 0.92, 0.95)
+        card.note:SetWordWrap(true)
+
+        card.talentLabel = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        card.talentLabel:SetJustifyH("LEFT")
+        card.talentLabel:SetTextColor(0.92, 0.80, 0.45)
+
+        card.source = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        card.source:SetJustifyH("LEFT")
+        card.source:SetTextColor(0.72, 0.82, 0.88)
+        card.source:SetWordWrap(false)
+
+        root.profilePool[root.profileUsed] = card
+    end
+    card:ClearAllPoints()
+    card:SetBackdropColor(0.018, 0.055, 0.075, 0.94)
+    card:SetBackdropBorderColor(0.14, 0.42, 0.54, 0.90)
+    card:Show()
+    return card
+end
+
+function addon:ConfigureBuildProfileCard(root, card, profile, width)
+    width = width or 560
+    local keyTalents = profile.keyTalents or {}
+    local note = T(profile.note or "")
+    local talentRows = math.max(1, math.ceil(#keyTalents / 8))
+
+    card.heroButton:ClearAllPoints()
+    card.heroButton:SetPoint("TOPLEFT", card, "TOPLEFT", 10, -10)
+    card.heroButton.spellID = tonumber(profile.heroSpellID)
+    card.heroButton.fallbackName = profile.heroTalent
+    local _, heroIcon = GetSpellData(profile.heroSpellID, profile.heroTalent and T(profile.heroTalent) or T("Hero Talent"))
+    card.heroButton.icon:SetTexture(heroIcon or QUESTION_MARK_ICON)
+
+    card.name:ClearAllPoints()
+    card.name:SetPoint("TOPLEFT", card.heroButton, "TOPRIGHT", 10, -1)
+    card.name:SetPoint("TOPRIGHT", card, "TOPRIGHT", -112, -9)
+    card.name:SetHeight(36)
+    card.name:SetText(T(profile.name or "Build recommendation"))
+
+    card.badge:ClearAllPoints()
+    card.badge:SetPoint("TOPRIGHT", card, "TOPRIGHT", -10, -12)
+    card.badge:SetWidth(96)
+    local badge = T(profile.badge or "RECOMMENDED")
+    card.badge:SetText(badge)
+    if tostring(profile.badge or "RECOMMENDED") == "ALTERNATIVE" then
+        card.badge:SetTextColor(0.68, 0.84, 0.96)
+    elseif tostring(profile.badge or "") == "REFERENCE" then
+        card.badge:SetTextColor(0.82, 0.88, 0.94)
+    else
+        card.badge:SetTextColor(0.48, 1.00, 0.66)
+    end
+
+    card.heroLabel:ClearAllPoints()
+    card.heroLabel:SetPoint("LEFT", card.heroButton, "RIGHT", 10, -13)
+    card.heroLabel:SetPoint("RIGHT", card, "RIGHT", -112, 0)
+    card.heroLabel:SetHeight(18)
+    card.heroLabel:SetText(T("Hero Talent: %s", T(profile.heroTalent or "-")))
+
+    card.focus:ClearAllPoints()
+    card.focus:SetPoint("TOPLEFT", card, "TOPLEFT", 10, -64)
+    card.focus:SetPoint("TOPRIGHT", card, "TOPRIGHT", -10, -64)
+    card.focus:SetHeight(20)
+    card.focus:SetText(T("Focus: %s", T(profile.focus or "-")))
+
+    card.note:ClearAllPoints()
+    card.note:SetPoint("TOPLEFT", card, "TOPLEFT", 10, -88)
+    card.note:SetWidth(width - 20)
+    card.note:SetHeight(200)
+    card.note:SetText(note)
+    local noteHeight = math.max(34, math.ceil((card.note.GetStringHeight and card.note:GetStringHeight()) or 34))
+    card.note:SetHeight(noteHeight)
+
+    local height = 150 + noteHeight + (talentRows * 46)
+    card:SetSize(width, height)
+
+    local talentLabelY = -94 - noteHeight
+    card.talentLabel:ClearAllPoints()
+    card.talentLabel:SetPoint("TOPLEFT", card, "TOPLEFT", 10, talentLabelY)
+    card.talentLabel:SetWidth(width - 20)
+    card.talentLabel:SetHeight(18)
+    card.talentLabel:SetText(T("Key talents"))
+
+    local iconSize = 38
+    local iconGap = 7
+    local startY = talentLabelY - 21
+    for index, talent in ipairs(keyTalents) do
+        local icon = self:AcquireBuildTalentCard(root)
+        self:ConfigureBuildTalentCard(icon, talent, iconSize)
+        local col = (index - 1) % 8
+        local row = math.floor((index - 1) / 8)
+        icon:SetParent(card)
+        icon:SetPoint("TOPLEFT", card, "TOPLEFT", 10 + col * (iconSize + iconGap), startY - row * 46)
+        icon:SetFrameLevel(card:GetFrameLevel() + 2)
+    end
+
+    card.source:ClearAllPoints()
+    card.source:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 10, 8)
+    card.source:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -10, 8)
+    card.source:SetHeight(16)
+    local sourceText = profile.sourceName or ""
+    if profile.sourceAuthor and profile.sourceAuthor ~= "" then sourceText = sourceText .. " • " .. profile.sourceAuthor end
+    if profile.sourceUpdated and profile.sourceUpdated ~= "" then sourceText = sourceText .. " • " .. T("updated %s", profile.sourceUpdated) end
+    card.source:SetText(sourceText)
+    return height
+end
+
+function addon:EnsureBuildMentorVisual()
+    local guide = mainFrame and mainFrame.guideSection
+    if not guide or not guide.content then return nil end
+    if guide.buildVisual then return guide.buildVisual end
+
+    local root = CreateFrame("Frame", nil, guide.content)
+    root:SetPoint("TOPLEFT", guide.content, "TOPLEFT", 2, 0)
+    root:SetPoint("TOPRIGHT", guide.content, "TOPRIGHT", -13, 0)
+    root:SetHeight(1)
+    root.textPool = {}
+    root.panelPool = {}
+    root.profilePool = {}
+    root.talentPool = {}
+    root:SetScript("OnUpdate", function(self)
+        local owner = self.tooltipOwner
+        if not owner or not GameTooltip then return end
+        if GameTooltip.IsOwned and not GameTooltip:IsOwned(owner) then
+            self.tooltipOwner = nil
+            return
+        end
+        if owner.IsMouseOver then
+            local ok, over = pcall(owner.IsMouseOver, owner)
+            if ok and not over then addon:HideBuildTooltip(owner) end
+        end
+    end)
+    root:SetScript("OnHide", function(self) addon:HideBuildTooltip(self.tooltipOwner) end)
+    root:Hide()
+    guide.buildVisual = root
+    return root
+end
+
+function addon:RenderBuildMentorVisual(specID, contextKey, autoDetected)
+    local root = self:EnsureBuildMentorVisual()
+    if not root then return nil end
+    local profiles = self:GetBuildProfiles(specID, contextKey)
+    self:ResetBuildVisual(root)
+    root:Show()
+
+    local contentWidth = math.max(520, (root:GetWidth() or 570) - 4)
+    local y = 0
+
+    local title = self:AcquireGearText(root, "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
+    title:SetWidth(contentWidth)
+    title:SetHeight(24)
+    title:SetTextColor(0.55, 0.88, 1.00)
+    title:SetText(T("Build Mentor — %s", self:GetRuntimeContextLabel(contextKey)))
+
+    local hint = self:AcquireGearText(root, "GameFontHighlightSmall")
+    hint:SetPoint("TOPRIGHT", root, "TOPRIGHT", -2, y - 3)
+    hint:SetWidth(math.min(260, math.floor(contentWidth * 0.48)))
+    hint:SetHeight(18)
+    hint:SetJustifyH("RIGHT")
+    hint:SetText(autoDetected and T("AUTO • following detected content") or T("Manual content selection"))
+    hint:SetTextColor(0.80, 0.89, 0.95)
+    y = y - 31
+
+    local sub = self:AcquireGearText(root, "GameFontHighlightSmall")
+    sub:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
+    sub:SetWidth(contentWidth)
+    sub:SetHeight(34)
+    sub:SetTextColor(0.90, 0.94, 0.97)
+    sub:SetText(T("Visual build guidance based on the current guide direction. Hover the talent icons for native WoW details; use the source row above when you want the full guide."))
+    y = y - 42
+
+    if #profiles == 0 then
+        local panel = self:AcquireGearPanel(root)
+        panel:SetSize(contentWidth, 60)
+        panel:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
+        local text = self:AcquireGearPanelText(panel, "GameFontHighlight")
+        text:SetPoint("LEFT", panel, "LEFT", 12, 0)
+        text:SetPoint("RIGHT", panel, "RIGHT", -12, 0)
+        text:SetHeight(36)
+        text:SetText(T("No build recommendation is available for this specialization and content."))
+        y = y - 70
+    else
+        for index, profile in ipairs(profiles) do
+            local card = self:AcquireBuildProfileCard(root)
+            card:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
+            local height = self:ConfigureBuildProfileCard(root, card, profile, contentWidth)
+            y = y - height - 10
+        end
+    end
+
+    local footer = self:AcquireGearText(root, "GameFontHighlightSmall")
+    footer:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
+    footer:SetWidth(contentWidth)
+    footer:SetHeight(34)
+    footer:SetTextColor(0.72, 0.82, 0.88)
+    footer:SetText(T("DK Mentor recommends and explains builds; it does not switch talents. Loadout automation remains in Loadout Pilot."))
+    y = y - 40
+
+    local usedHeight = math.max(1, math.abs(y) + 6)
+    root:SetHeight(usedHeight)
+    return usedHeight, profiles
+end
+
 function addon:GetCharacterCheckReport(selectedSpecID)
     local currentSpecID, currentSpecName = self:GetSpecInfo()
     local ready = self:GetReadyCheckStatus()
@@ -7402,7 +9507,7 @@ function addon:GetCharacterCheckReport(selectedSpecID)
             prefix = "|cffffcc55? |r"
             waiting = waiting + 1
         elseif ok then
-            prefix = "|cff66ff99✓ |r"
+            prefix = "|cff66ff99[OK]|r "
         else
             prefix = "|cffff7777! |r"
             improvements = improvements + 1
@@ -7421,23 +9526,7 @@ function addon:GetCharacterCheckReport(selectedSpecID)
         AddState(ready.ghoul.ready, T("Ghoul"), ready.ghoul.detail)
     end
 
-    local missingEnchantSlots = {}
-    local enchantUnknown = 0
-    for _, slot in ipairs(self.CODEX_ENCHANT_SLOTS or {}) do
-        local itemID, itemLink = GetEquippedItemData(slot.id)
-        if itemID or itemLink then
-            if not itemLink then
-                enchantUnknown = enchantUnknown + 1
-            else
-                local enchantID = GetPermanentEnchantID(itemLink)
-                if enchantID == nil then
-                    enchantUnknown = enchantUnknown + 1
-                elseif enchantID <= 0 then
-                    table.insert(missingEnchantSlots, T(slot.label))
-                end
-            end
-        end
-    end
+    local missingEnchantSlots, enchantUnknown = self:GetCommonEnchantCoverage()
     if #missingEnchantSlots > 0 then
         AddState(false, T("Common enchant slots"), T("Missing enchant: %s", table.concat(missingEnchantSlots, ", ")))
     elseif enchantUnknown > 0 then
@@ -7485,7 +9574,7 @@ function addon:GetCharacterCheckReport(selectedSpecID)
             table.insert(optionalUtility, entry[2])
         end
     end
-    table.insert(lines, "|cff66ff99✓ |r" .. T("Known / available: %s", table.concat(knownUtility, ", ")))
+    table.insert(lines, "|cff66ff99[OK]|r " .. T("Known / available: %s", table.concat(knownUtility, ", ")))
     if #optionalUtility > 0 then
         table.insert(lines, "|cff999999" .. T("Not currently known/talented: %s", table.concat(optionalUtility, ", ")) .. "|r")
     end
@@ -7525,11 +9614,16 @@ function addon:UpdateGuideSection()
 
     if mainFrame.pages and mainFrame.pages.guide then
         local page = mainFrame.pages.guide
+        local currentSpecIcon = select(3, self:GetSpecInfo()) or QUESTION_MARK_ICON
         for id, button in pairs(page.specButtons or {}) do
             local active = (DB.codexSpecID or 0) == id
+            local iconTexture = id == 0 and currentSpecIcon or self:GetSpecIconByID(id)
+            if button.labelKey then button.label:SetText(T(button.labelKey)) end
+            SetFlatTabButtonIcon(button, iconTexture, 18)
             StyleTabButton(button, active)
         end
         for key, button in pairs(page.sectionButtons or {}) do
+            if button.menuLabelKey then button.label:SetText(T(button.menuLabelKey)) end
             StyleTabButton(button, key == sectionKey)
         end
     end
@@ -7539,45 +9633,48 @@ function addon:UpdateGuideSection()
 
     if guide.buildActions then
         guide.buildActions:SetShown(sectionKey == "builds")
+        local selectedBuildContext = DB and tostring(DB.codexBuildContext or "auto") or "auto"
+        for key, button in pairs(guide.buildContextButtons or {}) do
+            if button.labelKey then button.label:SetText(T(button.labelKey)) end
+            StyleTabButton(button, key == selectedBuildContext)
+        end
+    end
+    if guide.gearActions then
+        guide.gearActions:SetShown(sectionKey == "stats")
+        local gearView = DB and DB.codexGearView or "overview"
+        if gearView == "plan" then gearView = "upgrades" end
+        for key, button in pairs(guide.gearViewButtons or {}) do
+            StyleTabButton(button, key == gearView)
+        end
+    end
+    if guide.scroll then
         guide.scroll:ClearAllPoints()
-        guide.scroll:SetPoint("TOPLEFT", guide, "TOPLEFT", 12, sectionKey == "builds" and -94 or -62)
+        local topOffset = -64
+        if sectionKey == "builds" then
+            topOffset = -128
+        elseif sectionKey == "stats" then
+            topOffset = -96
+        end
+        guide.scroll:SetPoint("TOPLEFT", guide, "TOPLEFT", guide.contentLeft or 150, topOffset)
         guide.scroll:SetPoint("BOTTOMRIGHT", guide, "BOTTOMRIGHT", -31, 18)
     end
 
     if sectionKey == "builds" then
-        local context = self:DetectActualContext()
-        local contextName = self:GetRuntimeContextLabel(context)
+        local context, autoDetected = self:GetCodexBuildContext()
         local profiles = self:GetBuildProfiles(specID, context)
-        table.insert(lines, "|cff89d8ff" .. T("Build recommendations — %s", tostring(contextName)) .. "|r")
-        table.insert(lines, T("DK Mentor recommends builds and explains when to use them; it does not create, select, or switch WoW loadouts. Use Loadout Pilot if you want automation."))
-        table.insert(lines, "")
-        if #profiles == 0 then
-            table.insert(lines, T("No build recommendation is available for this specialization and content."))
-        else
-            for index, profile in ipairs(profiles) do
-                table.insert(lines, "|cffffcc55" .. tostring(profile.name or T("Build recommendation")) .. "|r")
-                if profile.note and profile.note ~= "" then table.insert(lines, tostring(profile.note)) end
-                if profile.pvp and profile.pvp ~= "" then table.insert(lines, "|cff89d8ff" .. T("PvP guide:") .. "|r " .. tostring(profile.pvp)) end
-                local sourceText = profile.source
-                if profile.sourceName and profile.sourceAuthor and profile.sourceUpdated then
-                    sourceText = string.format("%s • %s • %s",
-                        tostring(profile.sourceName),
-                        tostring(profile.sourceAuthor),
-                        T("guide updated %s", tostring(profile.sourceUpdated))
-                    )
-                end
-                if sourceText and sourceText ~= "" then table.insert(lines, T("Source: %s", tostring(sourceText))) end
-                if index < #profiles then table.insert(lines, "") end
-            end
-        end
+        self.currentBuildVisualHeight = self:RenderBuildMentorVisual(specID, context, autoDetected)
         local sourceURL = profiles[1] and profiles[1].sourceURL or ""
         if guide.sourceURLBox then
             guide.sourceURLBox:SetText(sourceURL or "")
             guide.sourceURLBox:SetCursorPosition(0)
             guide.sourceURLBox:SetEnabled(sourceURL ~= nil and sourceURL ~= "")
         end
-        if guide.selectSourceButton then guide.selectSourceButton:SetEnabled(sourceURL ~= nil and sourceURL ~= "") end
+        if guide.selectSourceButton then guide.selectSourceButton:SetEnabled(sourceURL ~= nil and sourceURL ~= ""); StyleActionButton(guide.selectSourceButton) end
         self:UpdateLoadoutPilotIntegration()
+    elseif sectionKey == "stats" then
+        local gearView = DB and DB.codexGearView or "overview"
+        if gearView == "plan" then gearView = "upgrades" end
+        self.currentGearVisualHeight = self:RenderGearMentorVisual(specID, gearView)
     elseif sectionKey == "check" then
         table.insert(lines, "|cff89d8ff" .. T("Character Check — live diagnostics") .. "|r")
         table.insert(lines, T("This check inspects your active character. It never changes gear, talents, enchants, gems, or abilities."))
@@ -7607,10 +9704,27 @@ function addon:UpdateGuideSection()
         end
     end
 
-    table.insert(lines, "|cff999999" .. tostring((DKM.Codex and DKM.Codex.sourceNote) or T("General guidance only; simulate your character for exact optimization.")) .. "|r")
-    guide.text:SetText(table.concat(lines, "\n"))
-    local height = guide.text:GetStringHeight() or 1
-    guide.content:SetHeight(math.max(1, height + 18))
+    if sectionKey == "stats" and self.currentGearVisualHeight then
+        self.currentBuildVisualHeight = nil
+        if guide.buildVisual then guide.buildVisual:Hide() end
+        guide.text:Hide()
+        guide.content:SetHeight(math.max(1, self.currentGearVisualHeight))
+    elseif sectionKey == "builds" and self.currentBuildVisualHeight then
+        self.currentGearVisualHeight = nil
+        if guide.gearVisual then guide.gearVisual:Hide() end
+        guide.text:Hide()
+        guide.content:SetHeight(math.max(1, self.currentBuildVisualHeight))
+    else
+        self.currentGearVisualHeight = nil
+        self.currentBuildVisualHeight = nil
+        if guide.gearVisual then guide.gearVisual:Hide() end
+        if guide.buildVisual then guide.buildVisual:Hide() end
+        guide.text:Show()
+        table.insert(lines, "|cff999999" .. tostring((DKM.Codex and DKM.Codex.sourceNote) or T("General guidance only; simulate your character for exact optimization.")) .. "|r")
+        guide.text:SetText(table.concat(lines, "\n"))
+        local height = guide.text:GetStringHeight() or 1
+        guide.content:SetHeight(math.max(1, height + 18))
+    end
     if guide.scroll and guide.scroll.SetVerticalScroll then guide.scroll:SetVerticalScroll(0) end
 
     if mainFrame.pages and mainFrame.pages.guide and mainFrame.pages.guide.scope then
@@ -7757,9 +9871,13 @@ function addon:ShowHelp()
     Print(T("/dkm resources power on|off — show or hide Runic Power"))
     Print(T("/dkm resources style classic|arcs — choose the DK Resources visual style"))
     Print(T("/dkm interrupt on|off — show or hide the Mind Freeze interrupt alert"))
+    Print(T("/dkm interrupt glow on|off — toggle the Mind Freeze action-bar glow"))
+    Print(T("/dkm interrupt sound on|off — toggle the built-in interrupt sound"))
+    Print(T("/dkm interrupt options — open Interrupt options in Alert Studio"))
     Print(T("/dkm interrupt status — inspect the current target cast signal"))
     Print(T("/dkm combatbars combat|always - show aura/ability bars only in combat or always"))
     Print(T("/dkm guide — alias for the DK Codex"))
+    Print(T("/dkm gearmentor — open the DK Codex Gear Mentor"))
     Print(T("/dkm settings — open HUD and commentary settings"))
     Print(T("/dkm language auto|ptbr|en — change DK Mentor language"))
     Print(T("/dkm voice on|off|test|low|normal|high|status|map|reset"))
@@ -7873,6 +9991,11 @@ function addon:HandleSlashCommand(message)
             else
                 self:CycleResourceHUDStyle()
             end
+        elseif resourceAction == "visibility" or resourceAction == "visible" then
+            if resourceValue == "always" then self:SetResourceVisibilityMode("always")
+            elseif resourceValue == "fade" then self:SetResourceVisibilityMode("fade")
+            elseif resourceValue == "combat" or resourceValue == "combatonly" then self:SetResourceVisibilityMode("combat")
+            else self:CycleResourceVisibilityMode() end
         elseif resourceAction == "on" or resourceAction == "show" then
             self:SetResourceHUDEnabled(true)
         elseif resourceAction == "off" or resourceAction == "hide" then
@@ -7881,12 +10004,24 @@ function addon:HandleSlashCommand(message)
             self:SetResourceHUDEnabled(not DB.resourceHUD.enabled)
         end
     elseif command == "interrupt" or command == "kick" then
-        local value = string.lower(Trim(rest))
-        if value == "on" or value == "show" then
+        local interruptAction, interruptValue = rest:match("^(%S*)%s*(.-)$")
+        interruptAction = string.lower(interruptAction or "")
+        interruptValue = string.lower(Trim(interruptValue))
+        if interruptAction == "glow" then
+            if interruptValue == "on" or interruptValue == "show" then self:SetInterruptActionGlowEnabled(true)
+            elseif interruptValue == "off" or interruptValue == "hide" then self:SetInterruptActionGlowEnabled(false)
+            else self:SetInterruptActionGlowEnabled(not (DB.interruptAlert.actionGlow ~= false)) end
+        elseif interruptAction == "sound" then
+            if interruptValue == "on" then self:SetInterruptSoundEnabled(true)
+            elseif interruptValue == "off" then self:SetInterruptSoundEnabled(false)
+            else self:SetInterruptSoundEnabled(not self:GetInterruptSoundEnabled()) end
+        elseif interruptAction == "options" or interruptAction == "studio" then
+            if DKM.MentorStudio and DKM.MentorStudio.OpenInterrupt then DKM.MentorStudio.OpenInterrupt(mainFrame) end
+        elseif interruptAction == "on" or interruptAction == "show" then
             self:SetInterruptAlertEnabled(true)
-        elseif value == "off" or value == "hide" then
+        elseif interruptAction == "off" or interruptAction == "hide" then
             self:SetInterruptAlertEnabled(false)
-        elseif value == "status" or value == "debug" then
+        elseif interruptAction == "status" or interruptAction == "debug" then
             self:PrintInterruptAlertStatus()
         else
             self:SetInterruptAlertEnabled(not DB.interruptAlert.enabled)
@@ -7903,6 +10038,12 @@ function addon:HandleSlashCommand(message)
     elseif command == "build" or command == "builds" then
         mainFrame:Show()
         DB.codexSection = "builds"
+        self:SetMainTab("guide")
+        self:UpdateGuideSection()
+    elseif command == "gearmentor" or command == "gearing" then
+        mainFrame:Show()
+        DB.codexSection = "stats"
+        DB.codexGearView = "overview"
         self:SetMainTab("guide")
         self:UpdateGuideSection()
     elseif command == "loadout" or command == "loadouts" or command == "pilot" or command == "gear" or command == "equipment" then
@@ -7992,6 +10133,16 @@ function addon:InitializeDatabase()
     if DKM.RefreshStaticLocalization then DKM.RefreshStaticLocalization() end
 
     if previousSchema < 21 then DB.combatBarsOnlyInCombat = true end
+
+    if previousSchema < 31 and DB.resourceHUD then
+        -- 3.0 keeps the old global combat-only behavior as the migration default.
+        DB.resourceHUD.visibilityMode = DB.combatBarsOnlyInCombat == false and "always" or "combat"
+        DB.resourceHUD.fadeAlpha = 0.20
+    end
+    if DB.resourceHUD then
+        DB.resourceHUD.visibilityMode = NormalizeResourceVisibilityMode(DB.resourceHUD.visibilityMode)
+        DB.resourceHUD.fadeAlpha = Clamp(tonumber(DB.resourceHUD.fadeAlpha) or 0.20, 0.05, 0.80)
+    end
 
     if previousSchema < 26 then
         if DB.resourceHUD and DB.resourceHUD.style == "arcs" then
@@ -8197,6 +10348,7 @@ addon:SetScript("OnEvent", function(self, event, ...)
         end
         self:UpdateAll()
         self:CheckActionBarCoverage(true)
+        self:ScheduleInterruptActionGlowRefresh()
 
         local firstRunNow = DB.firstRun == true
         if firstRunNow then
@@ -8204,10 +10356,10 @@ addon:SetScript("OnEvent", function(self, event, ...)
             mainFrame:Show()
         end
 
-        if DB.majorReleaseNotice ~= "2.0" then
-            DB.majorReleaseNotice = "2.0"
-            Print(T("DK Mentor 2.0 — Adaptive DK Coach is ready."))
-            Print(T("Loadout automation now belongs to Loadout Pilot; DK Mentor focuses on combat, survival, resources, procs, interrupts, and post-combat insights."))
+        if DB.majorReleaseNotice ~= "3.0" then
+            DB.majorReleaseNotice = "3.0"
+            Print(T("DK Mentor 3.0 — Live Mentor + Review is ready."))
+            Print(T("Review, Timeline, Patterns, DK Tools, Alert Studio, and the Setup Wizard are now available. Loadout automation remains in Loadout Pilot."))
             Print(T("DK Mentor recommends actions; it never casts abilities automatically. Use /dkm help for commands."))
         elseif firstRunNow then
             Print(T("Ready. Explore the DK Codex and use /dkm help to view commands."))
@@ -8273,6 +10425,7 @@ addon:SetScript("OnEvent", function(self, event, ...)
             if abilityFrame then abilityFrame:Hide() end
             if resourceFrame then resourceFrame:Hide() end
             if interruptFrame then interruptFrame:Hide() end
+            self:HideInterruptActionGlows()
         end
         if DB.autoHideMainInCombat and self.mainWasVisibleBeforeCombat then
             mainFrame:Show()
@@ -8293,6 +10446,7 @@ addon:SetScript("OnEvent", function(self, event, ...)
         self:RefreshManagedDKBuffFilter()
         self:UpdateAll()
         self:RefreshCombatHUDVisibility()
+        self:ScheduleInterruptActionGlowRefresh()
         if C_Timer and C_Timer.After then
             C_Timer.After(0, function()
                 if addon.active then addon:RefreshCombatHUDVisibility() end
@@ -8481,6 +10635,7 @@ addon:SetScript("OnEvent", function(self, event, ...)
                 if addon.active then
                     addon.worldReady = true
                     addon:UpdateAll()
+                    addon:ScheduleInterruptActionGlowRefresh()
                 end
             end)
         else
@@ -8511,6 +10666,12 @@ addon:SetScript("OnEvent", function(self, event, ...)
         local itemID, success = ...
         if success and self.hearthstoneItemIDs and self.hearthstoneItemIDs[itemID] then
             self:CacheHearthstoneItemSpell(itemID, false)
+        end
+        -- Gear Mentor can request uncached item names by item ID. Refresh the
+        -- visible report when Blizzard finishes loading one so localized item
+        -- names replace fallback labels without requiring the player to reopen it.
+        if success and DB and DB.codexSection == "stats" and mainFrame and mainFrame:IsShown() then
+            self:UpdateGuideSection()
         end
     elseif event == "NEW_MOUNT_ADDED" then
         self.mountCacheReady = false
@@ -8562,6 +10723,7 @@ addon:SetScript("OnEvent", function(self, event, ...)
                 self:UpdateSpecializationPicker()
             end
             self:ScheduleUpdate(true)
+            self:ScheduleInterruptActionGlowRefresh()
             C_Timer.After(0.5, function()
                 if addon.active then
                     if not InCombatLockdown() and not (buffFrame and buffFrame.managedAuraContainer) then
@@ -8580,6 +10742,7 @@ addon:SetScript("OnEvent", function(self, event, ...)
         or event == "TRAIT_CONFIG_UPDATED"
         or event == "PLAYER_PVP_TALENT_UPDATE" then
         self:ScheduleUpdate(true)
+        self:ScheduleInterruptActionGlowRefresh()
     else
         self:ScheduleUpdate(false)
     end

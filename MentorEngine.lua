@@ -35,6 +35,9 @@ local DEFAULTS = {
     soloDelveBoost = true,
     insights = true,
     postCombat = true,
+    pinNextAction = true,
+    reviewEnabled = true,
+    historyLimit = 10,
     lastReport = nil,
 }
 
@@ -82,6 +85,7 @@ local state = {
     targetCast = nil,
     targetAuras = {},
     boneShieldStacks = nil,
+    coagulatingBloodStacks = nil,
     procActive = {},
     sampleElapsed = 0,
     coachElapsed = 0,
@@ -92,7 +96,7 @@ local state = {
 local configFrame
 local postCombatFrame
 local mainInsightSection
-local settingsButton
+local settingsButton, setupSettingsButton
 
 local function Print(message)
     if DEFAULT_CHAT_FRAME then
@@ -209,6 +213,13 @@ local function IsSpellReadySafe(spellID)
         end
     end
     return true
+end
+
+local function GetAssistedCombatNextSpell()
+    if not C_AssistedCombat or not C_AssistedCombat.GetNextCastSpell then return nil end
+    local ok, spellID = pcall(C_AssistedCombat.GetNextCastSpell, false)
+    if not ok or not IsAccessibleNumber(spellID) or spellID <= 0 then return nil end
+    return spellID
 end
 
 local function GetPlayerHealthPercent()
@@ -486,12 +497,38 @@ local function GetActiveProcRule(specID)
     return bestProc, bestState, bestRule
 end
 
+local function AddTimelineEvent(session, kind, text, confidence, severity, atTime)
+    if not session then return end
+    session.timeline = session.timeline or {}
+    if #session.timeline >= 80 then return end
+    local now = tonumber(atTime) or GetNow()
+    session.timeline[#session.timeline + 1] = {
+        t = math.max(0, now - (session.startedAt or now)),
+        kind = tostring(kind or "info"),
+        text = T(text or "Combat event"),
+        confidence = tostring(confidence or "OBSERVATION"),
+        severity = tonumber(severity) or 0,
+    }
+end
+
+local function AddObservation(list, key, text, confidence, severity, penalized)
+    list[#list + 1] = {
+        key = key,
+        text = text,
+        confidence = confidence or "OBSERVATION",
+        severity = tonumber(severity) or 0,
+        penalized = penalized == true,
+    }
+end
+
 local function FinalizeProcHides()
     local now = GetNow()
     for procID, active in pairs(state.procActive) do
         if active.hideAt and (now - active.hideAt) >= 0.25 then
             if state.combat and not active.consumed and (active.hideAt - (active.startedAt or active.hideAt)) >= 0.20 then
                 state.combat.procExpired = state.combat.procExpired + 1
+                local procName = GetSpellData(procID, T("Proc"))
+                AddTimelineEvent(state.combat, "proc", T("Proc expired: %s", procName), "HIGH", 2, active.hideAt)
             end
             state.procActive[procID] = nil
         end
@@ -505,7 +542,11 @@ local function ConsumeProcForSpell(spellID)
         local rule = rules[procID]
         if rule and rule.consumers and rule.consumers[spellID] and active and not active.consumed then
             active.consumed = true
-            if state.combat then state.combat.procConsumed = state.combat.procConsumed + 1 end
+            if state.combat then
+                state.combat.procConsumed = state.combat.procConsumed + 1
+                local procName = GetSpellData(procID, T("Proc"))
+                AddTimelineEvent(state.combat, "proc", T("Proc consumed: %s", procName), "HIGH", 0)
+            end
         end
     end
 end
@@ -540,13 +581,23 @@ local function CycleMode(direction)
     Print(T("Adaptive Coach mode: %s", GetModeLabel()))
 end
 
-local function MakeCoachEntry(spellID, title, whenText, optional, fallbackName)
+local function InferCoachKind(title)
+    local key = string.upper(tostring(title or ""))
+    if key:find("INTERRUPT", 1, true) then return "interrupt" end
+    if key:find("STOP CAST", 1, true) or key:find("CONTROL", 1, true) then return "utility" end
+    if key:find("PROC", 1, true) then return "proc" end
+    if key:find("SPEND RP", 1, true) or key:find("USE RUNES", 1, true) or key:find("BONE SHIELD", 1, true) or key:find("DEATH STRIKE", 1, true) then return "resource" end
+    return "defensive"
+end
+
+local function MakeCoachEntry(spellID, title, whenText, optional, fallbackName, kind)
     return {
         spellID = spellID,
         title = T(title),
         when = T(whenText),
         optional = optional == true,
         fallbackName = fallbackName and T(fallbackName) or fallbackName,
+        kind = kind or InferCoachKind(title),
     }
 end
 
@@ -617,6 +668,18 @@ function addon:GetAdaptiveCoachEntries(specID, context, baseEntries)
     local result = {}
     local stateLabel = "STABLE"
 
+    -- The first card can mirror Blizzard Assisted Combat's current next spell.
+    -- This keeps the primary action in a stable screen position while DK Mentor
+    -- uses the remaining cards for survival, interrupts, utility, resources,
+    -- and proc context. If the Blizzard recommendation is unavailable, the
+    -- existing Mentor priority list remains unchanged.
+    if cfg.pinNextAction ~= false then
+        local nextSpellID = GetAssistedCombatNextSpell()
+        if nextSpellID then
+            AddCoachEntry(result, MakeCoachEntry(nextSpellID, "NEXT", "Blizzard Assisted Combat", false, nil, "rotation"))
+        end
+    end
+
     if health and health <= 30 then stateLabel = "CRITICAL"
     elseif health and health <= 50 then stateLabel = "DANGER"
     elseif health and health <= 70 then stateLabel = "RECOVER"
@@ -663,23 +726,25 @@ function addon:GetAdaptiveCoachEntries(specID, context, baseEntries)
                 AddCoachEntry(result, MakeCoachEntry(S.MARROWREND or 195182, "BONE SHIELD", "low stacks — refresh before they fall"))
             end
         elseif specID == 252 then
-            local auraState = GetCurrentTargetAuraState()
-            if auraState then
-                if auraState.disease == false and IsSpellKnownSafe(S.OUTBREAK or 77575) then
-                    AddCoachEntry(result, MakeCoachEntry(S.OUTBREAK or 77575, "DISEASE", "Virulent Plague missing on current target"))
-                elseif auraState.wounds and auraState.wounds <= 1 and IsEliteClassification(classification) and IsSpellKnownSafe(S.FESTERING_STRIKE or 85948) then
-                    AddCoachEntry(result, MakeCoachEntry(S.FESTERING_STRIKE or 85948, "BUILD WOUNDS", "long-lived target has few Festering Wounds"))
-                elseif auraState.wounds and auraState.wounds >= 6 and IsSpellKnownSafe(S.SCOURGE_STRIKE or 55090) then
-                    AddCoachEntry(result, MakeCoachEntry(S.SCOURGE_STRIKE or 55090, "SPEND WOUNDS", "Festering Wounds are high — avoid overbuilding"))
-                end
+            -- Midnight moved Unholy away from target-bound Festering Wounds. The
+            -- readable player Lesser Ghoul stack is a safer and more current core state.
+            local ghoulStacks = GetPlayerAuraApplicationsSafe(S.LESSER_GHOUL or 1254252)
+            local darkTransformation = IsPlayerAuraActiveSafe(S.DARK_TRANSFORMATION or 1233448)
+            if darkTransformation == true and IsSpellKnownSafe(S.PUTREFY or 1247378) and IsSpellReadySafe(S.PUTREFY or 1247378) then
+                AddCoachEntry(result, MakeCoachEntry(S.PUTREFY or 1247378, "PUTREFY", "Dark Transformation is active — convert Lesser Ghouls when appropriate", false, nil, "proc"))
+            elseif ghoulStacks ~= nil and ghoulStacks <= 0 and IsSpellKnownSafe(S.FESTERING_STRIKE or 85948) then
+                AddCoachEntry(result, MakeCoachEntry(S.FESTERING_STRIKE or 85948, "BUILD GHOULS", "build Lesser Ghoul stacks", false, nil, "resource"))
+            elseif ghoulStacks ~= nil and ghoulStacks > 0 and IsSpellKnownSafe(S.SCOURGE_STRIKE or 55090) then
+                AddCoachEntry(result, MakeCoachEntry(S.SCOURGE_STRIKE or 55090, "SUMMON GHOUL", "consume a Lesser Ghoul stack", false, nil, "resource"))
             end
         end
     end
 
     -- 6) Resource waste prevention.
     local rpThreshold = specID == 250 and 96 or 90
-    local breathActive = specID == 251 and (IsPlayerAuraActiveSafe(152279) == true or IsPlayerAuraActiveSafe(1249658) == true)
-    if #result < 3 and mode ~= "essential" and cfg.resourceWarnings ~= false and runicPower and runicPower >= rpThreshold and not breathActive then
+    -- Midnight Breath of Sindragosa no longer continuously drains Runic Power;
+    -- RP capping remains a valid warning while Breath is active.
+    if #result < 3 and mode ~= "essential" and cfg.resourceWarnings ~= false and runicPower and runicPower >= rpThreshold then
         local spender = GetResourceSpender(specID)
         if IsSpellKnownSafe(spender) then
             AddCoachEntry(result, MakeCoachEntry(spender, "SPEND RP", "Runic Power near cap"))
@@ -712,13 +777,18 @@ function addon:GetAdaptiveCoachEntries(specID, context, baseEntries)
         end
     end
 
-    -- Preserve the curated context-specific DK recommendations as the fallback layer.
-    for _, entry in ipairs(baseEntries or {}) do
-        if #result >= 3 then break end
-        AddCoachEntry(result, entry)
+    -- Mentor/Training may use the curated context-specific recommendations as
+    -- a calm fallback layer. Essential is intentionally urgent-only so it does
+    -- not duplicate the static DK Toolkit while nothing needs attention.
+    local allowFallback = mode ~= "essential" or self.hudPreviewMode == true
+    if allowFallback then
+        for _, entry in ipairs(baseEntries or {}) do
+            if #result >= 3 then break end
+            AddCoachEntry(result, entry)
+        end
     end
 
-    if #result == 0 and originalAdaptiveCoach then
+    if #result == 0 and originalAdaptiveCoach and allowFallback then
         return originalAdaptiveCoach(self, specID, context, baseEntries)
     end
 
@@ -735,8 +805,21 @@ function addon:UpdateCoach(...)
     local context = select(1, self:DetectContext())
     local contextName = self.GetRuntimeContextLabel and self:GetRuntimeContextLabel(context) or T((Data.contextNames and Data.contextNames[context]) or context)
     if frame.title then
-        frame.title:SetText(T("DK Mentor — %s / %s • %s", specName or tostring(specID), contextName or "?", GetModeLabel()))
+        if self.hudPreviewMode == true then
+            frame.title:SetText(T("Live Mentor preview — %s", GetModeLabel()))
+        else
+            frame.title:SetText(T("DK Mentor — %s / %s • %s", specName or tostring(specID), contextName or "?", GetModeLabel()))
+        end
     end
+    if frame.healthText and specID == 250 then
+        local pool = GetPlayerAuraApplicationsSafe((Data.spells and Data.spells.COAGULATING_BLOOD) or 463730)
+        if IsAccessibleNumber(pool) then
+            state.coagulatingBloodStacks = pool
+            local base = frame.healthText:GetText() or ""
+            frame.healthText:SetText(base .. (base ~= "" and " • " or "") .. T("DS pool: %d%%", Round(pool)))
+        end
+    end
+    if self.ApplyMentorCoachLayout then self:ApplyMentorCoachLayout() end
 end
 
 local function StartCombatSession()
@@ -752,10 +835,15 @@ local function StartCombatSession()
     state.targetCast = observedTargetCast
     state.targetAuras = {}
     state.boneShieldStacks = GetPlayerAuraApplicationsSafe((Data.spells and Data.spells.BONE_SHIELD) or 195181)
+    state.coagulatingBloodStacks = GetPlayerAuraApplicationsSafe((Data.spells and Data.spells.COAGULATING_BLOOD) or 463730)
     local specID = select(1, addon:GetSpecInfo())
+    local context = select(1, addon:DetectContext())
     state.combat = {
         startedAt = now,
         specID = specID,
+        context = context,
+        timeline = {},
+        timelineLatches = {},
         highRPSeconds = 0,
         runeWasteSeconds = 0,
         resourceSamples = 0,
@@ -775,7 +863,13 @@ local function StartCombatSession()
         dangerActive = nil,
         defensiveCasts = 0,
         recoveryCasts = 0,
+        deathStrikeCasts = 0,
+        deathStrikePoolSum = 0,
+        deathStrikePoolSamples = 0,
+        maxDeathStrikePool = 0,
+        boneShieldLowWindows = 0,
     }
+    AddTimelineEvent(state.combat, "combat", T("Combat started"), "OBSERVATION", 0, now)
     RefreshTargetCastFromAPI()
     ScheduleTargetCastRefreshes()
 end
@@ -823,32 +917,51 @@ local function BuildScoreReport(session, duration)
     end
     local overall = totalWeight > 0 and Round(weighted / totalWeight) or 100
 
-    local insights = {}
-    local function AddInsight(text)
-        if #insights < 4 then insights[#insights + 1] = text end
+    local observations = {}
+    if session.highRPSeconds >= math.max(2, duration * 0.08) then
+        AddObservation(observations, "high_rp", T("Runic Power stayed near cap for %.1f seconds.", session.highRPSeconds), "HIGH", 3, true)
     end
-
-    if session.interruptMissed > 0 then
-        AddInsight(T("%d interruptible cast(s) completed without a detected stop.", session.interruptMissed))
+    if session.runeWasteSeconds >= math.max(2, duration * 0.08) then
+        AddObservation(observations, "runes_idle", T("Five or more Runes stayed ready for %.1f seconds.", session.runeWasteSeconds), "HIGH", 3, true)
+    end
+    if session.procExpired > 0 then
+        AddObservation(observations, "proc_expired", T("%d important proc window(s) ended without a detected consumer.", session.procExpired), "HIGH", 3, true)
+    end
+    if (session.boneShieldLowWindows or 0) > 0 then
+        AddObservation(observations, "bone_shield_low", T("Bone Shield entered a low-stack window %d time(s).", session.boneShieldLowWindows), "HIGH", 2, true)
     end
     local unhandledDanger = math.max(0, session.dangerWindows - session.dangerHandled)
     if unhandledDanger > 0 then
-        AddInsight(T("%d critical-health window(s) had no defensive/recovery response detected.", unhandledDanger))
+        AddObservation(observations, "danger_unhandled", T("%d critical-health window(s) had no defensive/recovery response detected.", unhandledDanger), "MEDIUM", 3, true)
     end
-    if session.highRPSeconds >= math.max(2, duration * 0.08) then
-        AddInsight(T("Runic Power stayed near cap for %.1f seconds.", session.highRPSeconds))
+    if session.interruptMissed > 0 then
+        AddObservation(observations, "interrupt_missed", T("%d interruptible cast(s) completed without a detected stop.", session.interruptMissed), "MEDIUM", 2, true)
     end
-    if session.runeWasteSeconds >= math.max(2, duration * 0.08) then
-        AddInsight(T("Five or more Runes stayed ready for %.1f seconds.", session.runeWasteSeconds))
+    if session.utilityMissed > 0 then
+        AddObservation(observations, "utility_missed", T("%d non-boss cast(s) completed while a DK control response may have been possible.", session.utilityMissed), "OBSERVATION", 1, false)
     end
-    if session.procExpired > 0 then
-        AddInsight(T("%d important proc window(s) ended without a detected consumer.", session.procExpired))
+    if #observations == 0 then
+        AddObservation(observations, "clean", T("Clean execution: no major DK Mentor mistakes were detected in the readable combat data."), "OBSERVATION", 0, false)
     end
-    if session.utilityMissed > 0 and #insights < 4 then
-        AddInsight(T("%d non-boss cast(s) completed while a DK control response may have been possible.", session.utilityMissed))
+    table.sort(observations, function(a, b)
+        if (a.severity or 0) ~= (b.severity or 0) then return (a.severity or 0) > (b.severity or 0) end
+        return tostring(a.key or "") < tostring(b.key or "")
+    end)
+    local insights = {}
+    for index = 1, math.min(4, #observations) do insights[index] = observations[index].text end
+
+    local strengths = {}
+    if components.resources and components.resources >= 95 then
+        strengths[#strengths + 1] = T("Resource flow stayed efficient in the readable samples.")
     end
-    if #insights == 0 then
-        AddInsight(T("Clean execution: no major DK Mentor mistakes were detected in the readable combat data."))
+    if components.procs and components.procs >= 95 then
+        strengths[#strengths + 1] = T("Important readable proc windows were handled cleanly.")
+    end
+    if components.interrupts and components.interrupts >= 100 then
+        strengths[#strengths + 1] = T("Every detected interrupt window was stopped.")
+    end
+    if session.dangerWindows > 0 and components.survival and components.survival >= 100 then
+        strengths[#strengths + 1] = T("Every detected danger window received a defensive or recovery response.")
     end
 
     local stamp
@@ -862,6 +975,11 @@ local function BuildScoreReport(session, duration)
         duration = Round(duration),
         components = components,
         insights = insights,
+        observations = observations,
+        strengths = strengths,
+        timeline = session.timeline or {},
+        specID = session.specID,
+        context = session.context,
         minHealth = Round(session.minHealth or 100),
         highRPSeconds = session.highRPSeconds,
         runeWasteSeconds = session.runeWasteSeconds,
@@ -875,6 +993,10 @@ local function BuildScoreReport(session, duration)
         dangerWindows = session.dangerWindows,
         dangerHandled = session.dangerHandled,
         defensiveCasts = session.defensiveCasts,
+        deathStrikeCasts = session.deathStrikeCasts or 0,
+        maxDeathStrikePool = session.maxDeathStrikePool or 0,
+        averageDeathStrikePool = (session.deathStrikePoolSamples or 0) > 0 and Round((session.deathStrikePoolSum or 0) / session.deathStrikePoolSamples) or nil,
+        boneShieldLowWindows = session.boneShieldLowWindows or 0,
         timestamp = stamp,
     }
 end
@@ -891,6 +1013,9 @@ local function EndCombatSession()
     local _, cfg = EnsureDB()
     if duration >= 5 then
         cfg.lastReport = report
+        if DKM.MentorReview and DKM.MentorReview.Record then
+            DKM.MentorReview.Record(report)
+        end
         Engine.UpdateUI()
         if cfg.insights ~= false and cfg.postCombat ~= false then Engine.ShowPostCombat(report) end
     end
@@ -902,6 +1027,7 @@ local function EndCombatSession()
     state.targetCast = nil
     state.targetAuras = {}
     state.boneShieldStacks = nil
+    state.coagulatingBloodStacks = nil
     state.procActive = {}
 end
 
@@ -916,6 +1042,7 @@ local function SampleCombat(delta)
         if health <= 40 and not session.dangerActive then
             session.dangerWindows = session.dangerWindows + 1
             session.dangerActive = { startedAt = GetNow(), handled = false }
+            AddTimelineEvent(session, "defensive", T("Critical health window opened"), "MEDIUM", 3)
         elseif health > 55 and session.dangerActive then
             session.dangerActive = nil
         end
@@ -929,8 +1056,20 @@ local function SampleCombat(delta)
         local boneStacks = GetPlayerAuraApplicationsSafe(boneShieldID)
         if boneStacks ~= nil then
             state.boneShieldStacks = boneStacks
+            local low = boneStacks <= 3
+            if low and not session.timelineLatches.boneShieldLow then
+                session.boneShieldLowWindows = (session.boneShieldLowWindows or 0) + 1
+                AddTimelineEvent(session, "resource", T("Bone Shield entered low stacks"), "HIGH", 2)
+            end
+            session.timelineLatches.boneShieldLow = low
         elseif IsPlayerAuraActiveSafe(boneShieldID) == false then
             state.boneShieldStacks = 0
+        end
+        local coagulatingID = (Data.spells and Data.spells.COAGULATING_BLOOD) or 463730
+        local dsPool = GetPlayerAuraApplicationsSafe(coagulatingID)
+        if dsPool ~= nil then
+            state.coagulatingBloodStacks = dsPool
+            session.maxDeathStrikePool = math.max(session.maxDeathStrikePool or 0, dsPool)
         end
     end
 
@@ -938,25 +1077,41 @@ local function SampleCombat(delta)
     if rp then
         session.resourceSamples = session.resourceSamples + 1
         local threshold = session.specID == 250 and 96 or 90
-        local breathActive = session.specID == 251 and (IsPlayerAuraActiveSafe(152279) == true or IsPlayerAuraActiveSafe(1249658) == true)
-        if rp >= threshold and not breathActive then session.highRPSeconds = session.highRPSeconds + delta end
+        local high = rp >= threshold
+        if high then session.highRPSeconds = session.highRPSeconds + delta end
+        if high and not session.timelineLatches.highRP then
+            AddTimelineEvent(session, "resource", T("Runic Power reached the near-cap warning"), "HIGH", 2)
+        end
+        session.timelineLatches.highRP = high
     end
 
     local runes = GetReadyRuneCount()
     if runes then
         session.runeSamples = session.runeSamples + 1
-        if runes >= 5 then session.runeWasteSeconds = session.runeWasteSeconds + delta end
+        local idle = runes >= 5
+        if idle then session.runeWasteSeconds = session.runeWasteSeconds + delta end
+        if idle and not session.timelineLatches.runesIdle then
+            AddTimelineEvent(session, "resource", T("Five or more Runes became ready"), "HIGH", 2)
+        end
+        session.timelineLatches.runesIdle = idle
     end
 end
 
 local function OpenInterruptWindow(castKey)
     state.targetCast = state.targetCast or {}
-    if state.targetCast.interruptKey ~= castKey then
+    local isNewWindow = state.targetCast.interruptKey ~= castKey
+    if isNewWindow then
         state.targetCast.interruptKey = castKey
         state.targetCast.resolved = false
     end
     state.targetCast.interruptible = true
     state.targetCast.explicitInterruptible = true
+    if isNewWindow then
+        if state.combat then AddTimelineEvent(state.combat, "interrupt", T("Interruptible target cast detected"), "MEDIUM", 1) end
+        -- Sound/pulse belongs to the interrupt window transition, not the 120 ms
+        -- refresh heartbeat. This guarantees one alert sound per cast.
+        if addon.NotifyMentorKind then addon:NotifyMentorKind("interrupt") end
+    end
 end
 
 local function OpenUtilityWindow(castKey)
@@ -967,6 +1122,8 @@ local function OpenUtilityWindow(castKey)
     end
     state.targetCast.interruptible = false
     state.targetCast.explicitInterruptible = false
+    if state.combat then AddTimelineEvent(state.combat, "utility", T("Non-interruptible target cast detected"), "OBSERVATION", 1) end
+    if addon.NotifyMentorKind then addon:NotifyMentorKind("utility") end
 end
 
 local function ResolveCurrentCast(successfulCompletion)
@@ -974,8 +1131,10 @@ local function ResolveCurrentCast(successfulCompletion)
         if successfulCompletion then
             if state.targetCast.interruptKey and not state.targetCast.resolved then
                 state.combat.interruptMissed = state.combat.interruptMissed + 1
+                AddTimelineEvent(state.combat, "interrupt", T("Interruptible cast completed without a detected stop"), "MEDIUM", 2)
             elseif state.targetCast.utilityKey and not state.targetCast.utilityResolved and not IsBossClassification(GetTargetClassification()) then
                 state.combat.utilityMissed = state.combat.utilityMissed + 1
+                AddTimelineEvent(state.combat, "utility", T("Possible DK control opportunity completed"), "OBSERVATION", 1)
             end
         end
     end
@@ -987,12 +1146,14 @@ local function MarkInterruptHandled(byPlayer)
     state.targetCast.resolved = true
     state.combat.interruptHandled = state.combat.interruptHandled + 1
     if byPlayer then state.combat.playerInterrupts = state.combat.playerInterrupts + 1 end
+    AddTimelineEvent(state.combat, "interrupt", T(byPlayer and "Mind Freeze used during an interrupt window" or "Interrupt opportunity was stopped"), "MEDIUM", 0)
 end
 
 local function MarkUtilityHandled()
     if not state.combat or not state.targetCast or not state.targetCast.utilityKey or state.targetCast.utilityResolved then return end
     state.targetCast.utilityResolved = true
     state.combat.utilityHandled = state.combat.utilityHandled + 1
+    AddTimelineEvent(state.combat, "utility", T("DK control response used during the cast window"), "OBSERVATION", 0)
 end
 
 local function HandlePlayerSpell(spellID)
@@ -1008,7 +1169,19 @@ local function HandlePlayerSpell(spellID)
 
     if state.combat and DEFENSIVE_SPELLS[spellID] then
         state.combat.defensiveCasts = state.combat.defensiveCasts + 1
-        if spellID == 49998 then state.combat.recoveryCasts = state.combat.recoveryCasts + 1 end
+        local spellName = GetSpellData(spellID, T("Defensive"))
+        AddTimelineEvent(state.combat, "defensive", T("Used %s", spellName), "OBSERVATION", 0)
+        if spellID == 49998 then
+            state.combat.recoveryCasts = state.combat.recoveryCasts + 1
+            state.combat.deathStrikeCasts = (state.combat.deathStrikeCasts or 0) + 1
+            local pool = state.coagulatingBloodStacks
+            if IsAccessibleNumber(pool) then
+                state.combat.deathStrikePoolSum = (state.combat.deathStrikePoolSum or 0) + pool
+                state.combat.deathStrikePoolSamples = (state.combat.deathStrikePoolSamples or 0) + 1
+                state.combat.maxDeathStrikePool = math.max(state.combat.maxDeathStrikePool or 0, pool)
+                AddTimelineEvent(state.combat, "deathstrike", T("Death Strike used with a readable recent-damage pool of %d%%", Round(pool)), "HIGH", 0)
+            end
+        end
         MarkDangerHandled()
     end
     if state.combat and UTILITY_STOP_SPELLS[spellID] then MarkUtilityHandled() end
@@ -1024,12 +1197,14 @@ end
 function Engine.ResetSettings()
     local _, cfg = EnsureDB()
     local lastReport = cfg.lastReport
+    local history = cfg.history
     for key, value in pairs(DEFAULTS) do
         if key ~= "lastReport" then
             cfg[key] = value
         end
     end
     cfg.lastReport = lastReport
+    cfg.history = history
     Engine.UpdateUI()
     addon:UpdateCoach()
     Print(T("Mentor settings restored to defaults."))
@@ -1056,8 +1231,15 @@ local function ApplyBackdrop(frame, alpha)
     frame:SetBackdropBorderColor(0.20, 0.68, 0.86, 0.95)
 end
 
+local function CreateActionButton(parent)
+    if DKM and DKM.CreateActionButton then
+        return DKM.CreateActionButton(parent)
+    end
+    return CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+end
+
 local function CreateToggleButton(parent, width, point, relative, relativePoint, x, y, callback)
-    local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    local button = CreateActionButton(parent)
     button:SetSize(width, 27)
     button:SetPoint(point, relative, relativePoint, x, y)
     button:SetScript("OnClick", callback)
@@ -1087,6 +1269,7 @@ local function ReportDetails(report)
         T("Procs consumed: %d • estimated expired: %d", report.procConsumed or 0, report.procExpired or 0),
         T("Your interrupts: %d • handled opportunities: %d • completed casts: %d", report.interrupts or 0, report.interruptHandled or 0, report.interruptMissed or 0),
         T("Critical windows answered: %d/%d • defensive/recovery casts: %d", report.dangerHandled or 0, report.dangerWindows or 0, report.defensiveCasts or 0),
+        report.averageDeathStrikePool and T("Death Strike readable pool: avg %d%% • max %d%% • casts %d", report.averageDeathStrikePool, report.maxDeathStrikePool or 0, report.deathStrikeCasts or 0) or T("Death Strike pool: unavailable/restricted in this combat"),
         "",
         T("What to improve:"),
     }
@@ -1099,7 +1282,7 @@ end
 local function CreateConfigFrame()
     if configFrame then return configFrame end
     local frame = CreateFrame("Frame", "DKMentorIntelligenceFrame", UIParent, "BackdropTemplate")
-    frame:SetSize(660, 560)
+    frame:SetSize(660, 610)
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, 20)
     frame:SetFrameStrata("FULLSCREEN_DIALOG")
     frame:SetClampedToScreen(true)
@@ -1142,22 +1325,26 @@ local function CreateConfigFrame()
 
     frame.testButton = CreateToggleButton(frame, 190, "TOPLEFT", frame, "TOPLEFT", 18, -183, function() Engine.TestAlerts() end)
     frame.resetButton = CreateToggleButton(frame, 190, "LEFT", frame.testButton, "RIGHT", 12, 0, function() Engine.ResetSettings() end)
+    frame.reviewButton = CreateToggleButton(frame, 190, "LEFT", frame.resetButton, "RIGHT", 12, 0, function() if DKM.MentorReview then DKM.MentorReview.Open("overview", frame) end end)
+    frame.studioButton = CreateToggleButton(frame, 190, "TOPLEFT", frame, "TOPLEFT", 18, -218, function() if DKM.MentorStudio then DKM.MentorStudio.Open(frame) end end)
+    frame.setupButton = CreateToggleButton(frame, 190, "LEFT", frame.studioButton, "RIGHT", 12, 0, function() if DKM.MentorStudio then DKM.MentorStudio.OpenSetup(frame) end end)
+    frame.nextActionButton = CreateToggleButton(frame, 190, "LEFT", frame.setupButton, "RIGHT", 12, 0, function() ToggleConfig("pinNextAction") end)
 
     frame.modeHint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    frame.modeHint:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -225)
+    frame.modeHint:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -260)
     frame.modeHint:SetWidth(620)
     frame.modeHint:SetJustifyH("LEFT")
     frame.modeHint:SetText(T("Essential = only urgent survival/interrupt calls. Mentor = balanced default. Training = adds resource, proc, rune-idle, and possible control-stop coaching."))
 
     frame.reportTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    frame.reportTitle:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -263)
+    frame.reportTitle:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -298)
     frame.reportTitle:SetText(T("Last combat insights"))
     frame.reportTitle:SetTextColor(0.55, 0.88, 1)
 
     frame.report = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    frame.report:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -287)
+    frame.report:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -322)
     frame.report:SetWidth(620)
-    frame.report:SetHeight(235)
+    frame.report:SetHeight(250)
     frame.report:SetJustifyH("LEFT")
     frame.report:SetJustifyV("TOP")
 
@@ -1266,9 +1453,9 @@ local function CreateMainIntegration()
 
     if not settingsButton and main.pages.settings then
         local settingsPage = main.pages.settings
-        if settingsPage.scope and settingsPage.scope.SetWidth then settingsPage.scope:SetWidth(300) end
-        settingsButton = CreateFrame("Button", nil, settingsPage, "UIPanelButtonTemplate")
-        settingsButton:SetSize(180, 27)
+        if settingsPage.scope and settingsPage.scope.SetWidth then settingsPage.scope:SetWidth(260) end
+        settingsButton = CreateActionButton(settingsPage)
+        settingsButton:SetSize(160, 27)
         if main.languageButton then
             settingsButton:SetPoint("RIGHT", main.languageButton, "LEFT", -8, 0)
         else
@@ -1278,6 +1465,24 @@ local function CreateMainIntegration()
         settingsButton:SetScript("OnClick", function() Engine.ToggleConfig() end)
         local font = settingsButton.GetFontString and settingsButton:GetFontString()
         if font and GameFontNormalSmall then font:SetFontObject(GameFontNormalSmall) end
+
+        setupSettingsButton = CreateActionButton(settingsPage)
+        setupSettingsButton:SetSize(105, 27)
+        setupSettingsButton:SetPoint("RIGHT", settingsButton, "LEFT", -8, 0)
+        setupSettingsButton:SetText(T("Setup..."))
+        setupSettingsButton:SetScript("OnClick", function()
+            if DKM.MentorStudio then DKM.MentorStudio.OpenSetup() end
+        end)
+        local setupFont = setupSettingsButton.GetFontString and setupSettingsButton:GetFontString()
+        if setupFont and GameFontNormalSmall then setupFont:SetFontObject(GameFontNormalSmall) end
+        setupSettingsButton:SetScript("OnEnter", function(self)
+            if GameTooltip then
+                GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+                GameTooltip:SetText(T("Reopen the five-step setup wizard."))
+                GameTooltip:Show()
+            end
+        end)
+        setupSettingsButton:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
     end
 
     if not mainInsightSection and main.pages.combat then
@@ -1305,11 +1510,13 @@ local function CreateMainIntegration()
         section.insight:SetJustifyH("LEFT")
         section.insight:SetJustifyV("TOP")
 
-        section.button = CreateFrame("Button", nil, section, "UIPanelButtonTemplate")
+        section.button = CreateActionButton(section)
         section.button:SetSize(120, 24)
         section.button:SetPoint("TOPRIGHT", section, "TOPRIGHT", -10, -7)
-        section.button:SetText(T("Details..."))
-        section.button:SetScript("OnClick", function() Engine.ToggleConfig() end)
+        section.button:SetText(T("Review..."))
+        section.button:SetScript("OnClick", function()
+            if DKM.MentorReview then DKM.MentorReview.Open("overview") else Engine.ToggleConfig() end
+        end)
 
         mainInsightSection = section
     end
@@ -1318,6 +1525,8 @@ end
 function Engine.UpdateUI()
     local _, cfg = EnsureDB()
     if not state.setupDone then CreateMainIntegration() end
+    if setupSettingsButton then setupSettingsButton:SetText(T("Setup...")) end
+    if settingsButton then settingsButton:SetText(T("Mentor intelligence...")) end
     if configFrame then
         configFrame.modeButton:SetText(T("Mode: %s", GetModeLabel()))
         configFrame.defensiveButton:SetText(T(cfg.defensive ~= false and "Defensive Advisor: ON" or "Defensive Advisor: OFF"))
@@ -1325,11 +1534,17 @@ function Engine.UpdateUI()
         configFrame.resourceButton:SetText(T(cfg.resourceWarnings ~= false and "Resource warnings: ON" or "Resource warnings: OFF"))
         configFrame.procButton:SetText(T(cfg.procWarnings ~= false and "Proc warnings: ON" or "Proc warnings: OFF"))
         configFrame.soloButton:SetText(T(cfg.soloDelveBoost ~= false and "Solo/Delve boost: ON" or "Solo/Delve boost: OFF"))
+        if configFrame.nextActionButton then
+            configFrame.nextActionButton:SetText(T(cfg.pinNextAction ~= false and "Next action: ON" or "Next action: OFF"))
+        end
         configFrame.insightsButton:SetText(T(cfg.insights ~= false and "Combat Insights: ON" or "Combat Insights: OFF"))
         configFrame.postButton:SetText(T(cfg.postCombat ~= false and "Post-combat popup: ON" or "Post-combat popup: OFF"))
         configFrame.clearButton:SetText(T("Clear last report"))
         if configFrame.testButton then configFrame.testButton:SetText(T("Test alerts")) end
         if configFrame.resetButton then configFrame.resetButton:SetText(T("Reset Mentor settings")) end
+        if configFrame.reviewButton then configFrame.reviewButton:SetText(T("Open Review")) end
+        if configFrame.studioButton then configFrame.studioButton:SetText(T("Alert Studio")) end
+        if configFrame.setupButton then configFrame.setupButton:SetText(T("Setup Wizard")) end
         configFrame.report:SetText(ReportDetails(cfg.lastReport))
     end
     if mainInsightSection then
@@ -1382,6 +1597,9 @@ function addon:ShowHelp(...)
     Print(T("/dkm mentor — open Adaptive DK Coach settings and Combat Insights"))
     Print(T("/dkm mentor essential|mentor|training — change coaching intensity"))
     Print(T("/dkm mentor test|reset — preview alerts or restore Mentor defaults"))
+    Print(T("/dkm mentor nextaction on|off — pin Blizzard's next recommended ability in card 1"))
+    Print(T("/dkm review | /dkm patterns — open Review 3.0"))
+    Print(T("/dkm studio | /dkm setup — customize alerts or rerun setup"))
     Print(T("DK Mentor recommends actions; it never casts abilities automatically."))
 end
 
@@ -1402,6 +1620,24 @@ function addon:HandleSlashCommand(message)
             CycleMode(1)
         elseif rest == "test" or rest == "preview" then
             Engine.TestAlerts()
+        elseif rest == "nextaction" then
+            local _, cfg = EnsureDB()
+            cfg.pinNextAction = not (cfg.pinNextAction ~= false)
+            addon:UpdateCoach()
+            Engine.UpdateUI()
+            Print(T(cfg.pinNextAction ~= false and "Next action: ON" or "Next action: OFF"))
+        elseif rest == "nextaction on" then
+            local _, cfg = EnsureDB()
+            cfg.pinNextAction = true
+            addon:UpdateCoach()
+            Engine.UpdateUI()
+            Print(T("Next action: ON"))
+        elseif rest == "nextaction off" then
+            local _, cfg = EnsureDB()
+            cfg.pinNextAction = false
+            addon:UpdateCoach()
+            Engine.UpdateUI()
+            Print(T("Next action: OFF"))
         elseif rest == "reset" or rest == "defaults" then
             Engine.ResetSettings()
         else
@@ -1578,3 +1814,12 @@ eventFrame:SetScript("OnUpdate", function(_, elapsed)
         if configFrame and configFrame:IsShown() then Engine.UpdateUI() end
     end
 end)
+-- 3.0 module bridge: exposes only safe/read-only helpers and intentional actions.
+Engine.GetState = function() return state end
+Engine.GetConfig = function() local _, cfg = EnsureDB(); return cfg end
+Engine.GetModeLabel = GetModeLabel
+Engine.GetPlayerAuraApplicationsSafe = GetPlayerAuraApplicationsSafe
+Engine.IsAccessibleNumber = IsAccessibleNumber
+Engine.GetSpellData = GetSpellData
+Engine.AddTimelineEvent = AddTimelineEvent
+

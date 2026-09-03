@@ -2,13 +2,13 @@
 
 # DK Mentor
 
-**DK Mentor** is a World of Warcraft Retail addon built specifically for **Blood, Frost, and Unholy Death Knights**. Version 3.0 expands the project into a complete Death Knight learning loop: **Before Combat → Live Mentor → Review → Patterns → Improvement**.
+**DK Mentor** is a World of Warcraft Retail addon built specifically for **Blood, Frost, and Unholy Death Knights**. Version 3.1 extends the project into a complete Death Knight learning loop: **Before Combat → Live Mentor → Review → Patterns → Improvement**.
 
 Loadout automation is no longer part of DK Mentor. Specialization/talent/gear/Loot Specialization automation belongs to the dedicated **Loadout Pilot** addon. DK Mentor can detect Loadout Pilot and open it from Settings or `/dkm loadouts`, but it does not require it.
 
 The in-game UI defaults to Brazilian Portuguese on `ptBR` clients and English on `enUS`/`enGB`, with a manual **Auto / Português / English** override in Settings. After changing the override, use `/reload` to rebuild the UI in the selected addon language. Addon-owned labels, context names, guidance, Codex text, and specialization labels follow that override; spell/item names returned directly by the WoW client intentionally remain in the WoW client language.
 
-## DK Mentor 3.0 focus
+## DK Mentor 3.1 focus
 
 - Blood, Frost, and Unholy specialization detection.
 - World, Delve, Dungeon, Mythic+, Raid, and PvP **content detection for guidance and HUD labels only**.
@@ -37,7 +37,7 @@ The in-game UI defaults to Brazilian Portuguese on `ptBR` clients and English on
 - Movable, lockable, scalable combat HUDs with Preview mode, opacity controls, icon wrapping, and resource visibility modes for Always / Fade out of combat / Combat Only.
 - Release-candidate polish: one-click **Reset HUD positions**, **Reset Mentor settings**, and an out-of-combat **Test alerts** preview for Defensive / Proc / Resource / Interrupt visuals.
 - One-time 3.0 Setup Wizard plus release notice; the Loadout Pilot split and recommendation-only safety model remain explicit.
-- Optional situational Lich King commentary using sound resources already installed by WoW. No Blizzard audio is bundled.
+- Optional situational Lich King commentary using sound resources already installed by WoW, with a movable animated portrait that can show Arthas or Bolvar. No Blizzard audio/model assets are bundled.
 
 ## Why loadout automation moved out
 
@@ -167,6 +167,7 @@ They use Blizzard's Retail aura-container system. DK Buffs combines spec-aware c
 /dkm settings
 /dkm language auto|ptbr|en
 /dkm voice
+/dkm voice portrait arthas|bolvar
 /dkm rotation
 /dkm bars
 /dkm reset
@@ -176,10 +177,13 @@ They use Blizzard's Retail aura-container system. DK Buffs combines spec-aware c
 
 ## Lich King commentary
 
-The commentary feature is optional and disabled by default. It references numeric sound resources already present in the player's installed WoW client. DK Mentor does not include, extract, modify, or redistribute Blizzard audio files or dialogue transcripts.
+The commentary feature is optional and disabled by default. It references numeric sound resources already present in the player's installed WoW client. Its movable animated portrait can display Arthas or Bolvar; that choice is visual only and the current commentary voice resources remain unchanged. DK Mentor does not include, extract, modify, or redistribute Blizzard audio/model assets or dialogue transcripts.
 
 ## Development and publishing
 
+- [DK Mentor 3.1.6 release notes](RELEASE_NOTES_v3.1.6.md)
+- [DK Mentor 3.1.6 live test checklist](TESTING_v3.1.6.md)
+- [DK Mentor 3.1.6 final validation](VALIDATION_REPORT_v3.1.6.md)
 - [DK Mentor 3.0.11 live test checklist](TESTING_v3.0.11.md)
 - [DK Mentor 3.0.11 release notes](RELEASE_NOTES_v3.0.11.md)
 - [DK Mentor 3.0.5 live test checklist](TESTING_v3.0.5.md)

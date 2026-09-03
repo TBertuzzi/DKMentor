@@ -5,7 +5,7 @@ local T = DKM.T or function(value) return value end
 local Codex = {
     patch = "12.1.0",
     season = T("Midnight Season 2"),
-    reviewed = "2026-08-30",
+    reviewed = "2026-09-03",
     sectionOrder = { "overview", "builds", "rotation", "survival", "stats", "utility", "check" },
     sectionLabels = {
         overview = T("Overview"),
@@ -87,27 +87,27 @@ Codex.specs = {
         stats = {
             {
                 heading = T("PvE stat priority — San'layn"),
-                body = T("Strength > Haste > Critical Strike > Mastery > Versatility. Haste is especially valuable for San'layn, with current general guidance often favoring it strongly until roughly the 30% unbuffed area. Item level and simulation still matter more than blindly following a fixed list."),
+                body = T("Higher item level first; among secondaries, Haste (to roughly the first diminishing-return breakpoint) >= Critical Strike > Mastery > Versatility. San'layn values Haste strongly, but close choices should still be simulated."),
             },
             {
                 heading = T("PvE stat priority — Deathbringer"),
-                body = T("Strength > Critical Strike > Mastery > Versatility > Haste. Blood's two Hero Talent trees value secondaries differently, so always compare gear in the context of the tree you actually play."),
+                body = T("Higher item level first; among secondaries, Critical Strike >= Mastery > Versatility >= Haste. Deathbringer generally avoids Haste compared with San'layn, so compare gear in the context of the tree you actually play."),
             },
             {
                 heading = T("Runeforge"),
-                body = T("Current Patch 12.1 guidance commonly favors Rune of Sanguination for San'layn and many Deathbringer situations. Rune of the Fallen Crusader remains a strong build- and target-count-dependent alternative. DK Mentor's Ready Check only requires a valid DK Runeforge; the Codex recommendation is informational."),
+                body = T("Current Patch 12.1 guidance uses Rune of Sanguination for San'layn and for Deathbringer single target, while Rune of the Fallen Crusader is the Deathbringer high-target AoE direction (roughly 10+ targets). DK Mentor's Ready Check only requires a valid DK Runeforge; the Codex recommendation is informational."),
             },
             {
                 heading = T("Gems"),
-                body = T("A common current setup uses Indecipherable Eversong Diamond as the unique epic gem. Deathbringer commonly leans toward Flawless Masterful Garnet, while San'layn commonly leans toward Flawless Quick Garnet. Adjust to your own stat distribution."),
+                body = T("Use Indecipherable Eversong Diamond as the unique epic gem. Flawless Masterful Garnet is a strong Deathbringer-friendly Crit/Mastery direction, while Flawless Deadly Peridot matches San'layn's Haste/Crit needs well. Sim your current stat distribution."),
             },
             {
                 heading = T("Enchants"),
-                body = T("Current general recommendations: Head — Empowered Blessing of Speed; Shoulders — Akil'zon's Swiftness; Chest — Mark of the Worldsoul; Legs — Forest Hunter's Armor Kit; Feet — Farstrider's Hunt. Rings commonly use Silvermoon's Tenacity for Deathbringer or Nature's Fury for San'layn."),
+                body = T("Current general recommendations: Head — Empowered Blessing of Speed; Shoulders — Akil'zon's Swiftness; Chest — Mark of the Worldsoul; Legs — Forest Hunter's Armor Kit; Feet — Farstrider's Hunt; Rings — Nature's Fury. Eyes of the Eagle is the damage-oriented ring alternative."),
             },
             {
                 heading = T("Consumables"),
-                body = T("Thalassian Phoenix Oil is a common weapon consumable. Flask choices are stat-dependent: Flask of the Shattered Sun is a common baseline, with Blood Knights or Thalassian Resistance alternatives depending on build and goals. Potion of Recklessness is the usual damage potion; carry Concentrated Silvermoon Health Potions, a current feast or Royal Roast-style personal food, and Void-Touched Augment Runes when appropriate."),
+                body = T("Use Thalassian Phoenix Oil. Flask of the Blood Knights and Flask of the Shattered Sun are the current default flask directions; Thalassian Resistance is a situational defensive option. Potion of Recklessness is the standard combat potion, with Concentrated Silvermoon Health Potion, Blooming Feast or Harandar Celebration, and Void-Touched Augment Rune rounding out preparation."),
             },
         },
         rotation = {
@@ -164,7 +164,7 @@ Codex.specs = {
         stats = {
             {
                 heading = T("PvE stat priority"),
-                body = T("Critical Strike > Haste > Mastery > Versatility. Deathbringer generally places a little less value on Haste than Rider. Higher item level is often important, and your exact distribution should be simulated rather than treated as permanent stat weights."),
+                body = T("Strength > Critical Strike > Mastery > Haste > Versatility. Current Wowhead guidance gives Deathbringer and Rider the same general order; exact values still change with your gear, so simulate close upgrades."),
             },
             {
                 heading = T("PvP stat priority"),
@@ -172,19 +172,19 @@ Codex.specs = {
             },
             {
                 heading = T("Runeforge"),
-                body = T("Rune of the Fallen Crusader is the common Frost staple. Rune of Razorice is build-dependent and frequently paired with Fallen Crusader for dual-wield setups. Some Breath-oriented dual-wield setups can prefer Rune of the Stoneskin Gargoyle on one weapon. For two-handed play, Fallen Crusader plus Thalassian Phoenix Oil is a strong general baseline unless your build specifically calls for Razorice."),
+                body = T("For dual-wield Frost, use Rune of the Fallen Crusader on the off-hand. With Shattering Blade, use Rune of Razorice on the main hand; without Shattering Blade, current guidance uses Rune of the Stoneskin Gargoyle on the main hand because Glacial Advance supplies Razorice. Two-handed Frost uses Rune of the Fallen Crusader. Thalassian Phoenix Oil remains the temporary weapon buff."),
             },
             {
                 heading = T("Gems"),
-                body = T("Choose gems to support your current Crit/Haste balance rather than chasing a fixed universal number. Use the current unique epic gem when available, then favor the secondary stat your simulation needs most."),
+                body = T("Use Indecipherable Eversong Diamond as the unique epic gem. Flawless Masterful Garnet is the current default secondary gem direction, but gem colors and exact secondary balance can still change with embellishments and your simulation."),
             },
             {
                 heading = T("Enchants"),
-                body = T("Current general recommendations: Head — Empowered Rune of Avoidance; Shoulders — Amirdrassil's Grace; Chest — Mark of the Worldsoul; Legs — Forest Hunter's Armor Kit; Boots — Lynx's Dexterity; Rings — Eyes of the Eagle."),
+                body = T("Current general recommendations: Head — Empowered Blessing of Speed; Shoulders — Akil'zon's Swiftness; Chest — Mark of the Worldsoul; Legs — Forest Hunter's Armor Kit; Boots — Farstrider's Hunt; Rings — Eyes of the Eagle."),
             },
             {
                 heading = T("Consumables"),
-                body = T("Flask of the Shattered Sun is a common default, while Magisters or Blood Knights flasks can become better depending on your current stats. Potion of Recklessness is the usual default damage potion. Carry Concentrated Silvermoon Health Potions, a current main-stat feast or Royal Roast-style personal food, Thalassian Phoenix Oil when appropriate, and Void-Touched Augment Runes."),
+                body = T("Flask of the Shattered Sun is the current default. Light's Potential is the recommended combat potion, with Draught of Rampant Abandon as a higher-primary-stat alternative that adds a void-zone drawback. Carry Silvermoon Health Potion, Royal Roast, Thalassian Phoenix Oil, and Void-Touched Augment Rune."),
             },
         },
         rotation = {
@@ -241,7 +241,7 @@ Codex.specs = {
         stats = {
             {
                 heading = T("PvE stat priority"),
-                body = T("Critical Strike > Mastery > Haste > Versatility. Crit, Mastery, and Haste are all valuable and significantly stronger than Versatility in current general PvE guidance. Item level and simulation should still decide close upgrades."),
+                body = T("Strength > Critical Strike > Mastery > Haste > Versatility. Item-level upgrades are usually valuable, Crit tends to lead Mastery with Haste close behind, and Versatility is generally the weakest secondary; simulate close upgrades."),
             },
             {
                 heading = T("PvP stat priority"),
@@ -249,19 +249,19 @@ Codex.specs = {
             },
             {
                 heading = T("Runeforge"),
-                body = T("Rune of the Apocalypse plus Thalassian Phoenix Oil is the current strong all-content PvE baseline for Unholy in Patch 12.1. Rune of the Fallen Crusader remains a competitive alternative, so treat the recommendation as build guidance rather than a hard error."),
+                body = T("Rune of the Apocalypse plus Thalassian Phoenix Oil is the current Wowhead PvE recommendation for Unholy in Patch 12.1. DK Mentor still treats other valid DK Runeforges as informational rather than a hard setup failure."),
             },
             {
                 heading = T("Gems"),
-                body = T("Indecipherable Eversong Diamond is the current unique epic choice. Flawless Quick Garnet or Flawless Masterful Garnet are common secondary gems depending on whether your current gear needs more Haste or Mastery."),
+                body = T("Indecipherable Eversong Diamond is the current unique epic choice. Flawless Masterful Garnet and Flawless Deadly Amethyst are the common secondary-gem directions; simulate your exact balance."),
             },
             {
                 heading = T("Enchants"),
-                body = T("Current general recommendations: Head — Empowered Rune of Avoidance; Shoulders — Amirdrassil's Grace; Chest — Mark of the Worldsoul; Legs — Forest Hunter's Armor Kit; Boots — Lynx's Dexterity; Rings — Eyes of the Eagle."),
+                body = T("Current general recommendations: Head — Empowered Blessing of Speed; Shoulders — Akil'zon's Swiftness; Chest — Mark of the Worldsoul; Legs — Forest Hunter's Armor Kit; Boots — Farstrider's Hunt; Rings — Eyes of the Eagle."),
             },
             {
                 heading = T("Consumables"),
-                body = T("Flask of the Shattered Sun is a common default, with Magisters becoming attractive depending on your Crit/Mastery balance. Potion of Recklessness is the usual damage potion. Carry Concentrated Silvermoon Health Potions, a current main-stat feast or Royal Roast-style personal food, Thalassian Phoenix Oil, and Void-Touched Augment Runes."),
+                body = T("Flask of the Magisters is the safe default when you need more Mastery to keep it as your highest secondary rating; use Flask of the Shattered Sun when your existing Mastery is already high enough. Potion of Recklessness is the standard combat potion. Carry Silvermoon Health Potion, Silvermoon Parade or Royal Roast, Thalassian Phoenix Oil, and Void-Touched Augment Rune."),
             },
         },
         rotation = {
@@ -307,6 +307,6 @@ Codex.checkNotes = {
     [252] = T("Unholy: the checker also reports ghoul state when your current setup exposes Raise Dead. Rune of the Apocalypse is the current PvE baseline recommendation, but the checker treats other valid DK Runeforges as informational rather than a hard failure."),
 }
 
-Codex.sourceNote = T("Patch 12.1 guidance reviewed 2026-08-25 from current Death Knight theorycraft/guide references and WoW client data. Use Raidbots or another current simulator for exact personal gear/stat optimization.")
+Codex.sourceNote = T("Patch 12.1 guidance reviewed 2026-09-03 from current Death Knight theorycraft/guide references and WoW client data. Build trees remain intentionally unchanged until post-hotfix talent guides are refreshed; use Raidbots or another current simulator for exact personal gear/stat optimization.")
 
 DKM.Codex = Codex

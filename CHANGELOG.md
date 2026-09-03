@@ -1,3 +1,58 @@
+## 3.1.6 - 2026-09-03 - Preparation, presets, Lich King portrait and Season 2 refresh
+
+- Prepared the complete 3.1 feature set for public release after the 3.1.0-3.1.6 live-test cycle.
+- Added Preparation / Ready Check guidance for Runeforges, enchants, sockets/gems, consumables, and specialization-specific readiness.
+- Added an optional SBA-friendly Build Mentor view while keeping defensives, interrupts, control, utility, and situational decisions manual.
+- Added DKM31 layout preset export/import with backward-compatible portrait position metadata.
+- Added the optional movable/scalable animated Lich King commentary portrait with Arthas/Bolvar selection.
+- Stabilized portrait position across hide/show, playback, scale changes, character switching, `/reload`, and preset round-trips.
+- Fixed locked portrait helper labels, synchronized portrait lifetime to commentary playback, and corrected the Bolvar Lich King model.
+- Added a localized Close / Fechar footer button and fixed Layout Presets modal layering/dragging.
+- DK Ready / DK Pronto now hides during combat and returns afterward when enabled.
+- Compacted the main window while preserving all existing controls.
+- Refreshed 2026-09-03 Blood/Frost/Unholy Gear Mentor, Preparation, and DK Codex guidance from current Patch 12.1 Season 2 sources.
+- Updated Frost dual-wield gear/crafting/consumable/Runeforge guidance, Unholy trinket target-count/AoE guidance, and Blood Runeforge/preparation guidance.
+- Intentionally kept PvE talent trees, Hero Talents, and PvP talent builds unchanged until verified post-September-1-hotfix guide updates are available.
+
+## 3.1.5 - 2026-09-01 - Voice-synced portrait and compact main window
+
+- Fixed the talking portrait remaining animated/visible after a FileDataID voice had already finished; the returned sound handle is now polled with `C_Sound.IsPlaying` and the fallback timer is cleared as soon as playback ends.
+- Reduced portrait shutdown polling from 0.25 s to 0.10 s for a tighter visual/audio finish.
+- Reduced the main DK Mentor window from 830x760 to 820x720 and compacted the Settings layout while preserving all HUD, Loadout Pilot and Lich King controls.
+- Preserved Arthas/Bolvar selection, top-level Layout Presets, Preparation, SBA-friendly guidance and Frost dual-wield Runeforge support.
+
+## 3.1.4 - 2026-09-01 - Portrait and preset UI polish
+- Fixed the Layout Presets window so it always opens above the main DK Mentor window and can be dragged independently.
+- Re-aligned all portrait controls onto one clean row in Lich King Commentary settings.
+- Corrected the Bolvar portrait source to the in-client **The Lich King** NPC (99456), rather than Bolvar without the Helm of Domination.
+- Preserved 3.1.3 portrait animation, character selection, preset persistence, Preparation, SBA-friendly guidance and Frost dual-wield Runeforge logic.
+
+## 3.1.3 - 2026-09-01 - Arthas / Bolvar portrait selector
+- Added a configurable animated portrait character: Arthas or Bolvar.
+- Added `/dkm voice portrait arthas|bolvar` shortcuts.
+- Preserved the portrait-character choice in DKM31 layout preset export/import while keeping older 3.1 preset strings compatible.
+- Kept commentary audio unchanged; the selector affects the visual speaker only and bundles no Blizzard assets.
+
+## 3.1.1 - 2026-09-01 - Core.lua local-variable crash fix
+
+## 3.1.2
+- Animated the optional Lich King commentary portrait while voice playback is active.
+- Fixed Preparation enchant cards that could remain on CHECKING when equipped item links were unavailable.
+- Made Frost dual-wield Runeforge guidance explicit by Main Hand and Off Hand.
+
+- Moved 3.1 portrait/preset state and several long-lived constants/helpers onto the addon namespace, reducing chunk-level locals from 215 to 185 without changing gameplay behavior.
+- Added a validation guard so future builds fail before packaging if `Core.lua` approaches WoW's 200-local chunk limit.
+- Preserved the 3.1 Preparation / Ready Check, SBA-friendly Build Mentor, layout presets, and optional Lich King portrait.
+
+## 3.1.0 - 2026-09-01 - Preparation, accessibility and layout presets
+- Added a visual Preparation / Ready Check for Runeforge, common enchants, sockets/gems and current Season 2 consumables.
+- Added specialization-aware preparation data for Blood, Frost 2H/Dual Wield and Unholy, including current Runeforge direction.
+- Added an optional SBA-friendly Build Mentor view for players who rely on Blizzard Single-Button Assistant, while keeping defensives, interrupts, CC, utility and situational decisions explicitly manual.
+- Added DKM31 layout preset export/import for DK Mentor HUD positions and supported visual settings, with bounded parsing and combat-safe import restrictions.
+- Added an optional movable/scalable Lich King commentary portrait using WoW-native resources when available, with a safe icon fallback and no bundled Blizzard assets.
+- Refreshed the Death Knight data review for Retail 12.1.0 / Midnight Season 2 after checking current Blizzard hotfixes, Wowhead PvE/gear/preparation guidance and Icy Veins PvP guidance.
+- Added `/dkm prep` and `/dkm preset` shortcuts plus EN/ptBR localization and live-test coverage for the 3.1 systems.
+
 ## 3.0.17 - 2026-08-30 - Visual Build Mentor
 - Rebuilt the DK Codex **Builds** section into a visual **Build Mentor**.
 - Added manual content selection for **Auto / World / Delves / Dungeon / Mythic+ / Raid / PvP** without changing the player's actual specialization or talents.

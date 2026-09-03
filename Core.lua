@@ -5,6 +5,7 @@ local Builds = DKM.Builds or {}
 local Voices = DKM.Voices or {}
 local Guides = DKM.Guides or {}
 local GearData = DKM.GearData or {}
+DKM.PreparationData = DKM.PreparationData or {}
 local T = DKM.T or function(value, ...)
     if select("#", ...) > 0 then
         return string.format(value, ...)
@@ -23,6 +24,8 @@ local minimapButton
 local statusWidget
 local specializationPickerFrame
 local voiceConfigFrame
+addon.lichKingPortraitFrame = nil
+addon.layoutPresetFrame = nil
 local languagePickerFrame
 local barLayoutFrame
 local buffFrame
@@ -281,7 +284,7 @@ local function ApplyDefaults(target, defaults)
 end
 
 local DEFAULTS = {
-    schema = 31,
+    schema = 33,
     firstRun = true,
     majorReleaseNotice = "",
     languageOverride = "auto",
@@ -292,6 +295,7 @@ local DEFAULTS = {
     codexSpecID = 0,
     codexSection = "overview",
     codexBuildContext = "auto",
+    codexBuildMode = "standard",
     codexGearView = "overview",
     hudLocked = true,
     main = {
@@ -399,6 +403,16 @@ local DEFAULTS = {
         allowInPvP = true,
         situational = true,
         selections = {},
+        portrait = {
+            enabled = false,
+            locked = true,
+            point = "CENTER",
+            relativePoint = "CENTER",
+            x = 0,
+            y = 165,
+            scale = 1,
+            character = "arthas",
+        },
     },
 }
 
@@ -447,8 +461,8 @@ local function IsSpellKnownSafe(spellID)
     return true
 end
 
-local MAIN_HAND_SLOT = _G.INVSLOT_MAINHAND or 16
-local OFF_HAND_SLOT = _G.INVSLOT_OFFHAND or 17
+addon.MAIN_HAND_SLOT = _G.INVSLOT_MAINHAND or 16
+addon.OFF_HAND_SLOT = _G.INVSLOT_OFFHAND or 17
 
 local function GetEquippedItemData(slotID)
     local itemID
@@ -468,6 +482,27 @@ local function GetEquippedItemData(slotID)
         end
     end
 
+    -- Midnight can occasionally withhold the legacy inventory link even while
+    -- the equipped item itself is known.  Try the namespaced ItemLocation API
+    -- before treating the slot as still loading.
+    if (not itemID or not itemLink) and ItemLocation and ItemLocation.CreateFromEquipmentSlot and C_Item then
+        local okLoc, location = pcall(ItemLocation.CreateFromEquipmentSlot, ItemLocation, slotID)
+        if okLoc and location then
+            if not itemID and C_Item.GetItemID then
+                local okID, value = pcall(C_Item.GetItemID, location)
+                if okID and IsAccessibleValue(value) and type(value) == "number" and value > 0 then
+                    itemID = value
+                end
+            end
+            if not itemLink and C_Item.GetItemLink then
+                local okLink, value = pcall(C_Item.GetItemLink, location)
+                if okLink and IsAccessibleValue(value) and type(value) == "string" then
+                    itemLink = value
+                end
+            end
+        end
+    end
+
     return itemID, itemLink
 end
 
@@ -479,6 +514,42 @@ local function GetPermanentEnchantID(itemLink)
     -- Item links begin with item:<itemID>:<permanentEnchantID>:...
     local value = itemLink:match("item:%-?%d+:(%-?%d+)")
     return tonumber(value)
+end
+
+
+function addon:GetPermanentEnchantState(slotID)
+    local itemID, itemLink = GetEquippedItemData(slotID)
+    if not itemID and not itemLink then
+        return false, true, 0
+    end
+
+    if itemLink then
+        local enchantID = GetPermanentEnchantID(itemLink)
+        if enchantID ~= nil then
+            return enchantID > 0, true, enchantID
+        end
+    end
+
+    -- TooltipInfo exposes permanent enchantment rows directly and is a safer
+    -- fallback on Midnight when an equipped item's hyperlink is temporarily
+    -- unavailable to addon Lua.  This prevents Preparation cards from sitting
+    -- on CHECKING forever when the client can already render the item tooltip.
+    if C_TooltipInfo and C_TooltipInfo.GetInventoryItem then
+        local ok, data = pcall(C_TooltipInfo.GetInventoryItem, "player", slotID)
+        if ok and type(data) == "table" and type(data.lines) == "table" then
+            local permanentType = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.ItemEnchantmentPermanent or 15
+            for _, line in ipairs(data.lines) do
+                if type(line) == "table" and IsAccessibleNumber(line.type) and line.type == permanentType then
+                    return true, true, nil
+                end
+            end
+            -- The tooltip exists and contains a complete line table.  If there
+            -- is no permanent-enchantment row, the slot is genuinely missing it.
+            return false, true, 0
+        end
+    end
+
+    return false, false, nil
 end
 
 function addon:GetRuneforgeSlotStatus(slotID, slotLabel)
@@ -535,8 +606,8 @@ function addon:GetRuneforgeSlotStatus(slotID, slotLabel)
 end
 
 function addon:GetRuneforgeStatus()
-    local main = self:GetRuneforgeSlotStatus(MAIN_HAND_SLOT, T("Main hand"))
-    local off = self:GetRuneforgeSlotStatus(OFF_HAND_SLOT, T("Off hand"))
+    local main = self:GetRuneforgeSlotStatus(addon.MAIN_HAND_SLOT, T("Main hand"))
+    local off = self:GetRuneforgeSlotStatus(addon.OFF_HAND_SLOT, T("Off hand"))
     local required = { main }
     if off.equipped then
         table.insert(required, off)
@@ -1314,10 +1385,20 @@ function addon:IsVoicePlaying()
         if ok and playing then
             return true
         elseif ok then
+            -- PlaySoundFile does not expose a finish callback for FileDataIDs,
+            -- so poll the returned sound handle. Keep a tiny startup grace period
+            -- in case the queued sound has not begun on the very first frame.
+            if now - (addon.voiceStartedAt or 0) < 0.20 then
+                return true
+            end
             voiceHandle = nil
+            voiceBusyUntil = 0
+            return false
         end
     end
 
+    -- Fallback for clients where a usable sound handle / C_Sound.IsPlaying is
+    -- unavailable. Normal Retail clients should leave through the handle path.
     return now < (voiceBusyUntil or 0)
 end
 
@@ -1328,6 +1409,9 @@ function addon:StopVoice()
 
     voiceHandle = nil
     voiceBusyUntil = 0
+    addon.voiceStartedAt = 0
+    self:SetLichKingPortraitTalking(false)
+    if addon.lichKingPortraitFrame then addon.lichKingPortraitFrame:Hide() end
 end
 
 function addon:IsVoiceAllowedInCurrentContext()
@@ -1356,7 +1440,12 @@ function addon:PlayVoiceFile(fileDataID)
     end
 
     voiceHandle = type(soundHandle) == "number" and soundHandle or nil
-    voiceBusyUntil = GetNow() + 10
+    addon.voiceStartedAt = GetNow()
+    -- This timeout is only a fail-safe when the client cannot report whether
+    -- the returned sound handle is still playing. The portrait normally stops
+    -- as soon as C_Sound.IsPlaying reports that the voice has ended.
+    voiceBusyUntil = addon.voiceStartedAt + 7
+    self:ShowLichKingPortrait()
     return true
 end
 
@@ -1689,6 +1778,12 @@ function addon:HandleVoiceCommand(rest)
         end
     elseif action == "map" or action == "mapping" or action == "voices" then
         self:ToggleVoiceConfigFrame()
+    elseif action == "portrait" then
+        if value == "arthas" or value == "bolvar" then
+            self:SetLichKingPortraitCharacter(value)
+        else
+            Print(T("Use /dkm voice portrait arthas or /dkm voice portrait bolvar."))
+        end
     elseif action == "reset" then
         self:ResetVoiceSelections()
     elseif action == "pvp" then
@@ -1712,7 +1807,7 @@ function addon:HandleVoiceCommand(rest)
             tostring(lastVoiceAttemptResult or "none")
         ))
     else
-        Print(T("Use /dkm voice on|off|test|low|normal|high|status|map|reset, /dkm voice pvp on|off, or /dkm voice situations on|off."))
+        Print(T("Use /dkm voice on|off|test|low|normal|high|status|map|reset, /dkm voice pvp on|off, /dkm voice situations on|off, or /dkm voice portrait arthas|bolvar."))
     end
 end
 
@@ -1739,7 +1834,7 @@ local function CreateSection(parent, title, topOffset, height)
     return section
 end
 
-local ACTION_BUTTON_BACKDROP = {
+addon.ACTION_BUTTON_BACKDROP = {
     bgFile = "Interface\\Buttons\\WHITE8X8",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = false,
@@ -1791,7 +1886,7 @@ end
 local function CreateActionButton(parent, width, height, label)
     local button = CreateFrame("Button", nil, parent, "BackdropTemplate")
     button:SetSize(width or 120, height or 28)
-    button:SetBackdrop(ACTION_BUTTON_BACKDROP)
+    button:SetBackdrop(addon.ACTION_BUTTON_BACKDROP)
 
     local fontString = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     fontString:SetPoint("LEFT", button, "LEFT", 8, 0)
@@ -2047,7 +2142,7 @@ end
 
 local function CreateMainFrame()
     local frame = CreateFrame("Frame", "DKMentorMainFrame", UIParent, "BackdropTemplate")
-    frame:SetSize(830, 760)
+    frame:SetSize(820, 720)
     frame:SetFrameStrata("DIALOG")
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
@@ -2109,8 +2204,8 @@ local function CreateMainFrame()
     frame.pages = {}
     local function CreatePage(key)
         local page = CreateFrame("Frame", nil, frame)
-        page:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -108)
-        page:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 42)
+        page:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -104)
+        page:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 34)
         page:Hide()
         frame.pages[key] = page
         return page
@@ -2318,7 +2413,7 @@ local function CreateMainFrame()
     guide.buildActions = CreateFrame("Frame", nil, guide)
     guide.buildActions:SetPoint("TOPLEFT", guide, "TOPLEFT", guide.contentLeft, -58)
     guide.buildActions:SetPoint("TOPRIGHT", guide, "TOPRIGHT", -12, -58)
-    guide.buildActions:SetHeight(58)
+    guide.buildActions:SetHeight(88)
     guide.buildActions:Hide()
 
     guide.buildContextButtons = {}
@@ -2344,9 +2439,29 @@ local function CreateMainFrame()
         guide.buildContextButtons[choice.key] = button
     end
 
+    guide.buildModeButtons = {}
+    local standardMode = CreateFlatTabButton(guide.buildActions, 138, 22, T("Standard"))
+    standardMode:SetPoint("TOPLEFT", guide.buildActions, "TOPLEFT", 2, -31)
+    standardMode.buildMode = "standard"
+    standardMode:SetScript("OnClick", function(self) addon:SetCodexBuildMode(self.buildMode) end)
+    guide.buildModeButtons.standard = standardMode
+
+    local sbaMode = CreateFlatTabButton(guide.buildActions, 150, 22, T("SBA-friendly"))
+    sbaMode:SetPoint("LEFT", standardMode, "RIGHT", 6, 0)
+    sbaMode.buildMode = "sba"
+    sbaMode:SetScript("OnClick", function(self) addon:SetCodexBuildMode(self.buildMode) end)
+    guide.buildModeButtons.sba = sbaMode
+
+    guide.buildModeHint = guide.buildActions:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    guide.buildModeHint:SetPoint("LEFT", sbaMode, "RIGHT", 10, 0)
+    guide.buildModeHint:SetPoint("RIGHT", guide.buildActions, "RIGHT", -2, 0)
+    guide.buildModeHint:SetHeight(22)
+    guide.buildModeHint:SetJustifyH("LEFT")
+    guide.buildModeHint:SetTextColor(0.72, 0.86, 0.93)
+
     guide.sourceURLBox = CreateFrame("EditBox", nil, guide.buildActions, "InputBoxTemplate")
     guide.sourceURLBox:SetSize(238, 22)
-    guide.sourceURLBox:SetPoint("TOPLEFT", guide.buildActions, "TOPLEFT", 2, -31)
+    guide.sourceURLBox:SetPoint("TOPLEFT", guide.buildActions, "TOPLEFT", 2, -62)
     guide.sourceURLBox:SetAutoFocus(false)
     guide.sourceURLBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
@@ -2374,14 +2489,17 @@ local function CreateMainFrame()
     local gearViews = {
         { key = "overview", label = T("Overview") },
         { key = "targets", label = T("Gear") },
+        { key = "preparation", label = T("Preparation") },
         { key = "crafting", label = T("Crafting") },
         { key = "sources", label = T("Sources") },
         { key = "trinkets", label = T("Trinkets") },
         { key = "upgrades", label = T("Upgrades") },
     }
+    local gearViewGap = 4
+    local gearViewWidth = math.floor(((guide.contentWidth - 8) - (gearViewGap * (#gearViews - 1))) / #gearViews)
     for index, choice in ipairs(gearViews) do
-        local button = CreateFlatTabButton(guide.gearActions, 98, 24, choice.label)
-        button:SetPoint("LEFT", guide.gearActions, "LEFT", 2 + ((index - 1) * 101), 0)
+        local button = CreateFlatTabButton(guide.gearActions, gearViewWidth, 24, choice.label)
+        button:SetPoint("LEFT", guide.gearActions, "LEFT", 2 + ((index - 1) * (gearViewWidth + gearViewGap)), 0)
         button.gearView = choice.key
         button:SetScript("OnClick", function(self) addon:SetCodexGearView(self.gearView) end)
         guide.gearViewButtons[choice.key] = button
@@ -2402,13 +2520,13 @@ local function CreateMainFrame()
     local languageFont = frame.languageButton.GetFontString and frame.languageButton:GetFontString()
     if languageFont and GameFontNormalSmall then languageFont:SetFontObject(GameFontNormalSmall) end
 
-    frame.hudSection = CreateSection(settingsPage, T("HUDs and layout"), -38, 315)
+    frame.hudSection = CreateSection(settingsPage, T("HUDs and layout"), -38, 288)
     local hud = frame.hudSection
 
     hud.description = hud:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     hud.description:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -31)
     hud.description:SetWidth(390)
-    hud.description:SetHeight(34)
+    hud.description:SetHeight(30)
     hud.description:SetJustifyH("LEFT")
     hud.description:SetJustifyV("TOP")
     hud.description:SetText(T("Choose which combat HUDs are visible. Unlock them only while arranging the interface, then lock them again to prevent accidental dragging."))
@@ -2435,56 +2553,56 @@ local function CreateMainFrame()
 
     hud.buildButton = CreateActionButton(hud)
     hud.buildButton:SetSize(190, 24)
-    hud.buildButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -72)
+    hud.buildButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -68)
     hud.buildButton:SetScript("OnClick", function() addon:SetStatusWidgetEnabled(not DB.statusWidget.enabled) end)
-    AddHudRow(-68, T("Shows detected content and DK Ready status beside your specialization icon."))
+    AddHudRow(-65, T("Shows detected content and DK Ready status beside your specialization icon."))
 
     hud.coachButton = CreateActionButton(hud)
     hud.coachButton:SetSize(190, 24)
-    hud.coachButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -97)
+    hud.coachButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -90)
     hud.coachButton:SetScript("OnClick", function() addon:SetCoachEnabled(not DB.coach.enabled) end)
-    AddHudRow(-93, T("Shows defensive and recovery recommendations, including health-adaptive priorities."))
+    AddHudRow(-87, T("Shows defensive and recovery recommendations, including health-adaptive priorities."))
 
     hud.buffButton = CreateActionButton(hud)
     hud.buffButton:SetSize(190, 24)
-    hud.buffButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -122)
+    hud.buffButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -112)
     hud.buffButton:SetScript("OnClick", function() addon:SetBuffBarEnabled(not DB.buffBar.enabled) end)
-    AddHudRow(-118, T("Shows important Death Knight buffs in a compact movable row."))
+    AddHudRow(-109, T("Shows important Death Knight buffs in a compact movable row."))
 
     hud.externalBuffButton = CreateActionButton(hud)
     hud.externalBuffButton:SetSize(190, 24)
-    hud.externalBuffButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -147)
+    hud.externalBuffButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -134)
     hud.externalBuffButton:SetScript("OnClick", function() addon:SetExternalBuffBarEnabled(not DB.externalBuffBar.enabled) end)
-    AddHudRow(-143, T("Shows helpful effects on you that were applied by other players or NPCs."))
+    AddHudRow(-131, T("Shows helpful effects on you that were applied by other players or NPCs."))
 
     hud.debuffButton = CreateActionButton(hud)
     hud.debuffButton:SetSize(190, 24)
-    hud.debuffButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -172)
+    hud.debuffButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -156)
     hud.debuffButton:SetScript("OnClick", function() addon:SetDebuffBarEnabled(not DB.debuffBar.enabled) end)
-    AddHudRow(-168, T("Shows harmful effects currently affecting your character."))
+    AddHudRow(-153, T("Shows harmful effects currently affecting your character."))
 
     hud.abilityButton = CreateActionButton(hud)
     hud.abilityButton:SetSize(190, 24)
-    hud.abilityButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -197)
+    hud.abilityButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -178)
     hud.abilityButton:SetScript("OnClick", function() addon:SetAbilityBarEnabled(not DB.abilityBar.enabled) end)
-    AddHudRow(-193, T("Shows important abilities and whether they are ready, cooling down, or temporarily unusable."))
+    AddHudRow(-175, T("Shows important abilities and whether they are ready, cooling down, or temporarily unusable."))
 
     hud.resourceButton = CreateActionButton(hud)
     hud.resourceButton:SetSize(190, 24)
-    hud.resourceButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -222)
+    hud.resourceButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -200)
     hud.resourceButton:SetScript("OnClick", function() addon:SetResourceHUDEnabled(not DB.resourceHUD.enabled) end)
-    hud.resourceDescription = AddHudRow(-218, T("Shows all six Runes plus Runic Power in a compact movable Death Knight resource HUD."))
+    hud.resourceDescription = AddHudRow(-197, T("Shows all six Runes plus Runic Power in a compact movable Death Knight resource HUD."))
 
     hud.interruptButton = CreateActionButton(hud)
     hud.interruptButton:SetSize(190, 24)
-    hud.interruptButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -247)
+    hud.interruptButton:SetPoint("TOPLEFT", hud, "TOPLEFT", 12, -222)
     hud.interruptButton:SetScript("OnClick", function() addon:SetInterruptAlertEnabled(not DB.interruptAlert.enabled) end)
-    hud.interruptDescription = AddHudRow(-243, T("Shows the Mind Freeze icon only when your current target has a confirmed interruptible cast or channel."))
+    hud.interruptDescription = AddHudRow(-219, T("Shows the Mind Freeze icon only when your current target has a confirmed interruptible cast or channel."))
     hud.interruptDescription:SetWidth(400)
 
     hud.interruptOptionsButton = CreateActionButton(hud)
     hud.interruptOptionsButton:SetSize(120, 24)
-    hud.interruptOptionsButton:SetPoint("TOPRIGHT", hud, "TOPRIGHT", -12, -247)
+    hud.interruptOptionsButton:SetPoint("TOPRIGHT", hud, "TOPRIGHT", -12, -222)
     hud.interruptOptionsButton:SetText(T("Interrupt options..."))
     hud.interruptOptionsButton:SetScript("OnClick", function()
         if DKM.MentorStudio and DKM.MentorStudio.OpenInterrupt then
@@ -2504,66 +2622,72 @@ local function CreateMainFrame()
 
     -- Keep the layout controls on one clean row even with localized labels.
     hud.lockButton = CreateActionButton(hud)
-    hud.lockButton:SetSize(170, 27)
+    hud.lockButton:SetSize(137, 27)
     hud.lockButton:SetPoint("BOTTOMLEFT", hud, "BOTTOMLEFT", 12, 12)
     hud.lockButton:SetScript("OnClick", function() addon:ToggleHUDLock() end)
 
     hud.previewButton = CreateActionButton(hud)
-    hud.previewButton:SetSize(180, 27)
-    hud.previewButton:SetPoint("LEFT", hud.lockButton, "RIGHT", 8, 0)
+    hud.previewButton:SetSize(142, 27)
+    hud.previewButton:SetPoint("LEFT", hud.lockButton, "RIGHT", 7, 0)
     hud.previewButton:SetScript("OnClick", function() addon:ToggleHUDPreview() end)
 
     hud.barLayoutButton = CreateActionButton(hud)
-    hud.barLayoutButton:SetSize(180, 27)
-    hud.barLayoutButton:SetPoint("LEFT", hud.previewButton, "RIGHT", 8, 0)
+    hud.barLayoutButton:SetSize(149, 27)
+    hud.barLayoutButton:SetPoint("LEFT", hud.previewButton, "RIGHT", 7, 0)
     hud.barLayoutButton:SetText(T("HUD appearance..."))
     hud.barLayoutButton:SetScript("OnClick", function() addon:ToggleBarLayoutFrame() end)
 
+    hud.presetButton = CreateActionButton(hud)
+    hud.presetButton:SetSize(143, 27)
+    hud.presetButton:SetPoint("LEFT", hud.barLayoutButton, "RIGHT", 7, 0)
+    hud.presetButton:SetText(T("Layout presets..."))
+    hud.presetButton:SetScript("OnClick", function() addon:ToggleLayoutPresetFrame() end)
+
     hud.resetButton = CreateActionButton(hud)
-    hud.resetButton:SetSize(200, 27)
-    hud.resetButton:SetPoint("LEFT", hud.barLayoutButton, "RIGHT", 8, 0)
-    hud.resetButton:SetText(T("Reset HUD positions"))
+    hud.resetButton:SetSize(145, 27)
+    hud.resetButton:SetPoint("LEFT", hud.presetButton, "RIGHT", 7, 0)
+    hud.resetButton:SetText(T("Reset HUDs"))
     hud.resetButton:SetScript("OnClick", function() addon:ResetHUDPositions() end)
 
-    for _, button in ipairs({ hud.lockButton, hud.previewButton, hud.barLayoutButton, hud.resetButton }) do
+    for _, button in ipairs({ hud.lockButton, hud.previewButton, hud.barLayoutButton, hud.presetButton, hud.resetButton }) do
         local fontString = button.GetFontString and button:GetFontString()
         if fontString and GameFontNormalSmall then
             fontString:SetFontObject(GameFontNormalSmall)
         end
     end
 
-    frame.loadoutPilotSection = CreateSection(settingsPage, T("Loadout automation"), -363, 100)
+    frame.loadoutPilotSection = CreateSection(settingsPage, T("Loadout automation"), -331, 82)
     local pilot = frame.loadoutPilotSection
     pilot.description = pilot:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     pilot.description:SetPoint("TOPLEFT", pilot, "TOPLEFT", 12, -30)
     pilot.description:SetWidth(520)
-    pilot.description:SetHeight(54)
+    pilot.description:SetHeight(42)
     pilot.description:SetJustifyH("LEFT")
     pilot.description:SetJustifyV("TOP")
 
     pilot.openButton = CreateActionButton(pilot)
     pilot.openButton:SetSize(190, 28)
-    pilot.openButton:SetPoint("TOPRIGHT", pilot, "TOPRIGHT", -12, -37)
+    pilot.openButton:SetPoint("TOPRIGHT", pilot, "TOPRIGHT", -12, -31)
     pilot.openButton:SetScript("OnClick", function() addon:OpenLoadoutPilot() end)
 
-    frame.voiceSection = CreateSection(settingsPage, T("Lich King commentary"), -468, 150)
+    frame.voiceSection = CreateSection(settingsPage, T("Lich King commentary"), -418, 156)
     local voice = frame.voiceSection
 
     voice.status = voice:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     voice.status:SetPoint("TOPLEFT", voice, "TOPLEFT", 12, -31)
     voice.status:SetWidth(525)
-    voice.status:SetHeight(55)
+    voice.status:SetHeight(43)
     voice.status:SetJustifyH("LEFT")
     voice.status:SetJustifyV("TOP")
 
     voice.toggleButton = CreateActionButton(voice)
     voice.toggleButton:SetSize(190, 27)
-    voice.toggleButton:SetPoint("TOPRIGHT", voice, "TOPRIGHT", -12, -30)
+    voice.toggleButton:SetPoint("TOPRIGHT", voice, "TOPRIGHT", -12, -28)
     voice.toggleButton:SetScript("OnClick", function() addon:ToggleVoice() end)
 
     voice.situationalButton = CreateActionButton(voice)
     voice.situationalButton:SetSize(150, 27)
-    voice.situationalButton:SetPoint("TOPLEFT", voice, "TOPLEFT", 12, -88)
+    voice.situationalButton:SetPoint("TOPLEFT", voice, "TOPLEFT", 12, -76)
     voice.situationalButton:SetScript("OnClick", function()
         DB.voice.situational = not DB.voice.situational
         addon:UpdateVoiceSection()
@@ -2587,8 +2711,35 @@ local function CreateMainFrame()
     voice.frequencyButton:SetPoint("LEFT", voice.previewButton, "RIGHT", 8, 0)
     voice.frequencyButton:SetScript("OnClick", function() addon:CycleVoiceFrequency() end)
 
+    voice.portraitButton = CreateActionButton(voice)
+    voice.portraitButton:SetSize(145, 27)
+    voice.portraitButton:SetPoint("TOPLEFT", voice, "TOPLEFT", 12, -111)
+    voice.portraitButton:SetScript("OnClick", function() addon:SetLichKingPortraitEnabled(not (DB.voice.portrait and DB.voice.portrait.enabled)) end)
+
+    voice.portraitLockButton = CreateActionButton(voice)
+    voice.portraitLockButton:SetSize(155, 27)
+    voice.portraitLockButton:SetPoint("LEFT", voice.portraitButton, "RIGHT", 8, 0)
+    voice.portraitLockButton:SetScript("OnClick", function() addon:ToggleLichKingPortraitLock() end)
+
+    voice.portraitScaleButton = CreateActionButton(voice)
+    voice.portraitScaleButton:SetSize(165, 27)
+    voice.portraitScaleButton:SetPoint("LEFT", voice.portraitLockButton, "RIGHT", 8, 0)
+    voice.portraitScaleButton:SetScript("OnClick", function() addon:CycleLichKingPortraitScale() end)
+
+    voice.portraitCharacterButton = CreateActionButton(voice)
+    voice.portraitCharacterButton:SetSize(220, 27)
+    voice.portraitCharacterButton:SetPoint("LEFT", voice.portraitScaleButton, "RIGHT", 8, 0)
+    voice.portraitCharacterButton:SetScript("OnClick", function() addon:CycleLichKingPortraitCharacter() end)
+    voice.portraitCharacterButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(T("Portrait character"), 0.66, 0.90, 1.00)
+        GameTooltip:AddLine(T("Choose whether the animated commentary portrait shows Arthas or Bolvar. This setting changes the visual portrait only; commentary audio continues to use the existing Lich King voice resources."), 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    voice.portraitCharacterButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
     frame.footer = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    frame.footer:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 22)
+    frame.footer:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 14)
     frame.footer:SetWidth(790)
     frame.footer:SetJustifyH("LEFT")
     frame.footer:SetText(T(
@@ -3192,19 +3343,19 @@ local function UpdateManagedAuraBarChrome(frame)
     end
 end
 
-local MANAGED_AURA_ICON_SIZE = 34
-local MANAGED_AURA_SPACING = 4
-local MANAGED_AURAS_PER_LINE = 5
-local MANAGED_AURA_MAX_FRAMES = 30
+addon.MANAGED_AURA_ICON_SIZE = 34
+addon.MANAGED_AURA_SPACING = 4
+addon.MANAGED_AURAS_PER_LINE = 5
+addon.MANAGED_AURA_MAX_FRAMES = 30
 
 local function GetManagedAuraLineSize(perLine)
-    perLine = math.max(1, math.floor(tonumber(perLine) or MANAGED_AURAS_PER_LINE))
-    return (perLine * (MANAGED_AURA_ICON_SIZE + MANAGED_AURA_SPACING)) + 1
+    perLine = math.max(1, math.floor(tonumber(perLine) or addon.MANAGED_AURAS_PER_LINE))
+    return (perLine * (addon.MANAGED_AURA_ICON_SIZE + addon.MANAGED_AURA_SPACING)) + 1
 end
 
 local function ConfigureManagedAuraFlow(container, perLine)
     if not container then return end
-    perLine = math.max(1, math.floor(tonumber(perLine) or MANAGED_AURAS_PER_LINE))
+    perLine = math.max(1, math.floor(tonumber(perLine) or addon.MANAGED_AURAS_PER_LINE))
     local lineSize = GetManagedAuraLineSize(perLine)
 
     -- The default remains five icons per row, but the user can widen/narrow
@@ -3231,8 +3382,8 @@ end
 local function CreateManagedAuraBar(frameName, dbKey, title, slotStore, filterString, harmful, candidateFilters)
     -- Build the legacy row first as a compatibility fallback. On Retail 12.1 the
     -- managed container path below takes over and these ordinary slots stay hidden.
-    local frame = CreateTrackingBar(frameName, dbKey, title, slotStore, MANAGED_AURA_MAX_FRAMES, 0.25)
-    local perLine = GetConfiguredBarColumns(dbKey, MANAGED_AURAS_PER_LINE, 10)
+    local frame = CreateTrackingBar(frameName, dbKey, title, slotStore, addon.MANAGED_AURA_MAX_FRAMES, 0.25)
+    local perLine = GetConfiguredBarColumns(dbKey, addon.MANAGED_AURAS_PER_LINE, 10)
     local lineSize = GetManagedAuraLineSize(perLine)
     frame:SetSize(math.max(92, 14 + (perLine * 38)), 56)
     if frame.label then
@@ -3252,12 +3403,12 @@ local function CreateManagedAuraBar(frameName, dbKey, title, slotStore, filterSt
     -- The bottom row remains at the saved HUD position; wrapped rows are placed
     -- above it by the AuraContainer flow engine.
     container:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 7, 18)
-    container:SetSize(lineSize, MANAGED_AURA_ICON_SIZE)
+    container:SetSize(lineSize, addon.MANAGED_AURA_ICON_SIZE)
     container:Show()
     ConfigureManagedAuraFlow(container, perLine)
 
     local options = {
-        maxFrameCount = MANAGED_AURA_MAX_FRAMES,
+        maxFrameCount = addon.MANAGED_AURA_MAX_FRAMES,
         initializeFrame = function(button)
             -- Styling is the only addon work performed on the AuraButton. Blizzard
             -- may apply forbidden/secret aspects immediately after this callback,
@@ -3266,10 +3417,10 @@ local function CreateManagedAuraBar(frameName, dbKey, title, slotStore, filterSt
         end,
         candidateFilters = candidateFilters or {},
         layout = {
-            elementWidth = MANAGED_AURA_ICON_SIZE,
-            elementHeight = MANAGED_AURA_ICON_SIZE,
-            elementSpacing = MANAGED_AURA_SPACING,
-            lineSpacing = MANAGED_AURA_SPACING,
+            elementWidth = addon.MANAGED_AURA_ICON_SIZE,
+            elementHeight = addon.MANAGED_AURA_ICON_SIZE,
+            elementSpacing = addon.MANAGED_AURA_SPACING,
+            lineSpacing = addon.MANAGED_AURA_SPACING,
             maximumLineSize = lineSize,
         },
     }
@@ -3339,7 +3490,7 @@ end
 
 local function ShowManagedAuraPreview(frame, slotStore)
     if not frame then return end
-    local columns = GetConfiguredBarColumns(frame.dbKey, MANAGED_AURAS_PER_LINE, 10)
+    local columns = GetConfiguredBarColumns(frame.dbKey, addon.MANAGED_AURAS_PER_LINE, 10)
     frame.slotsPerRow = columns
     frame:SetSize(math.max(92, 14 + (columns * 38)), 56)
     LayoutTrackingSlots(frame, slotStore, columns, true)
@@ -3385,18 +3536,18 @@ local function ApplyManagedAuraLayout(frame)
         return
     end
 
-    local columns = GetConfiguredBarColumns(frame.dbKey, MANAGED_AURAS_PER_LINE, 10)
+    local columns = GetConfiguredBarColumns(frame.dbKey, addon.MANAGED_AURAS_PER_LINE, 10)
     local lineSize = GetManagedAuraLineSize(columns)
     frame.slotsPerRow = columns
     frame:SetSize(math.max(92, 14 + (columns * 38)), 56)
-    frame.managedAuraContainer:SetSize(lineSize, MANAGED_AURA_ICON_SIZE)
+    frame.managedAuraContainer:SetSize(lineSize, addon.MANAGED_AURA_ICON_SIZE)
     ConfigureManagedAuraFlow(frame.managedAuraContainer, columns)
     if frame.managedAuraContainer.SetAuraGroupLayout then
         pcall(frame.managedAuraContainer.SetAuraGroupLayout, frame.managedAuraContainer, frame.managedAuraGroupKey, {
-            elementWidth = MANAGED_AURA_ICON_SIZE,
-            elementHeight = MANAGED_AURA_ICON_SIZE,
-            elementSpacing = MANAGED_AURA_SPACING,
-            lineSpacing = MANAGED_AURA_SPACING,
+            elementWidth = addon.MANAGED_AURA_ICON_SIZE,
+            elementHeight = addon.MANAGED_AURA_ICON_SIZE,
+            elementSpacing = addon.MANAGED_AURA_SPACING,
+            lineSpacing = addon.MANAGED_AURA_SPACING,
             maximumLineSize = lineSize,
         })
     end
@@ -3407,7 +3558,7 @@ end
 local function RestoreManagedAuraRuntime(frame, slotStore)
     if not frame or not frame.managedAuraContainer then return end
     HideTrackingSlots(slotStore)
-    local configuredColumns = GetConfiguredBarColumns(frame.dbKey, MANAGED_AURAS_PER_LINE, 10)
+    local configuredColumns = GetConfiguredBarColumns(frame.dbKey, addon.MANAGED_AURAS_PER_LINE, 10)
     if frame.managedAuraLayoutPending == true or frame.managedAuraAppliedColumns ~= configuredColumns then
         ApplyManagedAuraLayout(frame)
     end
@@ -3461,7 +3612,7 @@ local function CreateAbilityBar()
     return CreateTrackingBar("DKMentorAbilityBar", "abilityBar", T("Abilities"), abilitySlots, 11, 0.12)
 end
 
-local RESOURCE_RUNE_LAYOUTS = {
+addon.RESOURCE_RUNE_LAYOUTS = {
     compact = { runeWidth = 40, gap = 3 },
     normal = { runeWidth = 47, gap = 4 },
     wide = { runeWidth = 54, gap = 6 },
@@ -3469,7 +3620,7 @@ local RESOURCE_RUNE_LAYOUTS = {
 
 local function NormalizeResourceRuneSpacing(value)
     value = tostring(value or "normal")
-    if not RESOURCE_RUNE_LAYOUTS[value] then return "normal" end
+    if not addon.RESOURCE_RUNE_LAYOUTS[value] then return "normal" end
     return value
 end
 
@@ -3492,7 +3643,7 @@ local function LayoutResourceHUDComponents(frame, showRunes, showRunicPower)
 
     local config = DB and DB.resourceHUD or DEFAULTS.resourceHUD
     local spacingKey = NormalizeResourceRuneSpacing(config and config.runeSpacing)
-    local spacing = RESOURCE_RUNE_LAYOUTS[spacingKey]
+    local spacing = addon.RESOURCE_RUNE_LAYOUTS[spacingKey]
     local contentWidth = (spacing.runeWidth * 6) + (spacing.gap * 5)
     local frameWidth = contentWidth + 28
 
@@ -3632,13 +3783,13 @@ local function CreateResourceHUD()
     return frame
 end
 
-local DK_ARC_FILL_TEXTURE = "Interface\\AddOns\\DKMentor\\Media\\DKArcFill"
-local DK_ARC_BG_TEXTURE = "Interface\\AddOns\\DKMentor\\Media\\DKArcBG"
-local DK_ARC_GLOW_TEXTURE = "Interface\\AddOns\\DKMentor\\Media\\DKArcGlow"
-local DK_ARC_FILL_RIGHT_TEXTURE = "Interface\\AddOns\\DKMentor\\Media\\DKArcFillRight"
-local DK_ARC_BG_RIGHT_TEXTURE = "Interface\\AddOns\\DKMentor\\Media\\DKArcBGRight"
-local DK_ARC_GLOW_RIGHT_TEXTURE = "Interface\\AddOns\\DKMentor\\Media\\DKArcGlowRight"
-local DK_RUNE_TEXTURE = "Interface\\PlayerFrame\\UI-PlayerFrame-DeathKnight-SingleRune"
+addon.DK_ARC_FILL_TEXTURE = "Interface\\AddOns\\DKMentor\\Media\\DKArcFill"
+addon.DK_ARC_BG_TEXTURE = "Interface\\AddOns\\DKMentor\\Media\\DKArcBG"
+addon.DK_ARC_GLOW_TEXTURE = "Interface\\AddOns\\DKMentor\\Media\\DKArcGlow"
+addon.DK_ARC_FILL_RIGHT_TEXTURE = "Interface\\AddOns\\DKMentor\\Media\\DKArcFillRight"
+addon.DK_ARC_BG_RIGHT_TEXTURE = "Interface\\AddOns\\DKMentor\\Media\\DKArcBGRight"
+addon.DK_ARC_GLOW_RIGHT_TEXTURE = "Interface\\AddOns\\DKMentor\\Media\\DKArcGlowRight"
+addon.DK_RUNE_TEXTURE = "Interface\\PlayerFrame\\UI-PlayerFrame-DeathKnight-SingleRune"
 
 local function NormalizeResourceArcSpacing(value)
     value = tonumber(value) or 105
@@ -3651,9 +3802,9 @@ local function CreateDKArcBar(parent, side)
     holder:SetSize(76, 246)
 
     local rightSide = side == "RIGHT"
-    local fillTexture = rightSide and DK_ARC_FILL_RIGHT_TEXTURE or DK_ARC_FILL_TEXTURE
-    local bgTexture = rightSide and DK_ARC_BG_RIGHT_TEXTURE or DK_ARC_BG_TEXTURE
-    local glowTexture = rightSide and DK_ARC_GLOW_RIGHT_TEXTURE or DK_ARC_GLOW_TEXTURE
+    local fillTexture = rightSide and addon.DK_ARC_FILL_RIGHT_TEXTURE or addon.DK_ARC_FILL_TEXTURE
+    local bgTexture = rightSide and addon.DK_ARC_BG_RIGHT_TEXTURE or addon.DK_ARC_BG_TEXTURE
+    local glowTexture = rightSide and addon.DK_ARC_GLOW_RIGHT_TEXTURE or addon.DK_ARC_GLOW_TEXTURE
 
     holder.glow = holder:CreateTexture(nil, "BACKGROUND", nil, -2)
     holder.glow:SetTexture(glowTexture)
@@ -3811,12 +3962,12 @@ local function CreateResourceArcHUD()
         rune:SetOrientation("VERTICAL")
         rune:SetMinMaxValues(0, 1)
         rune:SetValue(1)
-        rune:SetStatusBarTexture(DK_RUNE_TEXTURE)
+        rune:SetStatusBarTexture(addon.DK_RUNE_TEXTURE)
         rune:SetStatusBarColor(readyColor[1], readyColor[2], readyColor[3], readyColor[4])
         if rune.SetReverseFill then rune:SetReverseFill(false) end
 
         rune.bg = rune:CreateTexture(nil, "BACKGROUND")
-        rune.bg:SetTexture(DK_RUNE_TEXTURE)
+        rune.bg:SetTexture(addon.DK_RUNE_TEXTURE)
         rune.bg:SetAllPoints(rune)
         rune.bg:SetVertexColor(0.08, 0.15, 0.20, 0.58)
 
@@ -5427,6 +5578,11 @@ function addon:RefreshStatusWidgetVisibility()
     if not statusWidget or not DB or not self.active then
         return
     end
+    if self.combatEventState == true or self:IsPlayerInCombat() then
+        statusWidget:Hide()
+        if specializationPickerFrame then specializationPickerFrame:Hide() end
+        return
+    end
     if (DB.statusWidget and DB.statusWidget.enabled) or self.hudPreviewMode == true then
         statusWidget:Show()
         self:UpdateStatusWidget()
@@ -5522,6 +5678,21 @@ function addon:UpdateVoiceSection()
     StyleActionButton(section.previewButton)
     section.situationalButton:SetText(T(DB.voice.situational and "Situations: ON" or "Situations: OFF"))
     if section.mapButton then section.mapButton:SetEnabled(PlaySoundFile ~= nil); StyleActionButton(section.mapButton) end
+    if section.portraitButton then
+        section.portraitButton:SetText(T(DB.voice.portrait and DB.voice.portrait.enabled and "Portrait: ON" or "Portrait: OFF"))
+        SetActionButtonSelected(section.portraitButton, DB.voice.portrait and DB.voice.portrait.enabled == true)
+    end
+    if section.portraitLockButton then
+        section.portraitLockButton:SetText(T(DB.voice.portrait and DB.voice.portrait.locked == false and "Portrait: UNLOCKED" or "Portrait: LOCKED"))
+        SetActionButtonSelected(section.portraitLockButton, DB.voice.portrait and DB.voice.portrait.locked == false)
+    end
+    if section.portraitScaleButton then
+        section.portraitScaleButton:SetText(T("Portrait scale: %d%%", math.floor(((DB.voice.portrait and DB.voice.portrait.scale) or 1) * 100 + 0.5)))
+    end
+    if section.portraitCharacterButton then
+        local character = self:GetLichKingPortraitCharacter()
+        section.portraitCharacterButton:SetText(T("Portrait character: %s", character.label))
+    end
     self:UpdateVoiceConfigFrame()
 end
 
@@ -6040,9 +6211,9 @@ function addon:RefreshManagedDKBuffFilter()
         pcall(container.SetAuraGroupCandidateFilters, container, groupKey, candidateFilters)
     end
     if container.SetAuraGroupMaxFrameCount then
-        pcall(container.SetAuraGroupMaxFrameCount, container, groupKey, MANAGED_AURA_MAX_FRAMES)
+        pcall(container.SetAuraGroupMaxFrameCount, container, groupKey, addon.MANAGED_AURA_MAX_FRAMES)
     end
-    ConfigureManagedAuraFlow(container, GetConfiguredBarColumns("buffBar", MANAGED_AURAS_PER_LINE, 10))
+    ConfigureManagedAuraFlow(container, GetConfiguredBarColumns("buffBar", addon.MANAGED_AURAS_PER_LINE, 10))
     if container.UpdateAllAuras then
         pcall(container.UpdateAllAuras, container)
     end
@@ -7977,6 +8148,7 @@ function addon:UpdateHUDSettings()
     if hud.combatOnlyButton then hud.combatOnlyButton:SetText(DB.combatBarsOnlyInCombat and T("Bars only in combat: ON") or T("Bars only in combat: OFF")); SetActionButtonSelected(hud.combatOnlyButton, DB.combatBarsOnlyInCombat) end
     if hud.lockButton then hud.lockButton:SetText(DB.hudLocked and T("HUDs: LOCKED") or T("HUDs: UNLOCKED")); SetActionButtonSelected(hud.lockButton, DB.hudLocked == false) end
     if hud.previewButton then hud.previewButton:SetText(self.hudPreviewMode == true and T("Preview HUDs: ON") or T("Preview HUDs: OFF")); SetActionButtonSelected(hud.previewButton, self.hudPreviewMode == true) end
+    if hud.presetButton then hud.presetButton:SetText(T("Layout presets...")) end
     self:UpdateHUDMoveHints()
     self:UpdateLoadoutPilotIntegration()
 end
@@ -8028,10 +8200,25 @@ function addon:SetCodexBuildContext(contextKey)
     self:UpdateGuideSection()
 end
 
+function addon:GetCodexBuildMode()
+    local mode = DB and tostring(DB.codexBuildMode or "standard") or "standard"
+    if mode ~= "standard" and mode ~= "sba" then mode = "standard" end
+    return mode
+end
+
+function addon:SetCodexBuildMode(mode)
+    if not DB then return end
+    mode = string.lower(tostring(mode or "standard"))
+    if mode ~= "sba" then mode = "standard" end
+    DB.codexBuildMode = mode
+    DB.codexSection = "builds"
+    self:UpdateGuideSection()
+end
+
 function addon:SetCodexGearView(viewKey)
     if not DB then return end
     if viewKey == "plan" then viewKey = "upgrades" end
-    local valid = { overview = true, targets = true, crafting = true, sources = true, trinkets = true, upgrades = true }
+    local valid = { overview = true, targets = true, preparation = true, crafting = true, sources = true, trinkets = true, upgrades = true }
     if not valid[viewKey] then viewKey = "overview" end
     DB.codexGearView = viewKey
     DB.codexSection = "stats"
@@ -8113,15 +8300,11 @@ function addon:GetCommonEnchantCoverage()
     for _, slot in ipairs(self.CODEX_ENCHANT_SLOTS or {}) do
         local itemID, itemLink = GetEquippedItemData(slot.id)
         if itemID or itemLink then
-            if not itemLink then
+            local hasEnchant, known = self:GetPermanentEnchantState(slot.id)
+            if not known then
                 enchantUnknown = enchantUnknown + 1
-            else
-                local enchantID = GetPermanentEnchantID(itemLink)
-                if enchantID == nil then
-                    enchantUnknown = enchantUnknown + 1
-                elseif enchantID <= 0 then
-                    table.insert(missingEnchantSlots, T(slot.label))
-                end
+            elseif not hasEnchant then
+                table.insert(missingEnchantSlots, T(slot.label))
             end
         end
     end
@@ -8362,13 +8545,16 @@ function addon:ResetGearVisual(root)
     root.metricUsed = 0
     root.tierUsed = 0
     root.bonusUsed = 0
+    root.prepUsed = 0
     self:HideGearTooltip(root.tooltipOwner)
+    self:HidePreparationTooltip(root.tooltipOwner)
     for _, frame in ipairs(root.itemPool or {}) do frame:Hide() end
     for _, frame in ipairs(root.panelPool or {}) do frame:Hide() end
     for _, text in ipairs(root.textPool or {}) do text:Hide() end
     for _, frame in ipairs(root.metricPool or {}) do frame:Hide() end
     for _, frame in ipairs(root.tierPool or {}) do frame:Hide() end
     for _, frame in ipairs(root.bonusPool or {}) do frame:Hide() end
+    for _, frame in ipairs(root.prepPool or {}) do frame:Hide() end
 end
 
 function addon:AcquireGearText(root, fontObject)
@@ -8558,6 +8744,270 @@ function addon:ConfigureGearItemCard(card, target, width, height)
     card.status:SetTextColor(sr, sg, sb)
 end
 
+-- 3.1 Preparation / Ready Check -------------------------------------------------
+function addon:GetPreparationSpec(specID)
+    return DKM.PreparationData and DKM.PreparationData.specs and DKM.PreparationData.specs[tonumber(specID)] or nil
+end
+
+function addon:GetRecommendedRuneforgeStatus(specID)
+    specID = tonumber(specID) or select(1, self:GetSpecInfo())
+    local current = self:GetRuneforgeStatus()
+    if not current or current.known == false then
+        return { ready=false, known=false, detail=T("Checking runeforge...") }
+    end
+
+    local mainEnchant = current.main and tonumber(current.main.enchantID) or 0
+    local offEnchant = current.off and tonumber(current.off.enchantID) or 0
+    local dual = current.dualWield == true
+    local ready = false
+    local detail = current.detail
+
+    if specID == 251 then
+        if dual then
+            local shattering = IsSpellKnownSafe(207057)
+            local expectedMain = shattering and 3370 or 3847
+            ready = mainEnchant == expectedMain and offEnchant == 3368
+            local mainRune = Data.runeforges and Data.runeforges[expectedMain]
+            local mainName = mainRune and select(1, GetSpellData(mainRune.spellID, mainRune.fallbackName)) or T("Recommended Runeforge")
+            local fallen = Data.runeforges and Data.runeforges[3368]
+            local offName = fallen and select(1, GetSpellData(fallen.spellID, fallen.fallbackName)) or T("Rune of the Fallen Crusader")
+            detail = T("Dual Wield: Main Hand %s • Off Hand %s", tostring(mainName), tostring(offName))
+        else
+            ready = mainEnchant == 3368
+            local fallen = Data.runeforges and Data.runeforges[3368]
+            local name = fallen and select(1, GetSpellData(fallen.spellID, fallen.fallbackName)) or T("Rune of the Fallen Crusader")
+            detail = T("Two-Hand: %s", tostring(name))
+        end
+    elseif specID == 250 then
+        ready = mainEnchant == 6241 or mainEnchant == 3368
+        detail = T("Blood: Sanguination for the default single-target/San'layn direction; Fallen Crusader is a Deathbringer high-target alternative.")
+    elseif specID == 252 then
+        ready = mainEnchant == 6245
+        local apocalypse = Data.runeforges and Data.runeforges[6245]
+        local name = apocalypse and select(1, GetSpellData(apocalypse.spellID, apocalypse.fallbackName)) or T("Rune of Apocalypse")
+        detail = T("Unholy: %s", tostring(name))
+    else
+        ready = current.ready == true
+    end
+
+    return { ready=ready, known=true, detail=detail, current=current, dualWield=dual }
+end
+
+function addon:GetPreparationEnchantState(entry)
+    if not entry then return false, false end
+    local slots = entry.slotIDs or (entry.slotID and { entry.slotID }) or {}
+    local seen = 0
+    local unknown = 0
+    local enchanted = 0
+    for _, slotID in ipairs(slots) do
+        local itemID, itemLink = GetEquippedItemData(slotID)
+        if itemID or itemLink then
+            seen = seen + 1
+            local hasEnchant, known = self:GetPermanentEnchantState(slotID)
+            if not known then
+                unknown = unknown + 1
+            elseif hasEnchant then
+                enchanted = enchanted + 1
+            end
+        end
+    end
+    if seen == 0 then return false, false end
+    if unknown > 0 then return false, true end
+    return enchanted == seen, false
+end
+
+function addon:IsPreparationEntryOwned(entry)
+    return entry and entry.itemID and self:GetGearTargetOwnedCount(entry.itemID) > 0 or false
+end
+
+function addon:IsPreparationCategoryOwned(entries)
+    for _, entry in ipairs(entries or {}) do
+        if self:IsPreparationEntryOwned(entry) then return true end
+    end
+    return false
+end
+
+function addon:GetPreparationReadyStatus(specID)
+    local spec = self:GetPreparationSpec(specID)
+    if not spec then return { score=0, total=0, checks={} } end
+    local checks = {}
+    local score = 0
+    local waiting = 0
+    local function Add(key, label, ready, detail, isWaiting)
+        if ready then score = score + 1 end
+        if isWaiting then waiting = waiting + 1 end
+        checks[#checks + 1] = { key=key, label=label, ready=ready == true, waiting=isWaiting == true, detail=detail }
+    end
+
+    local rune = self:GetRecommendedRuneforgeStatus(specID)
+    Add("runeforge", T("Runeforge"), rune.ready, rune.detail, rune.known == false)
+
+    local missing, unknown = self:GetCommonEnchantCoverage()
+    Add("enchants", T("Enchants"), #missing == 0 and unknown == 0,
+        #missing > 0 and T("Missing: %s", table.concat(missing, ", ")) or (unknown > 0 and T("Waiting for item data (%d)", unknown) or T("All common enchant slots have an enchant")),
+        unknown > 0)
+
+    local emptySockets, socketUnknown = self:CountEmptySocketsOnEquippedItems()
+    Add("sockets", T("Sockets / gems"), emptySockets == 0 and socketUnknown == 0,
+        emptySockets == nil and T("Socket information unavailable") or (emptySockets > 0 and T("%d empty socket(s)", emptySockets) or (socketUnknown > 0 and T("%d item(s) still loading", socketUnknown) or T("No empty sockets detected"))),
+        emptySockets == nil or socketUnknown > 0)
+
+    local consumables = spec.consumables or {}
+    local categories = {
+        { "flask", T("Flask"), consumables.flask },
+        { "combatPotion", T("Combat potion"), consumables.combatPotion },
+        { "healthPotion", T("Health potion"), consumables.healthPotion },
+        { "weaponBuff", T("Weapon buff"), consumables.weaponBuff },
+        { "augmentRune", T("Augment rune"), consumables.augmentRune },
+        { "food", T("Food"), consumables.food },
+    }
+    for _, category in ipairs(categories) do
+        local owned = self:IsPreparationCategoryOwned(category[3])
+        Add(category[1], category[2], owned, owned and T("Ready in bags") or T("Recommended consumable not found in bags"), false)
+    end
+
+    return { score=score, total=#checks, checks=checks, waiting=waiting, runeforge=rune }
+end
+
+function addon:HidePreparationTooltip(owner)
+    if not GameTooltip then return end
+    if not owner or not GameTooltip.IsOwned or GameTooltip:IsOwned(owner) then GameTooltip:Hide() end
+    local root = mainFrame and mainFrame.guideSection and mainFrame.guideSection.gearVisual
+    if root and (not owner or root.tooltipOwner == owner) then root.tooltipOwner = nil end
+end
+
+function addon:ShowPreparationTooltip(owner, entry)
+    if not GameTooltip or not owner or not entry then return end
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    local shown = false
+    if entry.spellID and GameTooltip.SetSpellByID then
+        shown = pcall(GameTooltip.SetSpellByID, GameTooltip, tonumber(entry.spellID))
+    elseif entry.itemID then
+        shown = pcall(GameTooltip.SetHyperlink, GameTooltip, "item:" .. tostring(entry.itemID))
+    end
+    if not shown then GameTooltip:SetText(T(entry.fallbackName or "Preparation recommendation")) end
+    GameTooltip:AddLine(" ")
+    if entry.slot then GameTooltip:AddLine(T("Category: %s", T(entry.slot)), 0.55, 0.84, 0.95, true) end
+    if entry.priority then GameTooltip:AddLine(T("Priority: %s", T(entry.priority)), 1.00, 0.82, 0.35, true) end
+    if entry.reason then GameTooltip:AddLine(T(entry.reason), 0.96, 0.96, 0.96, true) end
+    GameTooltip:Show()
+    local root = mainFrame and mainFrame.guideSection and mainFrame.guideSection.gearVisual
+    if root then root.tooltipOwner = owner end
+end
+
+function addon:AcquirePreparationCard(root)
+    root.prepPool = root.prepPool or {}
+    root.prepUsed = (root.prepUsed or 0) + 1
+    local card = root.prepPool[root.prepUsed]
+    if not card then
+        card = CreateFrame("Button", nil, root, "BackdropTemplate")
+        card:SetBackdrop(addon.GEAR_VISUAL_BACKDROP)
+        card.iconFrame = CreateFrame("Frame", nil, card, "BackdropTemplate")
+        card.iconFrame:SetSize(44, 44)
+        card.iconFrame:SetPoint("LEFT", card, "LEFT", 7, 0)
+        card.iconFrame:SetBackdrop({ bgFile="Interface\\Buttons\\WHITE8X8", edgeFile="Interface\\Buttons\\WHITE8X8", edgeSize=2 })
+        card.iconFrame:SetBackdropColor(0.01, 0.025, 0.035, 1)
+        card.icon = card.iconFrame:CreateTexture(nil, "ARTWORK")
+        card.icon:SetPoint("TOPLEFT", card.iconFrame, "TOPLEFT", 3, -3)
+        card.icon:SetPoint("BOTTOMRIGHT", card.iconFrame, "BOTTOMRIGHT", -3, 3)
+        card.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        card.name = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        card.name:SetPoint("TOPLEFT", card, "TOPLEFT", 59, -7)
+        card.name:SetPoint("TOPRIGHT", card, "TOPRIGHT", -8, -5)
+        card.name:SetHeight(28)
+        card.name:SetJustifyH("LEFT")
+        card.name:SetJustifyV("TOP")
+        card.name:SetWordWrap(true)
+        card.meta = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        card.meta:SetPoint("TOPLEFT", card, "TOPLEFT", 59, -37)
+        card.meta:SetPoint("TOPRIGHT", card, "TOPRIGHT", -8, -35)
+        card.meta:SetHeight(16)
+        card.meta:SetJustifyH("LEFT")
+        card.meta:SetTextColor(0.80, 0.89, 0.94)
+        card.status = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        card.status:SetPoint("TOPLEFT", card, "TOPLEFT", 59, -55)
+        card.status:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -8, 5)
+        card.status:SetJustifyH("LEFT")
+        card.status:SetJustifyV("TOP")
+        card.status:SetWordWrap(true)
+        card:EnableMouse(true)
+        card:SetScript("OnEnter", function(self)
+            self:SetBackdropColor(0.045, 0.13, 0.17, 0.98)
+            self:SetBackdropBorderColor(0.30, 0.74, 0.90, 1)
+            addon:ShowPreparationTooltip(self, self.entry)
+        end)
+        card:SetScript("OnLeave", function(self)
+            self:SetBackdropColor(0.018, 0.055, 0.075, 0.90)
+            if self.baseBorder then self:SetBackdropBorderColor(unpack(self.baseBorder)) end
+            addon:HidePreparationTooltip(self)
+        end)
+        card:SetScript("OnHide", function(self) addon:HidePreparationTooltip(self) end)
+        root.prepPool[root.prepUsed] = card
+    end
+    card:ClearAllPoints()
+    card:SetBackdropColor(0.018, 0.055, 0.075, 0.90)
+    card:Show()
+    return card
+end
+
+function addon:GetPreparationEntryState(entry, specID)
+    if not entry then return "recommended", T("RECOMMENDED") end
+    if entry.kind == "runeforge" then
+        local current = self:GetRuneforgeStatus()
+        local enchantID = tonumber(entry.enchantID)
+        local applied = false
+        if specID == 251 and current.dualWield then
+            if enchantID == 3368 then applied = current.off and tonumber(current.off.enchantID) == enchantID
+            else applied = current.main and tonumber(current.main.enchantID) == enchantID end
+        else
+            applied = current.main and tonumber(current.main.enchantID) == enchantID
+        end
+        return applied and "ready" or "recommended", applied and T("APPLIED") or T("RECOMMENDED")
+    elseif entry.kind == "enchant" then
+        local applied, unknown = self:GetPreparationEnchantState(entry)
+        if applied then return "ready", T("APPLIED") end
+        if unknown then return "waiting", T("CHECKING") end
+        if self:IsPreparationEntryOwned(entry) then return "owned", T("IN BAG") end
+        return "missing", T("MISSING")
+    elseif entry.kind == "gem" then
+        if self:IsPreparationEntryOwned(entry) then return "owned", T("IN BAG") end
+        return "recommended", T("RECOMMENDED")
+    else
+        if self:IsPreparationEntryOwned(entry) then return "owned", T("IN BAG") end
+        return "missing", T("MISSING")
+    end
+end
+
+function addon:ConfigurePreparationCard(card, entry, specID, width, height)
+    card:SetSize(width or 290, math.max(height or 76, 76))
+    card.entry = entry
+    local state, label = self:GetPreparationEntryState(entry, specID)
+    local border = state == "ready" and {0.22,0.72,0.42,0.95} or (state == "owned" and {0.22,0.60,0.76,0.95} or (state == "waiting" and {0.70,0.60,0.22,0.92} or {0.52,0.42,0.18,0.92}))
+    card.baseBorder = border
+    card:SetBackdropBorderColor(unpack(border))
+    local name, icon
+    if entry.spellID then
+        name, icon = GetSpellData(entry.spellID, entry.fallbackName)
+        card.iconFrame:SetBackdropBorderColor(0.35, 0.72, 0.88, 1)
+        card.name:SetTextColor(0.70, 0.90, 1.00)
+    else
+        name = self:GetGearTargetName(entry)
+        icon = self:GetGearTargetIcon(entry)
+        local r,g,b = self:GetGearTargetQualityColor(entry)
+        card.iconFrame:SetBackdropBorderColor(r,g,b,1)
+        card.name:SetTextColor(r,g,b)
+    end
+    card.icon:SetTexture(icon or QUESTION_MARK_ICON)
+    card.name:SetText(name or T(entry.fallbackName or "Preparation recommendation"))
+    card.meta:SetText(T("%s • %s", T(entry.slot or "Preparation"), T(entry.priority or "RECOMMENDED")))
+    card.status:SetText(label)
+    if state == "ready" then card.status:SetTextColor(0.40,1.00,0.60)
+    elseif state == "owned" then card.status:SetTextColor(0.42,0.82,1.00)
+    elseif state == "waiting" then card.status:SetTextColor(1.00,0.82,0.35)
+    elseif state == "missing" then card.status:SetTextColor(1.00,0.48,0.42)
+    else card.status:SetTextColor(1.00,0.82,0.35) end
+end
+
 function addon:AcquireGearTierCard(root)
     root.tierUsed = (root.tierUsed or 0) + 1
     local card = root.tierPool[root.tierUsed]
@@ -8699,6 +9149,7 @@ function addon:EnsureGearMentorVisual()
     root.metricPool = {}
     root.tierPool = {}
     root.bonusPool = {}
+    root.prepPool = {}
     root:SetScript("OnUpdate", function(self)
         local owner = self.tooltipOwner
         if not owner or not GameTooltip then return end
@@ -8845,6 +9296,147 @@ function addon:RenderGearMentorVisual(specID, viewKey)
             y = y - 94
         end
         AddSourceNote()
+    elseif viewKey == "preparation" then
+        title:SetText(T("Preparation & Ready Check"))
+        hint:SetText(T("Hover for native WoW details"))
+        local prep = self:GetPreparationSpec(specID)
+        local readiness = self:GetPreparationReadyStatus(specID)
+        local scoreColor = readiness.score == readiness.total and {0.40,1.00,0.60} or (readiness.score >= math.max(1, readiness.total - 2) and {1.00,0.82,0.35} or {1.00,0.48,0.42})
+        local metrics = {
+            { T("Preparation"), string.format("%d / %d", readiness.score or 0, readiness.total or 0), scoreColor[1], scoreColor[2], scoreColor[3] },
+            { T("Runeforge"), readiness.runeforge and readiness.runeforge.ready and T("READY") or T("CHECK"), readiness.runeforge and readiness.runeforge.ready and 0.40 or 1.00, readiness.runeforge and readiness.runeforge.ready and 1.00 or 0.72, readiness.runeforge and readiness.runeforge.ready and 0.60 or 0.32 },
+            { T("Enchants"), (function() local m,u=self:GetCommonEnchantCoverage(); return (#m==0 and u==0) and T("READY") or (#m>0 and T("%d missing", #m) or T("CHECK")) end)(), 0.42,0.82,1.00 },
+            { T("Sockets / gems"), (function() local e,u=self:CountEmptySocketsOnEquippedItems(); return e==0 and u==0 and T("READY") or (type(e)=="number" and e>0 and T("%d empty", e) or T("CHECK")) end)(), 0.42,0.82,1.00 },
+        }
+        for index, data in ipairs(metrics) do
+            local card = self:AcquireGearMetric(root)
+            card:SetSize(metricWidth, 48)
+            card:SetPoint("TOPLEFT", root, "TOPLEFT", 2 + (index - 1) * (metricWidth + metricGap), y)
+            card.label:SetText(data[1])
+            card.value:SetText(data[2])
+            card.value:SetTextColor(data[3], data[4], data[5])
+        end
+        y = y - 62
+
+        local summaryPanel = self:AcquireGearPanel(root)
+        summaryPanel:SetSize(contentWidth, 56)
+        summaryPanel:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
+        local summaryTitle = self:AcquireGearPanelText(summaryPanel, "GameFontNormal")
+        summaryTitle:SetPoint("TOPLEFT", summaryPanel, "TOPLEFT", 10, -8)
+        summaryTitle:SetWidth(contentWidth - 20)
+        summaryTitle:SetHeight(18)
+        summaryTitle:SetTextColor(scoreColor[1], scoreColor[2], scoreColor[3])
+        summaryTitle:SetText(readiness.score == readiness.total and T("READY FOR ENDGAME") or T("PREPARATION NEEDS ATTENTION"))
+        local summaryText = self:AcquireGearPanelText(summaryPanel, "GameFontHighlightSmall")
+        summaryText:SetPoint("TOPLEFT", summaryPanel, "TOPLEFT", 10, -29)
+        summaryText:SetWidth(contentWidth - 20)
+        summaryText:SetHeight(20)
+        summaryText:SetText(T("Read-only checklist: DK Mentor never applies enchants, gems, runes, or consumables automatically."))
+        y = y - 66
+
+        if prep then
+            AddSectionLabel("Runeforge")
+            local runeEntries = {}
+            local dual = self:GetRuneforgeStatus().dualWield == true
+            local shattering = IsSpellKnownSafe(207057)
+            if specID == 251 and dual then
+                -- Frost dual wield is a pair, not two unrelated alternatives.
+                -- Present Main Hand first and Off Hand second so the player can
+                -- immediately see which rune belongs on each equipped weapon.
+                local mainEnchantID = shattering and 3370 or 3847
+                local mainSource
+                local offSource
+                for _, entry in ipairs(prep.runeforge or {}) do
+                    if tonumber(entry.enchantID) == mainEnchantID then mainSource = entry end
+                    if tonumber(entry.enchantID) == 3368 then offSource = entry end
+                end
+                if mainSource then
+                    runeEntries[#runeEntries + 1] = {
+                        kind=mainSource.kind, spellID=mainSource.spellID, enchantID=mainSource.enchantID,
+                        fallbackName=mainSource.fallbackName, slot="Main hand", priority="RECOMMENDED", reason=mainSource.reason,
+                    }
+                end
+                if offSource then
+                    runeEntries[#runeEntries + 1] = {
+                        kind=offSource.kind, spellID=offSource.spellID, enchantID=offSource.enchantID,
+                        fallbackName=offSource.fallbackName, slot="Off hand", priority="RECOMMENDED", reason=offSource.reason,
+                    }
+                end
+            else
+                for _, entry in ipairs(prep.runeforge or {}) do
+                    local include = true
+                    if specID == 251 and not dual and tonumber(entry.enchantID) ~= 3368 then include = false end
+                    if include then runeEntries[#runeEntries + 1] = entry end
+                end
+            end
+            local columns = 2
+            local cardWidth = math.floor((contentWidth - splitGap) / 2)
+            for index, entry in ipairs(runeEntries) do
+                local card = self:AcquirePreparationCard(root)
+                self:ConfigurePreparationCard(card, entry, specID, cardWidth, 76)
+                local col = (index - 1) % columns
+                local row = math.floor((index - 1) / columns)
+                card:SetPoint("TOPLEFT", root, "TOPLEFT", 2 + col * (cardWidth + splitGap), y - row * 84)
+            end
+            y = y - math.max(1, math.ceil(#runeEntries / 2)) * 84
+
+            AddSectionLabel("Enchants")
+            local enchants = {}
+            for _, entry in ipairs(DKM.PreparationData.commonEnchants or {}) do enchants[#enchants+1] = entry end
+            if prep.ringEnchant then enchants[#enchants+1] = prep.ringEnchant end
+            if prep.ringAlternative then enchants[#enchants+1] = prep.ringAlternative end
+            for index, entry in ipairs(enchants) do
+                local card = self:AcquirePreparationCard(root)
+                self:ConfigurePreparationCard(card, entry, specID, cardWidth, 76)
+                local col = (index - 1) % 2
+                local row = math.floor((index - 1) / 2)
+                card:SetPoint("TOPLEFT", root, "TOPLEFT", 2 + col * (cardWidth + splitGap), y - row * 84)
+            end
+            y = y - math.max(1, math.ceil(#enchants / 2)) * 84
+
+            AddSectionLabel("Gems")
+            for index, entry in ipairs(prep.gems or {}) do
+                local card = self:AcquirePreparationCard(root)
+                self:ConfigurePreparationCard(card, entry, specID, cardWidth, 76)
+                local col = (index - 1) % 2
+                local row = math.floor((index - 1) / 2)
+                card:SetPoint("TOPLEFT", root, "TOPLEFT", 2 + col * (cardWidth + splitGap), y - row * 84)
+            end
+            y = y - math.max(1, math.ceil(#(prep.gems or {}) / 2)) * 84
+
+            AddSectionLabel("Consumables")
+            local ordered = { "flask", "combatPotion", "healthPotion", "weaponBuff", "augmentRune", "food" }
+            local consumableEntries = {}
+            for _, key in ipairs(ordered) do
+                local entries = prep.consumables and prep.consumables[key] or nil
+                if entries and entries[1] then consumableEntries[#consumableEntries+1] = entries[1] end
+            end
+            for index, entry in ipairs(consumableEntries) do
+                local card = self:AcquirePreparationCard(root)
+                self:ConfigurePreparationCard(card, entry, specID, cardWidth, 76)
+                local col = (index - 1) % 2
+                local row = math.floor((index - 1) / 2)
+                card:SetPoint("TOPLEFT", root, "TOPLEFT", 2 + col * (cardWidth + splitGap), y - row * 84)
+            end
+            y = y - math.max(1, math.ceil(#consumableEntries / 2)) * 84
+
+            y = y - 2
+            local note = self:AcquireGearText(root, "GameFontHighlightSmall")
+            note:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
+            note:SetWidth(contentWidth)
+            note:SetHeight(44)
+            note:SetTextColor(0.78,0.87,0.92)
+            note:SetText(T("Enchant readiness checks whether a permanent enchant is present; the recommended cards show the current guide choice. Gem readiness checks empty sockets because the live API does not safely prove every socketed recommendation in all states."))
+            y = y - 50
+
+            local source = self:AcquireGearText(root, "GameFontHighlightSmall")
+            source:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
+            source:SetWidth(contentWidth)
+            source:SetHeight(32)
+            source:SetTextColor(0.72,0.82,0.88)
+            source:SetText(T("Preparation data: %s • Patch %s • reviewed %s", DKM.PreparationData.sourceName or "Wowhead", DKM.PreparationData.patch or "?", DKM.PreparationData.reviewed or "?"))
+            y = y - 38
+        end
     elseif viewKey == "sources" then
         title:SetText(T("Loot sources"))
         local grouped, order = {}, {}
@@ -9313,8 +9905,9 @@ end
 
 function addon:ConfigureBuildProfileCard(root, card, profile, width)
     width = width or 560
-    local keyTalents = profile.keyTalents or {}
-    local note = T(profile.note or "")
+    local sbaMode = self:GetCodexBuildMode() == "sba"
+    local keyTalents = (sbaMode and profile.sbaKeyTalents) or profile.keyTalents or {}
+    local note = T((sbaMode and profile.sbaNote) or profile.note or "")
     local talentRows = math.max(1, math.ceil(#keyTalents / 8))
 
     card.heroButton:ClearAllPoints()
@@ -9333,11 +9926,12 @@ function addon:ConfigureBuildProfileCard(root, card, profile, width)
     card.badge:ClearAllPoints()
     card.badge:SetPoint("TOPRIGHT", card, "TOPRIGHT", -10, -12)
     card.badge:SetWidth(96)
-    local badge = T(profile.badge or "RECOMMENDED")
+    local rawBadge = (sbaMode and profile.sbaFriendly == true) and "SBA FRIENDLY" or (profile.badge or "RECOMMENDED")
+    local badge = T(rawBadge)
     card.badge:SetText(badge)
-    if tostring(profile.badge or "RECOMMENDED") == "ALTERNATIVE" then
+    if tostring(rawBadge) == "ALTERNATIVE" then
         card.badge:SetTextColor(0.68, 0.84, 0.96)
-    elseif tostring(profile.badge or "") == "REFERENCE" then
+    elseif tostring(rawBadge) == "REFERENCE" then
         card.badge:SetTextColor(0.82, 0.88, 0.94)
     else
         card.badge:SetTextColor(0.48, 1.00, 0.66)
@@ -9431,7 +10025,23 @@ end
 function addon:RenderBuildMentorVisual(specID, contextKey, autoDetected)
     local root = self:EnsureBuildMentorVisual()
     if not root then return nil end
-    local profiles = self:GetBuildProfiles(specID, contextKey)
+    local sourceProfiles = self:GetBuildProfiles(specID, contextKey)
+    local profiles = {}
+    local sourceOrder = {}
+    for index, profile in ipairs(sourceProfiles or {}) do
+        profiles[#profiles + 1] = profile
+        sourceOrder[profile] = index
+    end
+    if self:GetCodexBuildMode() == "sba" then
+        table.sort(profiles, function(a, b)
+            local aFriendly = a.sbaFriendly == true
+            local bFriendly = b.sbaFriendly == true
+            if aFriendly ~= bFriendly then return aFriendly end
+            -- Keep the guide's original Recommended/Alternative ordering inside
+            -- each accessibility group instead of sorting alphabetically by badge.
+            return (sourceOrder[a] or 999) < (sourceOrder[b] or 999)
+        end)
+    end
     self:ResetBuildVisual(root)
     root:Show()
 
@@ -9459,7 +10069,11 @@ function addon:RenderBuildMentorVisual(specID, contextKey, autoDetected)
     sub:SetWidth(contentWidth)
     sub:SetHeight(34)
     sub:SetTextColor(0.90, 0.94, 0.97)
-    sub:SetText(T("Visual build guidance based on the current guide direction. Hover the talent icons for native WoW details; use the source row above when you want the full guide."))
+    if self:GetCodexBuildMode() == "sba" then
+        sub:SetText(T("SBA-friendly guidance favors lower-friction profiles for Blizzard's Single-Button Assistant. Defensives, interrupts, crowd control, utility, and situational choices remain manual."))
+    else
+        sub:SetText(T("Visual build guidance based on the current guide direction. Hover the talent icons for native WoW details; use the source row above when you want the full guide."))
+    end
     y = y - 42
 
     if #profiles == 0 then
@@ -9638,6 +10252,13 @@ function addon:UpdateGuideSection()
             if button.labelKey then button.label:SetText(T(button.labelKey)) end
             StyleTabButton(button, key == selectedBuildContext)
         end
+        local buildMode = self:GetCodexBuildMode()
+        for key, button in pairs(guide.buildModeButtons or {}) do StyleTabButton(button, key == buildMode) end
+        if guide.buildModeButtons and guide.buildModeButtons.standard then guide.buildModeButtons.standard:SetText(T("Standard")) end
+        if guide.buildModeButtons and guide.buildModeButtons.sba then guide.buildModeButtons.sba:SetText(T("SBA-friendly")) end
+        if guide.buildModeHint then
+            guide.buildModeHint:SetText(buildMode == "sba" and T("Accessibility profile • complements Blizzard SBA") or T("Guide-backed standard recommendations"))
+        end
     end
     if guide.gearActions then
         guide.gearActions:SetShown(sectionKey == "stats")
@@ -9651,7 +10272,7 @@ function addon:UpdateGuideSection()
         guide.scroll:ClearAllPoints()
         local topOffset = -64
         if sectionKey == "builds" then
-            topOffset = -128
+            topOffset = -158
         elseif sectionKey == "stats" then
             topOffset = -96
         end
@@ -9793,6 +10414,13 @@ function addon:ResetHUDPositions()
     ResetFramePosition("resourceHUD", DEFAULTS.resourceHUD)
     ResetResourceArcPosition()
     ResetFramePosition("interruptAlert", DEFAULTS.interruptAlert)
+    if DB.voice and DB.voice.portrait then
+        DB.voice.portrait.point = DEFAULTS.voice.portrait.point
+        DB.voice.portrait.relativePoint = DEFAULTS.voice.portrait.relativePoint
+        DB.voice.portrait.x = DEFAULTS.voice.portrait.x
+        DB.voice.portrait.y = DEFAULTS.voice.portrait.y
+        DB.voice.portrait.positionVersion = 2
+    end
     RestoreFramePosition(coachFrame, "coach")
     RestoreFramePosition(statusWidget, "statusWidget")
     RestoreFramePosition(buffFrame, "buffBar")
@@ -9802,6 +10430,9 @@ function addon:ResetHUDPositions()
     RestoreFramePosition(resourceFrame, "resourceHUD")
     if resourceArcFrame then RestoreResourceArcPosition(resourceArcFrame) end
     RestoreFramePosition(interruptFrame, "interruptAlert")
+    if addon.lichKingPortraitFrame and DB.voice and DB.voice.portrait then
+        addon.RestoreLichKingPortraitPosition()
+    end
     Print(T("Combat HUD positions restored."))
 end
 
@@ -9830,6 +10461,14 @@ function addon:ResetPositions()
     ResetFramePosition("resourceHUD", DEFAULTS.resourceHUD)
     ResetResourceArcPosition()
     ResetFramePosition("interruptAlert", DEFAULTS.interruptAlert)
+    if DB.voice and DB.voice.portrait then
+        DB.voice.portrait.point = DEFAULTS.voice.portrait.point
+        DB.voice.portrait.relativePoint = DEFAULTS.voice.portrait.relativePoint
+        DB.voice.portrait.x = DEFAULTS.voice.portrait.x
+        DB.voice.portrait.y = DEFAULTS.voice.portrait.y
+        DB.voice.portrait.scale = DEFAULTS.voice.portrait.scale
+        DB.voice.portrait.positionVersion = 2
+    end
     RestoreFramePosition(mainFrame, "main")
     RestoreFramePosition(coachFrame, "coach")
     RestoreFramePosition(statusWidget, "statusWidget")
@@ -9840,6 +10479,9 @@ function addon:ResetPositions()
     RestoreFramePosition(resourceFrame, "resourceHUD")
     if resourceArcFrame then RestoreResourceArcPosition(resourceArcFrame) end
     RestoreFramePosition(interruptFrame, "interruptAlert")
+    if addon.lichKingPortraitFrame and DB.voice and DB.voice.portrait then
+        addon.RestoreLichKingPortraitPosition()
+    end
     for dbKey in pairs(COMBAT_BAR_LAYOUT_LIMITS) do self:ApplyCombatBarLayout(dbKey) end
     self:UpdateBarLayoutFrame()
     Print(T("Frame positions and scale restored. HUD visibility settings were kept."))
@@ -9887,6 +10529,8 @@ function addon:ShowHelp()
     Print(T("/dkm rotation — toggle the native offensive highlight"))
     Print(T("/dkm bars — check native rotation spells on your action bars"))
     Print(T("/dkm ready — show the DK Ready Check details"))
+    Print(T("/dkm prep — open Preparation / Ready Check"))
+    Print(T("/dkm preset — open layout import/export"))
     Print(T("/dkm reset — restore frame positions"))
 end
 
@@ -10046,6 +10690,14 @@ function addon:HandleSlashCommand(message)
         DB.codexGearView = "overview"
         self:SetMainTab("guide")
         self:UpdateGuideSection()
+    elseif command == "prep" or command == "preparation" then
+        mainFrame:Show()
+        DB.codexSection = "stats"
+        DB.codexGearView = "preparation"
+        self:SetMainTab("guide")
+        self:UpdateGuideSection()
+    elseif command == "preset" or command == "presets" or command == "layout" then
+        self:ToggleLayoutPresetFrame()
     elseif command == "loadout" or command == "loadouts" or command == "pilot" or command == "gear" or command == "equipment" then
         self:OpenLoadoutPilot()
     elseif command == "coach" then
@@ -10117,6 +10769,18 @@ function addon:InitializeDatabase()
     for _, key in ipairs({ "main", "coach", "statusWidget", "buffBar", "externalBuffBar", "debuffBar", "abilityBar", "resourceHUD", "interruptAlert" }) do
         SanitizeFrameConfig(key)
     end
+    if DB.voice and DB.voice.portrait then
+        local portrait = DB.voice.portrait
+        local defaults = DEFAULTS.voice.portrait
+        if not validAnchor[portrait.point] then portrait.point = defaults.point end
+        if not validAnchor[portrait.relativePoint] then portrait.relativePoint = defaults.relativePoint end
+        portrait.x = Clamp(tonumber(portrait.x) or defaults.x, -4000, 4000)
+        portrait.y = Clamp(tonumber(portrait.y) or defaults.y, -4000, 4000)
+        portrait.scale = Clamp(tonumber(portrait.scale) or defaults.scale, 0.7, 1.5)
+        if portrait.locked == nil then portrait.locked = true end
+        if portrait.character ~= "bolvar" then portrait.character = "arthas" end
+        if portrait.positionVersion ~= 2 then portrait.positionVersion = nil end
+    end
 
     -- Moving HUDs is a temporary editing action, not a persistent gameplay mode.
     -- Always start a fresh UI session locked; the drag handle appears only after
@@ -10170,6 +10834,589 @@ function addon:InitializeDatabase()
     DB.schema = DEFAULTS.schema
 end
 
+-- 3.1 Lich King commentary portrait --------------------------------------------
+addon.LICH_KING_CREATURE_ID = 36597
+addon.LICH_KING_BOLVAR_CREATURE_ID = 99456
+addon.LICH_KING_FALLBACK_ICON = "Interface\\Icons\\Achievement_Boss_LichKing"
+addon.LICH_KING_CHARACTERS = {
+    arthas = { creatureID = addon.LICH_KING_CREATURE_ID, label = "Arthas", title = "Lich King - Arthas", portraitZoom = 0.72 },
+    bolvar = { creatureID = addon.LICH_KING_BOLVAR_CREATURE_ID, label = "Bolvar", title = "Lich King - Bolvar", portraitZoom = 0.70 },
+}
+
+function addon:GetLichKingPortraitCharacterKey()
+    if not DB or not DB.voice or not DB.voice.portrait then return "arthas" end
+    return DB.voice.portrait.character == "bolvar" and "bolvar" or "arthas"
+end
+
+function addon:GetLichKingPortraitCharacter()
+    return addon.LICH_KING_CHARACTERS[self:GetLichKingPortraitCharacterKey()] or addon.LICH_KING_CHARACTERS.arthas
+end
+
+function addon:UpdateLichKingPortraitModel()
+    local frame = addon.lichKingPortraitFrame
+    if not frame then return end
+    local character = self:GetLichKingPortraitCharacter()
+    if frame.title then frame.title:SetText(T(character.title)) end
+    if frame.fallback then frame.fallback:SetTexture(addon.LICH_KING_FALLBACK_ICON) end
+    if frame.model and frame.model.SetCreature then
+        pcall(frame.model.SetCreature, frame.model, character.creatureID)
+        if frame.model.SetPortraitZoom then pcall(frame.model.SetPortraitZoom, frame.model, character.portraitZoom or 0.72) end
+        if frame.model.SetDoBlend then pcall(frame.model.SetDoBlend, frame.model, true) end
+    end
+end
+
+function addon:SetLichKingPortraitCharacter(characterKey)
+    if not DB or not DB.voice or not DB.voice.portrait then return end
+    characterKey = string.lower(tostring(characterKey or ""))
+    if characterKey ~= "arthas" and characterKey ~= "bolvar" then return end
+    DB.voice.portrait.character = characterKey
+    self:UpdateLichKingPortraitModel()
+    if addon.lichKingPortraitFrame and DB.voice.portrait.enabled and (self:IsVoicePlaying() or DB.voice.portrait.locked == false) then
+        self:ShowLichKingPortrait(not self:IsVoicePlaying())
+    end
+    self:UpdateVoiceSection()
+    Print(T("Portrait character changed to %s.", (addon.LICH_KING_CHARACTERS[characterKey] and addon.LICH_KING_CHARACTERS[characterKey].label) or characterKey))
+end
+
+function addon:CycleLichKingPortraitCharacter()
+    self:SetLichKingPortraitCharacter(self:GetLichKingPortraitCharacterKey() == "arthas" and "bolvar" or "arthas")
+end
+
+function addon.SaveLichKingPortraitPosition()
+    if not DB or not DB.voice or not DB.voice.portrait or not addon.lichKingPortraitFrame then return end
+    local frame = addon.lichKingPortraitFrame
+    local parent = frame:GetParent() or UIParent
+    local cfg = DB.voice.portrait
+    local scale = Clamp(tonumber(frame:GetScale()) or tonumber(cfg.scale) or 1, 0.7, 1.5)
+    local left, right, top, bottom = frame:GetLeft(), frame:GetRight(), frame:GetTop(), frame:GetBottom()
+
+    -- Save in the parent's coordinate space rather than the portrait's own
+    -- scaled coordinate space. This keeps a dragged portrait in the same
+    -- screen location when it is hidden/shown again or its scale changes.
+    if left and right and top and bottom and parent.GetWidth and parent.GetHeight then
+        left, right = left * scale, right * scale
+        top, bottom = top * scale, bottom * scale
+        local parentWidth, parentHeight = parent:GetWidth(), parent:GetHeight()
+        if parentWidth and parentHeight and parentWidth > 0 and parentHeight > 0 then
+            local centerX, centerY = (left + right) / 2, (bottom + top) / 2
+            local x, y, point
+
+            if left < (parentWidth - right) and left < math.abs(centerX - parentWidth / 2) then
+                x, point = left, "LEFT"
+            elseif (parentWidth - right) < math.abs(centerX - parentWidth / 2) then
+                x, point = right - parentWidth, "RIGHT"
+            else
+                x, point = centerX - parentWidth / 2, ""
+            end
+
+            if bottom < (parentHeight - top) and bottom < math.abs(centerY - parentHeight / 2) then
+                y, point = bottom, "BOTTOM" .. point
+            elseif (parentHeight - top) < math.abs(centerY - parentHeight / 2) then
+                y, point = top - parentHeight, "TOP" .. point
+            else
+                y = centerY - parentHeight / 2
+            end
+
+            if point == "" then point = "CENTER" end
+            cfg.point = point
+            cfg.relativePoint = point
+            cfg.x = x
+            cfg.y = y
+            cfg.scale = scale
+            cfg.positionVersion = 2
+
+            -- Normalize the live anchor immediately so subsequent Show/Hide
+            -- operations do not inherit the temporary anchor created by
+            -- StartMoving().
+            frame:ClearAllPoints()
+            frame:SetPoint(point, parent, point, x / scale, y / scale)
+            return
+        end
+    end
+
+    -- Safe fallback for unusual clients/layout timing where frame bounds are
+    -- not available yet. Keep the current anchor but still store offsets in
+    -- the portrait's scale so Restore can reproduce the same screen position.
+    local point, _, relativePoint, x, y = frame:GetPoint(1)
+    if point then
+        cfg.point = point
+        cfg.relativePoint = relativePoint or point
+        cfg.x = (x or 0) * scale
+        cfg.y = (y or 0) * scale
+        cfg.scale = scale
+        cfg.positionVersion = 2
+    end
+end
+
+function addon.RestoreLichKingPortraitPosition()
+    if not DB or not DB.voice or not DB.voice.portrait or not addon.lichKingPortraitFrame then return end
+    local frame = addon.lichKingPortraitFrame
+    local cfg = DB.voice.portrait
+    local scale = Clamp(tonumber(cfg.scale) or 1, 0.7, 1.5)
+    local point = addon.PRESET_ANCHORS and addon.PRESET_ANCHORS[cfg.point] and cfg.point or "CENTER"
+
+    frame:ClearAllPoints()
+    if cfg.positionVersion == 2 then
+        -- New stable format: x/y are stored in UIParent's scale and are divided
+        -- by the portrait scale when anchoring the scaled frame.
+        frame:SetScale(scale)
+        frame:SetPoint(point, UIParent, point, (tonumber(cfg.x) or 0) / scale, (tonumber(cfg.y) or 165) / scale)
+    else
+        -- Legacy 3.1.0-3.1.5 data used raw GetPoint offsets. Reproduce that
+        -- location once, then normalize it into the stable v2 format.
+        frame:SetPoint(point, UIParent, cfg.relativePoint or point, tonumber(cfg.x) or 0, tonumber(cfg.y) or 165)
+        frame:SetScale(scale)
+        addon.SaveLichKingPortraitPosition()
+    end
+end
+
+function addon:UpdateLichKingPortraitState()
+    if not addon.lichKingPortraitFrame or not DB or not DB.voice or not DB.voice.portrait then return end
+    local frame = addon.lichKingPortraitFrame
+    local cfg = DB.voice.portrait
+    local unlocked = cfg.locked == false
+    local playing = self:IsVoicePlaying()
+
+    frame:EnableMouse(unlocked)
+    addon.RestoreLichKingPortraitPosition()
+
+    if not cfg.enabled then
+        frame.preview = false
+        frame:Hide()
+    elseif playing then
+        frame.preview = false
+        frame:Show()
+    elseif unlocked then
+        frame.preview = true
+        frame:Show()
+    else
+        frame.preview = false
+        frame:Hide()
+    end
+
+    frame.dragHint:SetShown(unlocked)
+    frame.lockHint:SetShown(frame.preview == true and unlocked)
+end
+
+function addon:SetLichKingPortraitTalking(talking)
+    local frame = addon.lichKingPortraitFrame
+    local model = frame and frame.model
+    if not model or not model.SetAnimation then return end
+
+    local animationID = talking and 60 or 0
+    local supported = true
+    if model.HasAnimation then
+        local ok, value = pcall(model.HasAnimation, model, animationID)
+        if ok and IsAccessibleValue(value) and type(value) == "boolean" then supported = value end
+    end
+    if supported then
+        pcall(model.SetAnimation, model, animationID)
+        frame.talking = talking == true
+        frame.talkElapsed = 0
+    else
+        frame.talking = false
+    end
+end
+
+function addon:ShowLichKingPortrait(preview)
+    if not addon.lichKingPortraitFrame or not DB or not DB.voice or not DB.voice.portrait or DB.voice.portrait.enabled ~= true then return end
+    local frame = addon.lichKingPortraitFrame
+    local unlocked = DB.voice.portrait.locked == false
+    frame.preview = preview == true and unlocked
+    frame:EnableMouse(unlocked)
+    frame.dragHint:SetShown(unlocked)
+    frame.lockHint:SetShown(frame.preview == true)
+    self:UpdateLichKingPortraitModel()
+    if not frame.dragging then addon.RestoreLichKingPortraitPosition() end
+    frame:Show()
+    self:SetLichKingPortraitTalking(not frame.preview and self:IsVoicePlaying())
+end
+
+function addon:SetLichKingPortraitEnabled(enabled)
+    if not DB or not DB.voice or not DB.voice.portrait then return end
+    DB.voice.portrait.enabled = enabled == true
+    if DB.voice.portrait.enabled and DB.voice.portrait.locked == false then
+        self:ShowLichKingPortrait(true)
+    elseif not DB.voice.portrait.enabled and addon.lichKingPortraitFrame then
+        addon.lichKingPortraitFrame.preview = false
+        addon.lichKingPortraitFrame:Hide()
+    end
+    self:UpdateVoiceSection()
+end
+
+function addon:ToggleLichKingPortraitLock()
+    if not DB or not DB.voice or not DB.voice.portrait then return end
+    DB.voice.portrait.locked = DB.voice.portrait.locked == false
+    if DB.voice.portrait.locked == false then
+        DB.voice.portrait.enabled = true
+        self:ShowLichKingPortrait(true)
+        Print(T("Lich King portrait unlocked. Drag the portrait to move it, then lock it again."))
+    else
+        addon.SaveLichKingPortraitPosition()
+        if addon.lichKingPortraitFrame then addon.lichKingPortraitFrame.preview = false end
+        if not self:IsVoicePlaying() and addon.lichKingPortraitFrame then addon.lichKingPortraitFrame:Hide() end
+        Print(T("Lich King portrait locked."))
+    end
+    self:UpdateLichKingPortraitState()
+    self:UpdateVoiceSection()
+end
+
+function addon:CycleLichKingPortraitScale()
+    if not DB or not DB.voice or not DB.voice.portrait then return end
+    local scales = { 0.8, 1.0, 1.2, 1.4 }
+    local current = tonumber(DB.voice.portrait.scale) or 1
+    local nextScale = scales[1]
+    for index, value in ipairs(scales) do
+        if math.abs(value - current) < 0.05 then
+            nextScale = scales[(index % #scales) + 1]
+            break
+        end
+    end
+    DB.voice.portrait.scale = nextScale
+    addon.RestoreLichKingPortraitPosition()
+    self:UpdateVoiceSection()
+end
+
+function addon.CreateLichKingPortraitFrame()
+    local frame = CreateFrame("Frame", "DKMentorLichKingPortrait", UIParent, "BackdropTemplate")
+    frame:SetSize(160, 178)
+    frame:SetFrameStrata("HIGH")
+    frame:SetClampedToScreen(true)
+    frame:SetMovable(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 16, edgeSize = 12,
+        insets = { left=3, right=3, top=3, bottom=3 },
+    })
+    frame:SetBackdropColor(0.018, 0.035, 0.055, 0.94)
+    frame:SetBackdropBorderColor(0.42, 0.72, 0.86, 0.96)
+
+    frame.fallback = frame:CreateTexture(nil, "BACKGROUND")
+    frame.fallback:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -10)
+    frame.fallback:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -10)
+    frame.fallback:SetHeight(132)
+    frame.fallback:SetTexture(addon.LICH_KING_FALLBACK_ICON)
+    frame.fallback:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    frame.fallback:SetAlpha(0.48)
+
+    local ok, model = pcall(CreateFrame, "PlayerModel", nil, frame)
+    if ok and model then
+        frame.model = model
+        model:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -8)
+        model:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -8)
+        model:SetHeight(136)
+        if model.SetPortraitZoom then pcall(model.SetPortraitZoom, model, 0.72) end
+        if model.SetCreature then pcall(model.SetCreature, model, addon.LICH_KING_CREATURE_ID) end
+    end
+
+    frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.title:SetPoint("TOPLEFT", frame, "TOPLEFT", 9, -148)
+    frame.title:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -9, -148)
+    frame.title:SetHeight(17)
+    frame.title:SetJustifyH("CENTER")
+    frame.title:SetText(T("Lich King - Arthas"))
+    frame.title:SetTextColor(0.66, 0.90, 1.00)
+
+    frame.dragHint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    frame.dragHint:SetPoint("TOP", frame.title, "BOTTOM", 0, -1)
+    frame.dragHint:SetText(T("Drag to move"))
+    frame.dragHint:Hide()
+
+    frame.lockHint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    frame.lockHint:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -6, 5)
+    frame.lockHint:SetText(T("Preview"))
+    frame.lockHint:Hide()
+
+    frame:SetScript("OnDragStart", function(self)
+        if DB and DB.voice and DB.voice.portrait and DB.voice.portrait.locked == false and not (InCombatLockdown and InCombatLockdown()) then
+            self.dragging = true
+            self:StartMoving()
+        end
+    end)
+    frame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        self.dragging = false
+        addon.SaveLichKingPortraitPosition()
+    end)
+    frame:SetScript("OnUpdate", function(self, elapsed)
+        self.elapsed = (self.elapsed or 0) + (elapsed or 0)
+        self.talkElapsed = (self.talkElapsed or 0) + (elapsed or 0)
+        if not DB or not DB.voice or not DB.voice.portrait or DB.voice.portrait.enabled ~= true then
+            addon:SetLichKingPortraitTalking(false)
+            self:Hide()
+            return
+        end
+
+        local playing = addon:IsVoicePlaying()
+        if playing then
+            -- SetAnimation(60) is the standard PlayerModel talking animation.
+            -- It is not guaranteed to loop on every creature model, so refresh
+            -- it while the voice is active to keep the portrait visibly alive.
+            if not self.talking or self.talkElapsed >= 1.15 then
+                addon:SetLichKingPortraitTalking(true)
+            end
+        elseif self.talking then
+            addon:SetLichKingPortraitTalking(false)
+        end
+
+        if self.elapsed < 0.10 then return end
+        self.elapsed = 0
+        if self.preview and DB.voice.portrait.locked == false then return end
+        if not playing then self:Hide() end
+    end)
+    frame:Hide()
+    addon.RestoreLichKingPortraitPosition()
+    return frame
+end
+
+-- 3.1 Layout preset export / import -------------------------------------------
+addon.PRESET_FRAME_KEYS = { "main", "coach", "statusWidget", "buffBar", "externalBuffBar", "debuffBar", "abilityBar", "resourceHUD", "interruptAlert" }
+addon.PRESET_ANCHORS = { TOPLEFT=true, TOP=true, TOPRIGHT=true, LEFT=true, CENTER=true, RIGHT=true, BOTTOMLEFT=true, BOTTOM=true, BOTTOMRIGHT=true }
+
+function addon.PresetBool(value) return value == true and "1" or "0" end
+function addon.PresetNumber(value, default) return tostring(tonumber(value) or default or 0) end
+function addon.ParsePresetBool(value) return tostring(value or "0") == "1" end
+
+function addon:ExportLayoutPreset()
+    if not DB then return "" end
+    addon.SaveLichKingPortraitPosition()
+    local segments = { "DKM31" }
+    segments[#segments+1] = table.concat({ "global", addon.PresetBool(DB.hudLocked), addon.PresetBool(DB.combatBarsOnlyInCombat) }, ",")
+    for _, key in ipairs(addon.PRESET_FRAME_KEYS) do
+        local cfg = DB[key] or {}
+        segments[#segments+1] = table.concat({
+            key,
+            tostring(cfg.point or "CENTER"), tostring(cfg.relativePoint or cfg.point or "CENTER"),
+            addon.PresetNumber(cfg.x), addon.PresetNumber(cfg.y), addon.PresetNumber(cfg.scale, 1),
+            addon.PresetBool(cfg.enabled), addon.PresetNumber(cfg.iconsPerRow), addon.PresetNumber(cfg.opacity, 1),
+        }, ",")
+    end
+    local r = DB.resourceHUD or {}
+    segments[#segments+1] = table.concat({ "resourceExtra", addon.PresetBool(r.showRunes ~= false), addon.PresetBool(r.showRunicPower ~= false), addon.PresetBool(r.showPowerText ~= false), tostring(r.runeSpacing or "normal"), tostring(r.style or "classic"), addon.PresetNumber(r.arcSpacing,105), tostring(r.arcPoint or "CENTER"), tostring(r.arcRelativePoint or "CENTER"), addon.PresetNumber(r.arcX), addon.PresetNumber(r.arcY), tostring(r.visibilityMode or "combat"), addon.PresetNumber(r.fadeAlpha,0.20) }, ",")
+    local i = DB.interruptAlert or {}
+    segments[#segments+1] = table.concat({ "interruptExtra", addon.PresetBool(i.actionGlow ~= false) }, ",")
+    local c = DB.coach or {}
+    segments[#segments+1] = table.concat({ "coachExtra", addon.PresetBool(c.onlyInCombat ~= false), addon.PresetBool(c.adaptiveHealth ~= false) }, ",")
+    local vp = DB.voice and DB.voice.portrait or {}
+    segments[#segments+1] = table.concat({ "portrait", addon.PresetBool(vp.enabled), addon.PresetBool(vp.locked ~= false), tostring(vp.point or "CENTER"), tostring(vp.relativePoint or "CENTER"), addon.PresetNumber(vp.x), addon.PresetNumber(vp.y,165), addon.PresetNumber(vp.scale,1), tostring(vp.character == "bolvar" and "bolvar" or "arthas"), tostring(vp.positionVersion == 2 and 2 or 1) }, ",")
+    return table.concat(segments, ";")
+end
+
+function addon.SplitPreset(text, separator)
+    local result = {}
+    text = tostring(text or "")
+    separator = separator or ","
+    local pattern = "([^" .. separator .. "]+)"
+    for value in text:gmatch(pattern) do result[#result+1] = value end
+    return result
+end
+
+function addon:ApplyLayoutPresetPositions()
+    if not DB then return end
+    RestoreFramePosition(mainFrame, "main")
+    RestoreFramePosition(coachFrame, "coach")
+    RestoreFramePosition(statusWidget, "statusWidget")
+    RestoreFramePosition(buffFrame, "buffBar")
+    RestoreFramePosition(externalBuffFrame, "externalBuffBar")
+    RestoreFramePosition(debuffFrame, "debuffBar")
+    RestoreFramePosition(abilityFrame, "abilityBar")
+    RestoreFramePosition(resourceFrame, "resourceHUD")
+    if resourceArcFrame then RestoreResourceArcPosition(resourceArcFrame) end
+    RestoreFramePosition(interruptFrame, "interruptAlert")
+    addon.RestoreLichKingPortraitPosition()
+    self:UpdateLichKingPortraitModel()
+    for dbKey in pairs(COMBAT_BAR_LAYOUT_LIMITS) do self:ApplyCombatBarLayout(dbKey) end
+    self:UpdateBarLayoutFrame()
+    self:UpdateLichKingPortraitState()
+    self:UpdateHUDSettings()
+    self:RefreshCombatHUDVisibility()
+end
+
+function addon:ImportLayoutPreset(text)
+    if not DB then return false, T("Settings are not ready yet.") end
+    if InCombatLockdown and InCombatLockdown() then return false, T("Layout presets cannot be imported during combat.") end
+    text = Trim(text)
+    -- Presets are data only: keep the format bounded and require the exact 3.1
+    -- header before parsing any settings. No Lua source is ever evaluated.
+    if text == "" or #text > 12000 or not text:match("^DKM31;") then
+        return false, T("Invalid DK Mentor 3.1 layout preset.")
+    end
+    local knownFrames = {}
+    for _, key in ipairs(addon.PRESET_FRAME_KEYS) do knownFrames[key] = true end
+    for segment in text:gmatch("[^;]+") do
+        local fields = addon.SplitPreset(segment, ",")
+        local key = fields[1]
+        if knownFrames[key] then
+            local cfg = DB[key] or {}
+            local defaults = DEFAULTS[key] or {}
+            if addon.PRESET_ANCHORS[fields[2] or ""] then cfg.point = fields[2] end
+            if addon.PRESET_ANCHORS[fields[3] or ""] then cfg.relativePoint = fields[3] end
+            cfg.x = Clamp(tonumber(fields[4]) or defaults.x or 0, -4000, 4000)
+            cfg.y = Clamp(tonumber(fields[5]) or defaults.y or 0, -4000, 4000)
+            cfg.scale = Clamp(tonumber(fields[6]) or defaults.scale or 1, 0.7, 1.6)
+            if defaults.enabled ~= nil then cfg.enabled = addon.ParsePresetBool(fields[7]) end
+            if defaults.iconsPerRow ~= nil and tonumber(fields[8]) then cfg.iconsPerRow = Clamp(tonumber(fields[8]), 1, 20) end
+            if defaults.opacity ~= nil and tonumber(fields[9]) then cfg.opacity = Clamp(tonumber(fields[9]), 0.3, 1) end
+            DB[key] = cfg
+        elseif key == "global" then
+            -- Always relock after import; importing a layout should never leave
+            -- click-catching drag handles active unexpectedly.
+            DB.hudLocked = true
+            DB.combatBarsOnlyInCombat = addon.ParsePresetBool(fields[3])
+        elseif key == "resourceExtra" then
+            local r = DB.resourceHUD or {}
+            r.showRunes = addon.ParsePresetBool(fields[2]); r.showRunicPower = addon.ParsePresetBool(fields[3]); r.showPowerText = addon.ParsePresetBool(fields[4])
+            if fields[5] == "compact" or fields[5] == "normal" or fields[5] == "wide" then r.runeSpacing = fields[5] end
+            if fields[6] == "classic" or fields[6] == "arcs" then r.style = fields[6] end
+            r.arcSpacing = Clamp(tonumber(fields[7]) or 105, 70, 180)
+            if addon.PRESET_ANCHORS[fields[8] or ""] then r.arcPoint = fields[8] end
+            if addon.PRESET_ANCHORS[fields[9] or ""] then r.arcRelativePoint = fields[9] end
+            r.arcX = Clamp(tonumber(fields[10]) or 0,-4000,4000); r.arcY = Clamp(tonumber(fields[11]) or 0,-4000,4000)
+            if fields[12] == "always" or fields[12] == "fade" or fields[12] == "combat" then r.visibilityMode = fields[12] end
+            r.fadeAlpha = Clamp(tonumber(fields[13]) or 0.20,0.05,0.80)
+            DB.resourceHUD = r
+        elseif key == "interruptExtra" then
+            DB.interruptAlert.actionGlow = addon.ParsePresetBool(fields[2])
+        elseif key == "coachExtra" then
+            DB.coach.onlyInCombat = addon.ParsePresetBool(fields[2]); DB.coach.adaptiveHealth = addon.ParsePresetBool(fields[3])
+        elseif key == "portrait" and DB.voice and DB.voice.portrait then
+            local vp = DB.voice.portrait
+            vp.enabled = addon.ParsePresetBool(fields[2]); vp.locked = true
+            if addon.PRESET_ANCHORS[fields[4] or ""] then vp.point = fields[4] end
+            if addon.PRESET_ANCHORS[fields[5] or ""] then vp.relativePoint = fields[5] end
+            vp.x = Clamp(tonumber(fields[6]) or 0,-4000,4000); vp.y = Clamp(tonumber(fields[7]) or 165,-4000,4000); vp.scale = Clamp(tonumber(fields[8]) or 1,0.7,1.5)
+            if fields[9] == "arthas" or fields[9] == "bolvar" then vp.character = fields[9] end
+            vp.positionVersion = tonumber(fields[10]) == 2 and 2 or nil
+        end
+    end
+    self.hudEditSessionActive = false
+    self:ApplyLayoutPresetPositions()
+    return true
+end
+
+function addon:ToggleLayoutPresetFrame()
+    if not addon.layoutPresetFrame then return end
+    if addon.layoutPresetFrame:IsShown() then
+        addon.layoutPresetFrame:Hide()
+    else
+        addon.layoutPresetFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+        addon.layoutPresetFrame:SetFrameLevel(1400)
+        addon.layoutPresetFrame:Show()
+        if addon.layoutPresetFrame.Raise then addon.layoutPresetFrame:Raise() end
+        addon.layoutPresetFrame.editBox:SetText(self:ExportLayoutPreset())
+        addon.layoutPresetFrame.editBox:SetCursorPosition(0)
+    end
+end
+
+function addon.CreateLayoutPresetFrame()
+    local frame = CreateFrame("Frame", "DKMentorLayoutPresetFrame", UIParent, "BackdropTemplate")
+    frame:SetSize(690, 430)
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 20)
+    frame:SetFrameStrata("FULLSCREEN_DIALOG")
+    frame:SetFrameLevel(1400)
+    frame:SetClampedToScreen(true)
+    frame:SetMovable(true)
+    frame:EnableMouse(true)
+    if frame.SetToplevel then frame:SetToplevel(true) end
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function(self)
+        if not (InCombatLockdown and InCombatLockdown()) then self:StartMoving() end
+    end)
+    frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    frame:SetScript("OnShow", function(self)
+        self:SetFrameStrata("FULLSCREEN_DIALOG")
+        self:SetFrameLevel(1400)
+        if self.Raise then self:Raise() end
+    end)
+    ApplyBackdrop(frame, 0.98)
+
+    frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    frame.title:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -16)
+    frame.title:SetText(T("DK Mentor layout presets"))
+    frame.title:SetTextColor(0.58,0.88,1.00)
+
+    frame.close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+    frame.close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -5, -5)
+
+    frame.help = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    frame.help:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -48)
+    frame.help:SetWidth(650)
+    frame.help:SetHeight(42)
+    frame.help:SetJustifyH("LEFT")
+    frame.help:SetJustifyV("TOP")
+    frame.help:SetText(T("Export your DK Mentor HUD positions and visual settings as a text string, or paste another DK Mentor 3.1 preset and import it. Third-party addon layouts are not included."))
+
+    frame.box = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    frame.box:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -96)
+    frame.box:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -38, 78)
+    frame.box:SetBackdrop({ bgFile="Interface\\Buttons\\WHITE8X8", edgeFile="Interface\\Tooltips\\UI-Tooltip-Border", edgeSize=10 })
+    frame.box:SetBackdropColor(0.01,0.025,0.035,0.94)
+    frame.box:SetBackdropBorderColor(0.16,0.42,0.54,0.86)
+
+    frame.scroll = CreateFrame("ScrollFrame", nil, frame.box, "UIPanelScrollFrameTemplate")
+    frame.scroll:SetPoint("TOPLEFT", frame.box, "TOPLEFT", 10, -10)
+    frame.scroll:SetPoint("BOTTOMRIGHT", frame.box, "BOTTOMRIGHT", -28, 10)
+    frame.editBox = CreateFrame("EditBox", nil, frame.scroll)
+    frame.editBox:SetMultiLine(true)
+    frame.editBox:SetAutoFocus(false)
+    frame.editBox:SetFontObject(ChatFontNormal or GameFontHighlightSmall)
+    frame.editBox:SetWidth(600)
+    frame.editBox:SetHeight(250)
+    frame.editBox:SetTextInsets(4,4,4,4)
+    frame.editBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    frame.editBox:SetScript("OnTextChanged", function(self)
+        local h = math.max(250, (self.GetStringHeight and self:GetStringHeight() or 250) + 18)
+        self:SetHeight(h)
+    end)
+    frame.scroll:SetScrollChild(frame.editBox)
+
+    frame.exportButton = CreateActionButton(frame)
+    frame.exportButton:SetSize(128, 28)
+    frame.exportButton:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 18, 34)
+    frame.exportButton:SetText(T("Export current"))
+    frame.exportButton:SetScript("OnClick", function()
+        frame.editBox:SetText(addon:ExportLayoutPreset())
+        frame.editBox:SetFocus(); frame.editBox:HighlightText()
+        Print(T("Layout preset exported. Press Ctrl+C to copy the selected text."))
+    end)
+
+    frame.importButton = CreateActionButton(frame)
+    frame.importButton:SetSize(128, 28)
+    frame.importButton:SetPoint("LEFT", frame.exportButton, "RIGHT", 8, 0)
+    frame.importButton:SetText(T("Import preset"))
+    frame.importButton:SetScript("OnClick", function()
+        local ok, err = addon:ImportLayoutPreset(frame.editBox:GetText())
+        if ok then Print(T("Layout preset imported and applied.")) else Print(err or T("Layout preset could not be imported.")) end
+    end)
+
+    frame.selectButton = CreateActionButton(frame)
+    frame.selectButton:SetSize(118, 28)
+    frame.selectButton:SetPoint("LEFT", frame.importButton, "RIGHT", 8, 0)
+    frame.selectButton:SetText(T("Select all"))
+    frame.selectButton:SetScript("OnClick", function() frame.editBox:SetFocus(); frame.editBox:HighlightText() end)
+
+    frame.resetButton = CreateActionButton(frame)
+    frame.resetButton:SetSize(118, 28)
+    frame.resetButton:SetPoint("LEFT", frame.selectButton, "RIGHT", 8, 0)
+    frame.resetButton:SetText(T("Reset HUDs"))
+    frame.resetButton:SetScript("OnClick", function() addon:ResetHUDPositions(); frame.editBox:SetText(addon:ExportLayoutPreset()) end)
+
+    -- Keep an explicit text close action in the modal footer. The standard
+    -- corner X is still available, but the footer button is easier to notice
+    -- against busy game backgrounds and makes the exit path unambiguous.
+    frame.closeButton = CreateActionButton(frame)
+    frame.closeButton:SetSize(110, 28)
+    frame.closeButton:SetPoint("LEFT", frame.resetButton, "RIGHT", 8, 0)
+    frame.closeButton:SetText(T("Close"))
+    frame.closeButton:SetScript("OnClick", function() frame:Hide() end)
+
+    frame:Hide()
+    if UISpecialFrames then table.insert(UISpecialFrames, frame:GetName()) end
+    return frame
+end
+
 function addon:CreateUI()
     mainFrame = CreateMainFrame()
     coachFrame = CreateCoachFrame()
@@ -10184,6 +11431,9 @@ function addon:CreateUI()
     interruptFrame = CreateInterruptAlert()
     barLayoutFrame = CreateBarLayoutFrame()
     voiceConfigFrame = CreateVoiceConfigFrame()
+    addon.lichKingPortraitFrame = addon.CreateLichKingPortraitFrame()
+    self:UpdateLichKingPortraitModel()
+    addon.layoutPresetFrame = addon.CreateLayoutPresetFrame()
     languagePickerFrame = CreateLanguagePickerFrame()
     minimapButton = CreateMinimapButton()
     for dbKey in pairs(COMBAT_BAR_LAYOUT_LIMITS) do self:ApplyCombatBarLayout(dbKey) end
@@ -10324,12 +11574,15 @@ addon:SetScript("OnEvent", function(self, event, ...)
             if resourceFrame then resourceFrame:Hide() end
             if interruptFrame then interruptFrame:Hide() end
             voiceConfigFrame:Hide()
+            if addon.lichKingPortraitFrame then addon.lichKingPortraitFrame:Hide() end
+            if addon.layoutPresetFrame then addon.layoutPresetFrame:Hide() end
             minimapButton:Hide()
             Print(T("This addon only runs on Death Knights."))
             return
         end
 
         self.active = true
+        self:UpdateLichKingPortraitState()
         self.worldReady = false
         self.playerWasDead = false
         if UnitIsDeadOrGhost then
@@ -10384,6 +11637,7 @@ addon:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_REGEN_DISABLED" then
         self.combatEventState = true
         if specializationPickerFrame then specializationPickerFrame:Hide() end
+        self:RefreshStatusWidgetVisibility()
         self:SyncReadableBuffRuntime(false)
         combatStartedAt = GetNow()
         self.mainWasVisibleBeforeCombat = mainFrame:IsShown()
@@ -10706,6 +11960,9 @@ addon:SetScript("OnEvent", function(self, event, ...)
         local unit = ...
         if unit == "player" then
             self:UpdateStatusWidget()
+            if DB and DB.codexSection == "stats" and DB.codexGearView == "preparation" then
+                self:UpdateGuideSection()
+            end
         end
     elseif event == "CHALLENGE_MODE_START" or event == "CHALLENGE_MODE_KEYSTONE_SLOTTED" or event == "CHALLENGE_MODE_RESET" or event == "UPDATE_BATTLEFIELD_STATUS" or event == "PVP_MATCH_ACTIVE" then
         self:ScheduleUpdate(false)

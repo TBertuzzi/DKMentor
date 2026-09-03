@@ -3,7 +3,7 @@ local DKM = {}
 assert(loadfile("GearData.lua"))("DKMentor", DKM)
 assert(type(DKM.GearData) == "table", "GearData table missing")
 assert(DKM.GearData.patch == "12.1.0", "GearData patch mismatch")
-assert(DKM.GearData.reviewed == "2026-08-30", "GearData review date mismatch")
+assert(DKM.GearData.reviewed == "2026-09-01", "GearData review date mismatch")
 
 local tier = assert(DKM.GearData.tierSet, "Season 2 tier set data missing")
 assert(tier.setID == 2055, "Death Knight Season 2 set ID mismatch")
@@ -91,8 +91,9 @@ for _, needle in ipairs({
 }) do
     assert(core:find(needle, 1, true), "Gear Mentor Core feature missing: " .. needle)
 end
-assert(builds:find('heroTalent = meta and meta.heroTalent or nil', 1, true), "Build hero-talent metadata missing")
-assert(builds:find('focus = meta and meta.focus or nil', 1, true), "Build focus metadata missing")
+assert(builds:find('for key, value in pairs(meta) do profile[key] = value end', 1, true), "Build metadata merge missing")
+assert(builds:find('heroTalent="Deathbringer"', 1, true), "Build hero-talent metadata missing")
+assert(builds:find('focus="', 1, true), "Build focus metadata missing")
 
 -- Gear Mentor must remain advisory: never equip, upgrade, socket, enchant or buy anything.
 for _, forbidden in ipairs({

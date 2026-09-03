@@ -9,8 +9,8 @@ local ADDON_NAME, DKM = ...
 local GearData = {
     patch = "12.1.0",
     season = "Midnight Season 2",
-    reviewed = "2026-08-30",
-    sourceName = "Icy Veins",
+    reviewed = "2026-09-03",
+    sourceName = "Wowhead",
     sourceNote = "Guide-backed targets are a farming reference, not a replacement for simming your character.",
     specs = {},
 }
@@ -67,8 +67,8 @@ GearData.tierSet = {
 }
 
 GearData.specs[250] = {
-    sourceURL = "https://www.icy-veins.com/wow/blood-death-knight-pve-tank-gear-best-in-slot",
-    sourceUpdated = "2026-08-10",
+    sourceURL = "https://www.wowhead.com/guide/classes/death-knight/blood/bis-gear",
+    sourceUpdated = "2026-08-20",
     summary = "Blood gearing should protect the tanking loop first: weapon value, strong trinkets, useful cantrip pieces, and clean setup hygiene matter more than chasing a universal secondary-stat score.",
     weaponNote = "Blood normally plans around a two-handed Strength weapon. Maze-roa is a headline Season 2 target; a crafted weapon is a fallback when your current weapon is far behind.",
     targets = {
@@ -89,7 +89,7 @@ GearData.specs[250] = {
         "If your weapon is significantly behind and Maze-roa is not realistically obtainable yet, a crafted two-handed weapon can be a temporary high-value step.",
     },
     craftTargets = {
-        CraftTarget(237846, "Blood Knight's Warblade", "Weapon", "VERY HIGH", "Darkmoon Sigil: Hunt", "Early-season weapon bridge when Maze-roa is not realistically obtainable yet and your current weapon is significantly behind."),
+        CraftTarget(237846, "Blood Knight's Warblade", "Weapon", "VERY HIGH", "Hunter's Ritual Stone / Darkmoon Sigil: Hunt", "Early-season weapon bridge when Maze-roa is not realistically obtainable yet and your current weapon is significantly behind; current guidance treats either embellishment as a viable option."),
         CraftTarget(237834, "Spellbreaker's Bracers", "Wrist", "VERY HIGH", "Arcanoweave Lining", "A strong long-term crafted slot for Blood once the urgent weapon question is solved."),
         CraftTarget(240949, "Masterwork Sin'dorei Band", "Finger", "HIGH", "Prismatic Focusing Iris", "Strong single-target crafted ring option when it fits your current gear and embellishment plan."),
         CraftTarget(237828, "Spellbreaker's March", "Feet", "HIGH", "Arcanoweave Lining", "Practical Mythic+ or alternative crafted slot when boots are a better upgrade than the ring."),
@@ -102,13 +102,13 @@ GearData.specs[250] = {
 }
 
 GearData.specs[251] = {
-    sourceURL = "https://www.icy-veins.com/wow/frost-death-knight-pve-dps-gear-best-in-slot",
-    sourceUpdated = "2026-08-17",
+    sourceURL = "https://www.wowhead.com/guide/classes/death-knight/frost/bis-gear",
+    sourceUpdated = "2026-09-02",
     summary = "Frost currently rewards dual-wield weapon quality, a strong active/passive trinket pairing, and high-value Venomous Abyss cantrip pieces. Close upgrades should still be simulated.",
-    weaponNote = "Dual-wield is the current Season 2 baseline. Aman'muso + Jaw of the Shackled Goddess are the headline weapon targets; weapon item level is especially valuable early in gearing.",
+    weaponNote = "Dual-wield is the current Season 2 baseline. Jaw of the Shackled Goddess is the current BiS weapon with Aman'muso as the off-hand; the current tier-set emphasis on auto-attacks leaves no competitive two-handed BiS option.",
     targets = {
-        Target(268209, "Aman'muso, Warlord's Vengeance", "Main Hand", "Coiled Altar - Venomous Abyss", "VERY HIGH", "High-item-level one-handed weapon with a cantrip effect and synergy with Zul'jin's Guillotine Technique."),
-        Target(268202, "Jaw of the Shackled Goddess", "Off Hand", "Ula'tek - Venomous Abyss", "VERY HIGH", "High-item-level one-handed weapon with an additional proc; part of the current dual-wield target setup."),
+        Target(268202, "Jaw of the Shackled Goddess", "Main Hand", "Ula'tek - Venomous Abyss", "VERY HIGH", "Current BiS main-hand target with high item level and an additional proc."),
+        Target(268209, "Aman'muso, Warlord's Vengeance", "Off Hand", "Coiled Altar - Venomous Abyss", "VERY HIGH", "Current BiS off-hand target and a high-value one-handed cantrip weapon."),
         Target(270175, "Voracious Heart of Ula'tek", "Trinket", "Ula'tek - Venomous Abyss", "VERY HIGH", "Best-in-class on-use target for current Frost burst timings according to current guide guidance."),
         Target(270173, "Zul'jin's Guillotine Technique", "Trinket", "Coiled Altar - Venomous Abyss", "VERY HIGH", "Headline passive trinket and a natural pairing with Aman'muso."),
         Target(268265, "Aqirbane Reliquary", "Neck", "Ula'tek - Venomous Abyss", "HIGH", "High-item-level cantrip neck with a socket and a flexible secondary-stat effect."),
@@ -119,38 +119,38 @@ GearData.specs[251] = {
         "Frost burst timings make active-trinket alignment important, so compare cooldown alignment as well as raw item level.",
     },
     crafting = {
-        "Spellbreaker's Bracers with Arcanoweave Lining are a strong long-term craft.",
-        "Spellbreaker's March with Arcanoweave Lining is the complementary late-season craft in current guidance.",
-        "Early in the season, a crafted one-handed weapon can still be efficient if both equipped weapons are far below the track you can craft.",
+        "Early season: craft Spellbreaker's Blade if your one-handed weapons are far behind; Hunter's Ritual Stone is an optional weapon embellishment.",
+        "Loa Worshiper's Band is the current long-term centerpiece craft when your gem setup supports its preferred effect.",
+        "Late season: Spellbreaker's Bracers with Stabilizing Gemstone Bandolier complements the Loa Worshiper's Band embellishment plan.",
     },
     craftTargets = {
-        CraftTarget(237839, "Spellbreaker's Blade", "Main Hand", "VERY HIGH", "Hunter's Ritual Stone (optional)", "Early-season weapon craft when your available one-handed weapons are well below the track you can craft."),
+        CraftTarget(237839, "Spellbreaker's Blade", "One-Hand", "VERY HIGH", "Hunter's Ritual Stone (optional)", "Early-season weapon craft when your available one-handed weapons are well below the track you can craft."),
         CraftTarget(251513, "Loa Worshiper's Band", "Finger", "VERY HIGH", "Loa Worshiper's Band effect", "Current long-term Frost crafting priority when your gem setup can support its preferred effect."),
         CraftTarget(237834, "Spellbreaker's Bracers", "Wrist", "VERY HIGH", "Stabilizing Gemstone Bandolier", "High-value Frost crafted wrist option that complements the current ring-focused embellishment plan."),
     },
     upgrades = {
-        "General Crest priority: Weapons > Trinkets > Head/Chest/Legs > Shoulders/Gloves/Belt/Boots/Rings.",
-        "Dual-wield means both weapon slots matter; do not judge the pair from only the higher item-level hand.",
+        "Weapon quality is the first general upgrade concern; dual-wield means both weapon slots matter.",
+        "After the core weapon and trinket targets, use Raidbots Top Gear for exact Crest spending instead of forcing a fixed slot order.",
         "Use the Catalyst to secure 4-piece early, then optimize the retained secondary stats as stronger base pieces arrive.",
     },
 }
 
 GearData.specs[252] = {
-    sourceURL = "https://www.icy-veins.com/wow/unholy-death-knight-pve-dps-gear-best-in-slot",
-    sourceUpdated = "2026-08-17",
+    sourceURL = "https://www.wowhead.com/guide/classes/death-knight/unholy/bis-gear",
+    sourceUpdated = "2026-09-02",
     summary = "Unholy gearing prioritizes weapon power, the current active/passive trinket pair, and strong Venomous Abyss cantrip pieces while keeping Crit/Mastery-oriented crafted options flexible.",
     weaponNote = "Maze-roa is the headline two-handed target. A crafted two-handed weapon with Darkmoon Sigil: Hunt can be a strong early-season bridge when your weapon is far behind.",
     targets = {
         Target(268213, "Maze-roa, Warlord's Fury", "Weapon", "Coiled Altar - Venomous Abyss", "VERY HIGH", "Headline two-handed cantrip weapon and a major long-term Unholy target."),
         Target(270175, "Voracious Heart of Ula'tek", "Trinket", "Ula'tek - Venomous Abyss", "VERY HIGH", "Powerful on-use trinket that aligns naturally with Unholy's major cooldown package."),
-        Target(270173, "Zul'jin's Guillotine Technique", "Trinket", "Coiled Altar - Venomous Abyss", "VERY HIGH", "Strong passive trinket with extra synergy when paired with the Zul'jan weapon set."),
+        Target(270173, "Zul'jin's Guillotine Technique", "Trinket", "Coiled Altar - Venomous Abyss", "HIGH", "Excellent in 1-2 target scenarios, but current guidance ranks stat trinkets ahead of it in meaningful AoE."),
         Target(268265, "Aqirbane Reliquary", "Neck", "Ula'tek - Venomous Abyss", "HIGH", "Cantrip neck with a socket and a flexible secondary-stat effect."),
         Target(271878, "Chausses of Unbound Rancor", "Legs", "Ula'tek - Venomous Abyss", "HIGH", "High-item-level cantrip legs and a valuable raid target."),
     },
     trinkets = {
-        "Preferred pair: Voracious Heart of Ula'tek (active) + Zul'jin's Guillotine Technique (passive).",
-        "Seed of the Devouring Wild is a useful active fallback when the Heart is unavailable.",
-        "Keep one active and one passive trinket in mind when comparing alternatives; cooldown alignment matters to Unholy's burst package.",
+        "Voracious Heart of Ula'tek is the standout on-use target and its 1.5-minute cooldown aligns naturally with Unholy's burst windows.",
+        "Zul'jin's Guillotine Technique completes the BiS pair for 1-2 target scenarios, but it loses priority as target count rises.",
+        "For Mythic+, Delves, and other frequent-AoE content, stat trinkets such as Gebbo's Bottomless Bag or Bellowstone can outperform Zul'jin's; keep one active and one passive option in mind.",
     },
     crafting = {
         "Early season: consider Blood Knight's Warblade with Darkmoon Sigil: Hunt if you do not have a near-max weapon.",
@@ -163,8 +163,8 @@ GearData.specs[252] = {
         CraftTarget(237828, "Spellbreaker's March", "Feet", "HIGH", "Arcanoweave Lining", "Late-season complementary craft after the weapon problem is solved and Sparks are less constrained."),
     },
     upgrades = {
-        "General Crest priority: Weapon > Trinkets > Head/Chest/Legs > Shoulders/Gloves/Belt/Boots/Rings.",
-        "Prioritize permanent or hard-to-replace power before small secondary-stat shuffles.",
+        "Current general upgrade order: Weapon > strong trinkets > lowest item-level pieces.",
+        "Weapon item level is the standout priority because Unholy's damage package scales heavily with weapon damage.",
         "Secure 4-piece early; later Catalyst choices can optimize the secondary stats retained from the original item.",
     },
 }

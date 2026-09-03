@@ -6,15 +6,15 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "3.0.17"
+VERSION = "3.1.6"
 INTERFACE = "120100"
 
-RUNTIME_LUA = ["Localization.lua", "Data.lua", "Builds.lua", "Guides.lua", "GearData.lua", "Codex.lua", "Voices.lua", "Core.lua", "MentorEngine.lua", "MentorReview.lua", "DKTools.lua", "MentorStudio.lua"]
+RUNTIME_LUA = ["Localization.lua", "Data.lua", "Builds.lua", "Guides.lua", "GearData.lua", "PreparationData.lua", "Codex.lua", "Voices.lua", "Core.lua", "MentorEngine.lua", "MentorReview.lua", "DKTools.lua", "MentorStudio.lua"]
 REQUIRED = [
     "DKMentor.toc", *RUNTIME_LUA, "README.md", "CHANGELOG.md", "LICENSE",
     "THIRD_PARTY_NOTICES.md", "POLICY_AND_SOURCES.md", "PUBLISHING.md",
-    "RELEASE_NOTES_v3.0.17.md", "TESTING_v3.0.17.md", "CURSEFORGE_CHANGELOG_v3.0.17.md", "VALIDATION_REPORT_v3.0.17.md",
-    "tests/localization_smoke.lua", "tests/review_smoke.lua", "tests/tools_smoke.lua", "tests/studio_smoke.lua", "tests/core_ux_smoke.lua", "tests/modal_navigation_smoke.lua", "tests/interrupt_enhancements_smoke.lua", "tests/gear_mentor_smoke.lua", "tests/build_mentor_smoke.lua", "tests/rune_order_smoke.lua",
+    "RELEASE_NOTES_v3.1.6.md", "TESTING_v3.1.6.md", "CURSEFORGE_CHANGELOG_v3.1.6.md", "VALIDATION_REPORT_v3.1.6.md", "DATA_AUDIT_v3.1.0.md",
+    "tests/localization_smoke.lua", "tests/review_smoke.lua", "tests/tools_smoke.lua", "tests/studio_smoke.lua", "tests/core_ux_smoke.lua", "tests/modal_navigation_smoke.lua", "tests/interrupt_enhancements_smoke.lua", "tests/gear_mentor_smoke.lua", "tests/build_mentor_smoke.lua", "tests/rune_order_smoke.lua", "tests/preparation_31_smoke.lua", "tests/accessibility_preset_31_smoke.lua", "tests/voice_portrait_315_smoke.lua", "tests/layout_preset_316_smoke.lua", "tests/portrait_position_316_smoke.lua",
     "Media/DKArcFill.tga", "Media/DKArcBG.tga", "Media/DKArcGlow.tga",
     "Media/DKArcFillRight.tga", "Media/DKArcBGRight.tga", "Media/DKArcGlowRight.tga",
 ]
@@ -69,11 +69,25 @@ def main() -> int:
         errors.append("TOC Notes must describe the DK-focused 3.0 scope and Loadout Pilot handoff")
 
     core = (ROOT / "Core.lua").read_text(encoding="utf-8")
+
+    # WoW/Lua rejects a chunk once more than 200 locals are simultaneously
+    # active in its main function. Core.lua intentionally keeps a safety margin.
+    chunk_locals = 0
+    for raw in core.splitlines():
+        if raw.startswith("local function "):
+            chunk_locals += 1
+        elif raw.startswith("local "):
+            declaration = raw[6:].split("=", 1)[0].strip()
+            names = [name.strip() for name in declaration.split(",")]
+            chunk_locals += sum(1 for name in names if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name))
+    if chunk_locals > 190:
+        errors.append(f"Core.lua chunk-level local count is {chunk_locals}; keep it <= 190 to preserve headroom below WoW's 200-local limit")
     mentor_engine = (ROOT / "MentorEngine.lua").read_text(encoding="utf-8")
     data = (ROOT / "Data.lua").read_text(encoding="utf-8")
     builds = (ROOT / "Builds.lua").read_text(encoding="utf-8")
     codex = (ROOT / "Codex.lua").read_text(encoding="utf-8")
     gear_data = (ROOT / "GearData.lua").read_text(encoding="utf-8")
+    preparation_data = (ROOT / "PreparationData.lua").read_text(encoding="utf-8")
     loc = (ROOT / "Localization.lua").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     mentor_review = (ROOT / "MentorReview.lua").read_text(encoding="utf-8")
@@ -142,7 +156,7 @@ def main() -> int:
         'local enUSByPtBR = {}',
         'value = enUSByPtBR[key] or key',
         'function DKM.RefreshStaticLocalization()',
-        'for _, moduleName in ipairs({ "Data", "Builds", "Guides", "Codex", "Voices" }) do',
+        'for _, moduleName in ipairs({ "Data", "Builds", "Guides", "Codex", "Voices", "PreparationData" }) do',
     ):
         if snippet not in loc:
             errors.append(f"2.0.11 localization refresh regression: {snippet}")
@@ -329,9 +343,9 @@ def main() -> int:
     if 'command == "loadout" or command == "loadouts"' not in core:
         errors.append("/dkm loadouts handoff command is missing")
 
-    # Upgrades from 1.x: keep old SavedVariables inert and avoid another schema migration.
-    if "schema = 31" not in defaults:
-        errors.append("3.0 must use schema 31 for the resource-visibility migration guard")
+    # 3.1 adds persisted accessibility/portrait settings while keeping legacy loadout data inert.
+    if "schema = 33" not in defaults:
+        errors.append("3.1.x must use schema 33 for current SavedVariables defaults")
     init = section(core, "function addon:InitializeDatabase()", "function addon:CreateUI()")
     for snippet in (
         'if DB.mainTab == "builds" then DB.mainTab = "guide" end',
@@ -419,7 +433,7 @@ def main() -> int:
         errors.append("Never hook secret AuraButton OnShow/OnHide handlers")
     if "managedAuraButtons" in core:
         errors.append("Do not retain AuraButton objects to infer secret aura visibility")
-    chrome = section(core, "local function UpdateManagedAuraBarChrome(frame)", "local MANAGED_AURA_ICON_SIZE")
+    chrome = section(core, "local function UpdateManagedAuraBarChrome(frame)", "addon.MANAGED_AURA_ICON_SIZE")
     for snippet in ("local showChrome = addon.hudPreviewMode == true", "frame.label:SetShown(showChrome)", "frame.dragHint:SetShown(showChrome)", "frame:EnableMouse(editing)", "frame:SetBackdropColor(0, 0, 0, 0)"):
         if snippet not in chrome:
             errors.append(f"Secret-safe empty aura bar behavior missing: {snippet}")
@@ -781,7 +795,7 @@ def main() -> int:
     for snippet in (
         'patch = "12.1.0"',
         'season = "Midnight Season 2"',
-        'reviewed = "2026-08-30"',
+        'reviewed = "2026-09-03"',
         'GearData.specs[250]',
         'GearData.specs[251]',
         'GearData.specs[252]',
@@ -991,6 +1005,90 @@ def main() -> int:
     ):
         if snippet not in loc:
             errors.append(f"3.0.17 Build Mentor localization missing: {snippet}")
+
+    # 3.1 Preparation / Ready Check.
+    for snippet in (
+        'patch = "12.1.0"',
+        'reviewed = "2026-09-03"',
+        'itemID=240983',
+        'itemID=241288',
+        'itemID=243734',
+        'itemID=259085',
+        'enchantID=6241',
+        'enchantID=6245',
+        'enchantID=3370',
+        'enchantID=3847',
+    ):
+        if snippet not in preparation_data:
+            errors.append(f"3.1 PreparationData regression: {snippet}")
+    for snippet in (
+        'codexBuildMode = "standard"',
+        'function addon:GetPreparationReadyStatus(specID)',
+        'function addon:GetRecommendedRuneforgeStatus(specID)',
+        'elseif viewKey == "preparation" then',
+        '{ key = "preparation", label = T("Preparation") },',
+        'function addon:GetCodexBuildMode()',
+        'function addon:SetCodexBuildMode(mode)',
+        'profile.sbaFriendly == true',
+        'local sourceOrder = {}',
+        'function addon:ExportLayoutPreset()',
+        'function addon:ImportLayoutPreset(text)',
+        'not text:match("^DKM31;")',
+        '#text > 12000',
+        'DB.hudLocked = true',
+        'addon.LICH_KING_CREATURE_ID = 36597',
+        'addon.LICH_KING_BOLVAR_CREATURE_ID = 99456',
+        'frame:SetFrameStrata("FULLSCREEN_DIALOG")',
+        'frame:SetFrameLevel(1400)',
+        'voice.portraitCharacterButton:SetPoint("LEFT", voice.portraitScaleButton, "RIGHT", 8, 0)',
+        'addon.LICH_KING_CHARACTERS = {',
+        'function addon:SetLichKingPortraitCharacter(characterKey)',
+        'function addon:CycleLichKingPortraitCharacter()',
+        'DB.voice.portrait.character = characterKey',
+        'tostring(vp.character == "bolvar" and "bolvar" or "arthas")',
+        'if fields[9] == "arthas" or fields[9] == "bolvar" then vp.character = fields[9] end',
+        'addon.LICH_KING_FALLBACK_ICON = "Interface\\\\Icons\\\\Achievement_Boss_LichKing"',
+        'addon.lichKingPortraitFrame = addon.CreateLichKingPortraitFrame()',
+        'self:ShowLichKingPortrait()',
+        'frame:SetSize(820, 720)',
+        'page:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -104)',
+        'frame.hudSection = CreateSection(settingsPage, T("HUDs and layout"), -38, 288)',
+        'voiceBusyUntil = addon.voiceStartedAt + 7',
+        'if now - (addon.voiceStartedAt or 0) < 0.20 then',
+        'voiceBusyUntil = 0',
+        'if self.elapsed < 0.10 then return end',
+        'cfg.positionVersion = 2',
+        'frame:SetPoint(point, parent, point, x / scale, y / scale)',
+        'if cfg.positionVersion == 2 then',
+        'if not frame.dragging then addon.RestoreLichKingPortraitPosition() end',
+        'vp.positionVersion = tonumber(fields[10]) == 2 and 2 or nil',
+    ):
+        if snippet not in core:
+            errors.append(f"3.1 Core regression: {snippet}")
+    for snippet in (
+        'profile.sbaFriendly = profile.heroTalent == "Deathbringer"',
+        'profile.sbaFriendly = not (contextKey == "pvp" and profile.heroTalent == "Deathbringer")',
+        'profile.sbaFriendly = profile.heroTalent == "Rider of the Apocalypse"',
+        'FROST_SBA_CORE',
+    ):
+        if snippet not in builds:
+            errors.append(f"3.1 SBA build regression: {snippet}")
+    for snippet in (
+        'P("Preparation", "Preparação")',
+        'P("SBA-friendly", "SBA-friendly")',
+        'P("Layout presets...", "Presets de layout...")',
+        'P("Portrait: ON", "Retrato: LIGADO")',
+        'P("Portrait character: %s", "Personagem do retrato: %s")',
+        'P("Current Unholy personal-food option.", "Opção atual de comida pessoal para Profano.")',
+    ):
+        if snippet not in loc:
+            errors.append(f"3.1 localization missing: {snippet}")
+    if 'PreparationData.lua' not in (ROOT / "scripts/package.sh").read_text(encoding="utf-8"):
+        errors.append("3.1 package.sh must include PreparationData.lua")
+    if 'PreparationData.lua' not in (ROOT / "scripts/package.ps1").read_text(encoding="utf-8"):
+        errors.append("3.1 package.ps1 must include PreparationData.lua")
+    if 'loadstring' in core or 'RunScript' in core:
+        errors.append("3.1 preset import must not evaluate script text")
 
     # Media packaging scripts must copy the full texture folder.
     package_sh = (ROOT / "scripts/package.sh").read_text(encoding="utf-8")

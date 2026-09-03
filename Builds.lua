@@ -7,7 +7,7 @@ local ADDON_NAME, DKM = ...
 local T = DKM.T or function(value) return value end
 
 local REVIEWED_PATCH = "12.1.0"
-local REVIEWED_DATE = "2026-08-30"
+local REVIEWED_DATE = "2026-09-03"
 
 local SOURCES = {
     bloodPve = { name="Wowhead", url="https://www.wowhead.com/guide/classes/death-knight/blood/talent-builds-pve-tank", author="Mandl", updated="2026-08-20" },
@@ -55,6 +55,16 @@ local FROST_CORE = {
     { spellID = 194913 },  -- Glacial Advance
     { spellID = 196770 },  -- Remorseless Winter
     { spellID = 1249658 }, -- Breath of Sindragosa
+}
+
+-- Lower-friction Frost presentation used by the optional SBA-friendly view.
+-- It intentionally omits Breath of Sindragosa from the key-icon row and does
+-- not claim that every listed ability is handled by Blizzard's assistant.
+local FROST_SBA_CORE = {
+    { spellID = 51271 },   -- Pillar of Frost
+    { spellID = 207230 },  -- Frostscythe
+    { spellID = 194913 },  -- Glacial Advance
+    { spellID = 196770 },  -- Remorseless Winter
 }
 
 local UNHOLY_CORE = {
@@ -137,8 +147,8 @@ DKM.Builds = {
             }),
         },
         pvp = {
-            sourced("frostPvp", "Frost PvP — Deathbringer", "Current Icy Veins PvP guide option focused on stronger burst setup and coordinated pressure.", "Current 12.1 PvP guide. PvP talents remain matchup-dependent.", { heroTalent="Deathbringer", heroSpellID=434765, focus="Coordinated burst pressure", badge="RECOMMENDED", keyTalents=FROST_CORE }),
-            sourced("frostPvp", "Frost PvP — Rider", "Current Icy Veins PvP alternative focused more on sustained pressure and a less all-in burst profile.", "Current 12.1 PvP guide. PvP talents remain matchup-dependent.", { heroTalent="Rider of the Apocalypse", heroSpellID=444040, focus="Sustained pressure and mobility", badge="ALTERNATIVE", keyTalents=withTalents(FROST_CORE, { { spellID=444010 } }) }),
+            sourced("frostPvp", "Frost PvP — Rider", "Current Icy Veins 3v3 baseline uses Rider for sustained pressure and mobility.", "Current 12.1 PvP guide. PvP talents remain matchup-dependent.", { heroTalent="Rider of the Apocalypse", heroSpellID=444040, focus="Sustained pressure and mobility", badge="RECOMMENDED", keyTalents=withTalents(FROST_CORE, { { spellID=444010 } }) }),
+            sourced("frostPvp", "Frost PvP — Deathbringer", "Deathbringer remains the coordinated one-shot / concentrated Pillar of Frost burst alternative.", "Current 12.1 PvP guide. PvP talents remain matchup-dependent.", { heroTalent="Deathbringer", heroSpellID=434765, focus="Coordinated one-shot burst", badge="ALTERNATIVE", keyTalents=FROST_CORE }),
         },
     },
     [252] = {
@@ -174,8 +184,41 @@ DKM.Builds = {
             }),
         },
         pvp = {
-            sourced("unholyPvp", "Unholy PvP — Pet", "Current Icy Veins PvP option focused on pet damage and single-target pressure.", "Current 12.1 PvP guide. PvP talents should be adjusted for the opposing composition.", { heroTalent="Rider of the Apocalypse", heroSpellID=444040, focus="Pet damage and single-target pressure", badge="RECOMMENDED", keyTalents=UNHOLY_CORE }),
-            sourced("unholyPvp", "Unholy PvP — Disease", "Current Icy Veins PvP alternative for rot pressure; the guide currently describes it as weaker than the pet setup.", "Current 12.1 PvP guide. PvP talents should be adjusted for the opposing composition.", { heroTalent="San'layn", heroSpellID=433895, focus="Rot pressure and spread damage", badge="ALTERNATIVE", keyTalents=UNHOLY_CORE }),
+            sourced("unholyPvp", "Unholy PvP — Disease", "Icy Veins currently labels the Disease setup as its Best 3v3 build, emphasizing rot pressure and spread damage.", "Current 12.1 PvP guide. PvP talents should be adjusted for the opposing composition.", { heroTalent="San'layn", heroSpellID=433895, focus="3v3 rot pressure and spread damage", badge="RECOMMENDED", keyTalents=UNHOLY_CORE }),
+            sourced("unholyPvp", "Unholy PvP — Pet", "Pet remains the single-target and pet-damage alternative for compositions that want more focused pressure.", "Current 12.1 PvP guide. PvP talents should be adjusted for the opposing composition.", { heroTalent="Rider of the Apocalypse", heroSpellID=444040, focus="Pet damage and single-target pressure", badge="ALTERNATIVE", keyTalents=UNHOLY_CORE }),
         },
     },
 }
+
+
+-- DK Mentor 3.1 accessibility layer. This is deliberately recommendation-only:
+-- Blizzard's native Single-Button Assistant owns the offensive sequence. DK
+-- Mentor simply favors lower-friction profiles and reminds the player which
+-- categories remain manual (defensives, interrupts, crowd control and utility).
+for specID, specBuilds in pairs(DKM.Builds) do
+    for contextKey, profiles in pairs(specBuilds) do
+        for _, profile in ipairs(profiles) do
+            if specID == 250 then
+                profile.sbaFriendly = profile.heroTalent == "Deathbringer"
+                if profile.sbaFriendly then
+                    profile.sbaKeyTalents = BLOOD_CORE
+                    profile.sbaNote = "SBA-friendly: Deathbringer is favored for lower setup friction. Blizzard SBA can handle supported offensive sequencing, while Death Strike decisions, defensives, interrupts, grips, crowd control, and utility remain manual."
+                end
+            elseif specID == 251 then
+                profile.sbaFriendly = not (contextKey == "pvp" and profile.heroTalent == "Deathbringer")
+                profile.sbaKeyTalents = FROST_SBA_CORE
+                if profile.sbaFriendly then
+                    profile.sbaNote = "SBA-friendly: favor the reduced-complexity Frost direction and avoid Breath of Sindragosa or Shattering Blade when the selected build allows it. Defensives, interrupts, crowd control, utility, and encounter-specific movement remain manual."
+                else
+                    profile.sbaNote = "This profile is kept as a manual burst alternative. SBA-friendly mode favors Rider in PvP because the Deathbringer one-shot setup asks for tighter manual coordination."
+                end
+            elseif specID == 252 then
+                profile.sbaFriendly = profile.heroTalent == "Rider of the Apocalypse"
+                profile.sbaKeyTalents = UNHOLY_CORE
+                if profile.sbaFriendly then
+                    profile.sbaNote = "SBA-friendly: Rider is favored for a simpler sustained loop with fewer fragile setup windows. Blizzard SBA handles only supported offensive sequencing; defensives, interrupts, crowd control, utility, pet positioning, and situational PvP decisions remain manual."
+                end
+            end
+        end
+    end
+end

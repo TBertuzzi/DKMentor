@@ -1,22 +1,24 @@
-# Publishing DK Mentor 3.0.11
+# Publishing DK Mentor 3.1.6
 
-DK Mentor 3.0.11 redesigns the 3.0.10 Gear Mentor as an item-first visual interface while preserving the existing Season 2 dataset and the complete 3.0 combat/review/interrupt feature set.
+DK Mentor 3.1.6 is the public 3.1 release. It combines Preparation / Ready Check, SBA-friendly guidance, DKM31 layout presets, the optional Arthas/Bolvar Lich King portrait, live-test UI fixes, and the September 3 Season 2 guidance refresh.
 
 ## Before publishing
-
 1. Run `python3 scripts/validate.py`.
-2. Run the Lua smoke tests in `tests/`.
-3. Confirm all runtime Lua files parse.
-4. Complete `TESTING_v3.0.11.md` in a live Retail 12.1.0 client.
+2. Run the available Lua/static smoke tests.
+3. Confirm the final CurseForge ZIP contains one top-level `DKMentor/` directory.
+4. Confirm the final GitHub archive contains the source tree and documentation but not generated release staging folders.
+5. Confirm the live-tested 3.1.6 r4 behavior is preserved.
 
 ## CurseForge
+Upload `DKMentor-v3.1.6-CurseForge.zip`.
 
-Upload `DKMentor-v3.0.11-CurseForge.zip`.
+Suggested display name: `DK Mentor 3.1.6 - Preparation, Presets & Lich King Portrait`
 
-Suggested display name: `DK Mentor 3.0.11 - Visual Gear Mentor`
+Use `CURSEFORGE_CHANGELOG_v3.1.6.md` as the file changelog.
 
 ## GitHub
+Tag: `v3.1.6`
 
-Tag: `v3.0.11`
+Suggested release title: `DK Mentor 3.1.6 - Preparation, Presets & Lich King Portrait`
 
-Attach the release ZIP and use `RELEASE_NOTES_v3.0.11.md` as the release body/base.
+Use `RELEASE_NOTES_v3.1.6.md` as the GitHub release body.

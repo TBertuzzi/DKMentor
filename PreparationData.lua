@@ -7,7 +7,7 @@ local ADDON_NAME, DKM = ...
 
 DKM.PreparationData = {
     patch = "12.1.0",
-    reviewed = "2026-09-03",
+    reviewed = "2026-09-06",
     sourceName = "Wowhead",
     sourceURL = "https://www.wowhead.com/guide/classes/death-knight",
     sourceNote = "Recommendations reviewed for Midnight Season 2. Close stat choices should still be simulated for the individual character.",
@@ -64,9 +64,9 @@ DKM.PreparationData = {
             name = "Frost",
             ringEnchant = { kind="enchant", slotIDs={11,12}, slot="Rings", itemID=243957, fallbackName="Enchant Ring - Eyes of the Eagle", priority="RECOMMENDED", reason="Current Frost ring enchant direction." },
             runeforge = {
-                { kind="runeforge", spellID=53344, enchantID=3368, fallbackName="Rune of the Fallen Crusader", slot="Two-Hand / Off Hand", priority="RECOMMENDED", reason="Use on a two-handed weapon; while dual wielding this is the recommended off-hand rune." },
-                { kind="runeforge", spellID=53343, enchantID=3370, fallbackName="Rune of Razorice", slot="Dual Wield Main Hand", priority="RECOMMENDED", conditionSpellID=207057, reason="Dual-wield recommendation when Shattering Blade is talented." },
-                { kind="runeforge", spellID=62158, enchantID=3847, fallbackName="Rune of the Stoneskin Gargoyle", slot="Dual Wield Main Hand", priority="ALTERNATIVE", inverseConditionSpellID=207057, reason="Dual-wield main-hand direction when Shattering Blade is not talented; Glacial Advance supplies Razorice." },
+                { kind="runeforge", spellID=53344, enchantID=3368, fallbackName="Rune of the Fallen Crusader", slot="Two-Hand / Off Hand", priority="RECOMMENDED", mode="any", reason="Default two-handed Runeforge and the standard off-hand rune while dual wielding." },
+                { kind="runeforge", spellID=53343, enchantID=3370, fallbackName="Rune of Razorice", slot="Dual Wield Main Hand", priority="RECOMMENDED", mode="dual", conditionSpellID=207057, reason="Use Razorice in the main hand when Shattering Blade is talented." },
+                { kind="runeforge", spellID=62158, enchantID=3847, fallbackName="Rune of the Stoneskin Gargoyle", slot="Dual Wield Main Hand", priority="RECOMMENDED", mode="dual", inverseConditionSpellID=207057, reason="Use Stoneskin Gargoyle in the main hand for all other dual-wield builds; Glacial Advance supplies Razorice." },
             },
             gems = {
                 { kind="gem", itemID=240983, fallbackName="Indecipherable Eversong Diamond", slot="Diamond", priority="RECOMMENDED", reason="Primary Season 2 diamond recommendation." },
@@ -77,8 +77,8 @@ DKM.PreparationData = {
                     { kind="consumable", itemID=241326, fallbackName="Flask of the Shattered Sun", slot="Flask", priority="RECOMMENDED", reason="Current Frost Season 2 flask direction." },
                 },
                 combatPotion = {
-                    { kind="consumable", itemID=241308, fallbackName="Light's Potential", slot="Combat potion", priority="RECOMMENDED", reason="Current Wowhead default Frost combat potion." },
-                    { kind="consumable", itemID=241292, fallbackName="Draught of Rampant Abandon", slot="Combat potion", priority="ALTERNATIVE", reason="Higher-primary-stat Frost alternative with a void-zone drawback; use it only when you can play around the effect cleanly." },
+                    { kind="consumable", itemID=241288, fallbackName="Potion of Recklessness", slot="Combat potion", priority="RECOMMENDED", reason="Current Wowhead Frost combat-potion recommendation." },
+                    { kind="consumable", itemID=241308, fallbackName="Light's Potential", slot="Combat potion", priority="ALTERNATIVE", reason="Current Wowhead alternative when its profile better fits the encounter or your available consumables." },
                 },
                 healthPotion = {
                     { kind="consumable", itemID=241304, fallbackName="Silvermoon Health Potion", slot="Health potion", priority="RECOMMENDED", reason="Current Wowhead Frost healing-potion recommendation." },

@@ -2,13 +2,13 @@
 
 # DK Mentor
 
-**DK Mentor** is a World of Warcraft Retail addon built specifically for **Blood, Frost, and Unholy Death Knights**. Version 3.1 extends the project into a complete Death Knight learning loop: **Before Combat → Live Mentor → Review → Patterns → Improvement**.
+**DK Mentor** is a World of Warcraft Retail addon built specifically for **Blood, Frost, and Unholy Death Knights**. Version 3.2 extends the project into a more complete Death Knight companion: **Prepare → Build → Gear → Stats/Folio → Live Mentor → Review → Improve**.
 
 Loadout automation is no longer part of DK Mentor. Specialization/talent/gear/Loot Specialization automation belongs to the dedicated **Loadout Pilot** addon. DK Mentor can detect Loadout Pilot and open it from Settings or `/dkm loadouts`, but it does not require it.
 
 The in-game UI defaults to Brazilian Portuguese on `ptBR` clients and English on `enUS`/`enGB`, with a manual **Auto / Português / English** override in Settings. After changing the override, use `/reload` to rebuild the UI in the selected addon language. Addon-owned labels, context names, guidance, Codex text, and specialization labels follow that override; spell/item names returned directly by the WoW client intentionally remain in the WoW client language.
 
-## DK Mentor 3.1 focus
+## DK Mentor 3.2 focus
 
 - Blood, Frost, and Unholy specialization detection.
 - World, Delve, Dungeon, Mythic+, Raid, and PvP **content detection for guidance and HUD labels only**.
@@ -26,6 +26,10 @@ The in-game UI defaults to Brazilian Portuguese on `ptBR` clients and English on
 - Left-click the status icon to use the normal manual Blood/Frost/Unholy specialization picker; right-click the widget to open or close DK Mentor.
 - **DK Ready Check** for class-specific readiness: Death Knight Runeforge coverage and the Unholy ghoul when applicable.
 - **DK Codex** with current Blood/Frost/Unholy guidance plus **Gear Mentor**: live gear snapshot, priority targets, loot sources, trinket direction, crafting/Crest plan, enriched builds, Runeforges, gems, enchants, consumables, Hero Talents, rotation, survival, utility, and Character Check.
+- **Stats & Folio Advisor** with live Crit/Haste/Mastery/Versatility percentages and ratings, specialization/Hero Talent direction, Auto/PvE/PvP planning context, and visible diminishing-return bands.
+- **Omnium Folio Mentor** with five-row Blood/Frost/Unholy recommendations and a read-only MATCH / REVIEW comparison when WoW exposes the active Folio safely; DK Mentor never changes Folio runes.
+- **Gear Targets 2.0** adds specialization-specific Catalyst planning plus smart item tooltips for tracked targets, crafts, and tier pieces, including EQUIPPED / OWNED / MISSING state.
+- Guide-backed data now exposes **CURRENT / REVIEW PENDING** freshness so post-hotfix recommendations can stay conservative instead of silently guessing the meta.
 - Build recommendations are advisory and source-linked. DK Mentor does **not** create, select, import, or switch WoW talent loadouts.
 - Optional **Loadout Pilot integration** for players who want automatic specialization, talents, equipment, or Loot Specialization changes.
 - DK Buff Bar for important class buffs/procs using Blizzard's Retail 12.1 AuraContainer.
@@ -60,19 +64,22 @@ Runic Power can also become a secret value in combat. DK Mentor passes it to Bli
 
 ## DK Codex
 
-The **DK Codex** can browse Current, Blood, Frost, or Unholy without changing the specialization you are playing. It contains seven sections:
+The **DK Codex** can browse Current, Blood, Frost, or Unholy without changing the specialization you are playing. It contains eight sections:
 
 - Overview
+- Stats & Folio
+- Gear Mentor
 - Builds
 - Rotation
 - Survival
-- Gear Mentor
 - Utility
 - Character Check
 
 The **Builds** section uses the content DK Mentor currently detects and shows source-linked recommendations for that specialization/content. It is intentionally recommendation-only. If Loadout Pilot is loaded, the Codex can open it directly for players who want automation.
 
-The **Gear Mentor** is item-first and visual: **Overview, Gear, Sources, Trinkets, and Upgrades** use real item icons, compact `EQUIPPED` / `OWNED` / `TARGET` states, item-quality borders, and the native WoW item tooltip on mouseover. The Overview keeps live item level, Runeforge, target progress, **Season 2 tier-set progress (2p/4p)**, and stat direction compact instead of presenting a wall of text. The five Death Knight Season 2 class-set slots are shown visually with live equipped state and tooltip details. Close choices should still be simulated. Gear guidance remains stored in the separate `GearData.lua` dataset so patch/season updates can refresh recommendations without rewriting the UI engine.
+The **Stats & Folio** section is also recommendation-only. It reads the current character secondary stats, highlights rating-based diminishing-return bands, can follow the current content automatically or be pinned to PvE/PvP for planning, and shows the currently reviewed Omnium Folio direction. When the client exposes Folio trait selection safely, DK Mentor compares the recommendation with the live selection; otherwise it simply shows the recommendation without claiming the setup is wrong.
+
+The **Gear Mentor** is item-first and visual: **Overview, Gear, Sources, Trinkets, and Upgrades** use real item icons, compact `EQUIPPED` / `OWNED` / `TARGET` states, item-quality borders, and the native WoW item tooltip on mouseover. The Overview keeps live item level, Runeforge, target progress, **Season 2 tier-set progress (2p/4p)**, and stat direction compact instead of presenting a wall of text. The five Death Knight Season 2 class-set slots are shown visually with live equipped state and tooltip details. Close choices should still be simulated. Gear guidance remains stored in the separate `GearData.lua` dataset so patch/season updates can refresh recommendations without rewriting the UI engine. In 3.2, **Gear Targets 2.0** also shows a specialization-specific Catalyst plan and adds DK Mentor annotations to native item tooltips for known gear targets, crafts, and tier pieces, including current collection state and source.
 
 Optimization advice is advisory: exact gearing, stat balance, trinkets, and encounter-specific choices should still be simulated when the difference matters.
 
@@ -138,6 +145,7 @@ They use Blizzard's Retail aura-container system. DK Buffs combines spec-aware c
 /dkm codex
 /dkm builds
 /dkm gearmentor
+/dkm advisor
 /dkm loadouts
 /dkm ready
 /dkm coach on|off
@@ -173,7 +181,7 @@ They use Blizzard's Retail aura-container system. DK Buffs combines spec-aware c
 /dkm reset
 ```
 
-`/dkm build` is an alias for the Codex Builds section. `/dkm loadouts`, `/dkm pilot`, `/dkm gear`, and `/dkm equipment` hand off to Loadout Pilot when it is installed/enabled.
+`/dkm build` is an alias for the Codex Builds section. `/dkm advisor`, `/dkm folio`, and `/dkm statsfolio` open the Stats & Folio Advisor. `/dkm loadouts`, `/dkm pilot`, `/dkm gear`, and `/dkm equipment` hand off to Loadout Pilot when it is installed/enabled.
 
 ## Lich King commentary
 
@@ -181,6 +189,9 @@ The commentary feature is optional and disabled by default. It references numeri
 
 ## Development and publishing
 
+- [DK Mentor 3.2.0 release notes](RELEASE_NOTES_v3.2.0.md)
+- [DK Mentor 3.2.0 live test checklist](TESTING_v3.2.0.md)
+- [DK Mentor 3.2.0 validation](VALIDATION_REPORT_v3.2.0.md)
 - [DK Mentor 3.1.6 release notes](RELEASE_NOTES_v3.1.6.md)
 - [DK Mentor 3.1.6 live test checklist](TESTING_v3.1.6.md)
 - [DK Mentor 3.1.6 final validation](VALIDATION_REPORT_v3.1.6.md)

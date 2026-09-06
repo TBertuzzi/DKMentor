@@ -6,10 +6,12 @@ local Codex = {
     patch = "12.1.0",
     season = T("Midnight Season 2"),
     reviewed = "2026-09-03",
-    sectionOrder = { "overview", "builds", "rotation", "survival", "stats", "utility", "check" },
+    sectionOrder = { "overview", "advisor", "stats", "builds", "valeera", "rotation", "survival", "utility", "check" },
     sectionLabels = {
         overview = T("Overview"),
+        advisor = T("Stats & Folio"),
         builds = T("Builds"),
+        valeera = T("Valeera"),
         stats = T("Gear Mentor"),
         rotation = T("Rotation"),
         survival = T("Survival"),
@@ -172,7 +174,7 @@ Codex.specs = {
             },
             {
                 heading = T("Runeforge"),
-                body = T("For dual-wield Frost, use Rune of the Fallen Crusader on the off-hand. With Shattering Blade, use Rune of Razorice on the main hand; without Shattering Blade, current guidance uses Rune of the Stoneskin Gargoyle on the main hand because Glacial Advance supplies Razorice. Two-handed Frost uses Rune of the Fallen Crusader. Thalassian Phoenix Oil remains the temporary weapon buff."),
+                body = T("Season 2 PvE currently favors dual-wield. Aman'muso is Main Hand-only after Blizzard's August 20 hotfix, so pair it with Jaw of the Shackled Goddess in the off hand when using that headline setup. For dual-wield, keep Rune of the Fallen Crusader on the off hand; use Rune of Razorice on the main hand only with Shattering Blade, and Rune of the Stoneskin Gargoyle on the main hand for all other dual-wield builds because Glacial Advance supplies Razorice. Standard two-handed setups use Fallen Crusader. Thalassian Phoenix Oil remains the temporary weapon buff."),
             },
             {
                 heading = T("Gems"),
@@ -184,7 +186,7 @@ Codex.specs = {
             },
             {
                 heading = T("Consumables"),
-                body = T("Flask of the Shattered Sun is the current default. Light's Potential is the recommended combat potion, with Draught of Rampant Abandon as a higher-primary-stat alternative that adds a void-zone drawback. Carry Silvermoon Health Potion, Royal Roast, Thalassian Phoenix Oil, and Void-Touched Augment Rune."),
+                body = T("Flask of the Shattered Sun is the current default. Potion of Recklessness is the recommended combat potion, with Light's Potential as the current alternative. Carry Silvermoon Health Potion, Royal Roast, Thalassian Phoenix Oil, and Void-Touched Augment Rune."),
             },
         },
         rotation = {
@@ -307,6 +309,6 @@ Codex.checkNotes = {
     [252] = T("Unholy: the checker also reports ghoul state when your current setup exposes Raise Dead. Rune of the Apocalypse is the current PvE baseline recommendation, but the checker treats other valid DK Runeforges as informational rather than a hard failure."),
 }
 
-Codex.sourceNote = T("Patch 12.1 guidance reviewed 2026-09-03 from current Death Knight theorycraft/guide references and WoW client data. Build trees remain intentionally unchanged until post-hotfix talent guides are refreshed; use Raidbots or another current simulator for exact personal gear/stat optimization.")
+Codex.sourceNote = T("Patch 12.1 guidance reviewed 2026-09-06 from current Death Knight theorycraft/guide references and WoW client data. The post-September-1 Frost/Unholy review is complete: Frost Mythic+ no longer presents Frostbane as a recommended competitive option, while Unholy build direction remains stable. Use Raidbots or another current simulator for exact personal gear/stat optimization.")
 
 DKM.Codex = Codex

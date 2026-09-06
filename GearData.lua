@@ -9,7 +9,7 @@ local ADDON_NAME, DKM = ...
 local GearData = {
     patch = "12.1.0",
     season = "Midnight Season 2",
-    reviewed = "2026-09-03",
+    reviewed = "2026-09-06",
     sourceName = "Wowhead",
     sourceNote = "Guide-backed targets are a farming reference, not a replacement for simming your character.",
     specs = {},
@@ -94,6 +94,13 @@ GearData.specs[250] = {
         CraftTarget(240949, "Masterwork Sin'dorei Band", "Finger", "HIGH", "Prismatic Focusing Iris", "Strong single-target crafted ring option when it fits your current gear and embellishment plan."),
         CraftTarget(237828, "Spellbreaker's March", "Feet", "HIGH", "Arcanoweave Lining", "Practical Mythic+ or alternative crafted slot when boots are a better upgrade than the ring."),
     },
+    catalyst = {
+        { slot = "Head", source = "Nek'zali the Soulcoiler" },
+        { slot = "Shoulders", source = "Temple of Sethraliss" },
+        { slot = "Chest", source = "The Coiled Altar" },
+        { slot = "Hands", source = "King's Rest" },
+        { slot = "Legs", source = "Ula'tek" },
+    },
     upgrades = {
         "General Crest priority: Weapon > Trinkets > Head/Chest/Legs > Shoulders/Gloves/Belt/Boots.",
         "Do not spend limited high-tier Crests blindly on a slot you expect to replace immediately from raid, Vault, or a targeted Voidcore.",
@@ -105,10 +112,10 @@ GearData.specs[251] = {
     sourceURL = "https://www.wowhead.com/guide/classes/death-knight/frost/bis-gear",
     sourceUpdated = "2026-09-02",
     summary = "Frost currently rewards dual-wield weapon quality, a strong active/passive trinket pairing, and high-value Venomous Abyss cantrip pieces. Close upgrades should still be simulated.",
-    weaponNote = "Dual-wield is the current Season 2 baseline. Jaw of the Shackled Goddess is the current BiS weapon with Aman'muso as the off-hand; the current tier-set emphasis on auto-attacks leaves no competitive two-handed BiS option.",
+    weaponNote = "Dual-wield is the current Season 2 baseline. Blizzard's current item restriction keeps Aman'muso Main Hand-only, so DK Mentor preserves Aman'muso in the main hand with Jaw of the Shackled Goddess in the off hand even if a guide table labels the slots inconsistently. Two-handed remains playable, but the current Season 2 PvE gearing baseline favors dual-wield.",
     targets = {
-        Target(268202, "Jaw of the Shackled Goddess", "Main Hand", "Ula'tek - Venomous Abyss", "VERY HIGH", "Current BiS main-hand target with high item level and an additional proc."),
-        Target(268209, "Aman'muso, Warlord's Vengeance", "Off Hand", "Coiled Altar - Venomous Abyss", "VERY HIGH", "Current BiS off-hand target and a high-value one-handed cantrip weapon."),
+        Target(268209, "Aman'muso, Warlord's Vengeance", "Main Hand", "Coiled Altar - Venomous Abyss", "VERY HIGH", "Main Hand-only cantrip weapon under Blizzard's current item restriction; DK Mentor keeps the slot assignment authoritative even if a guide table is inconsistent."),
+        Target(268202, "Jaw of the Shackled Goddess", "Off Hand", "Ula'tek - Venomous Abyss", "VERY HIGH", "High-value one-handed weapon used in the off hand alongside Aman'muso in the current practical dual-wield pairing."),
         Target(270175, "Voracious Heart of Ula'tek", "Trinket", "Ula'tek - Venomous Abyss", "VERY HIGH", "Best-in-class on-use target for current Frost burst timings according to current guide guidance."),
         Target(270173, "Zul'jin's Guillotine Technique", "Trinket", "Coiled Altar - Venomous Abyss", "VERY HIGH", "Headline passive trinket and a natural pairing with Aman'muso."),
         Target(268265, "Aqirbane Reliquary", "Neck", "Ula'tek - Venomous Abyss", "HIGH", "High-item-level cantrip neck with a socket and a flexible secondary-stat effect."),
@@ -128,6 +135,13 @@ GearData.specs[251] = {
         CraftTarget(251513, "Loa Worshiper's Band", "Finger", "VERY HIGH", "Loa Worshiper's Band effect", "Current long-term Frost crafting priority when your gem setup can support its preferred effect."),
         CraftTarget(237834, "Spellbreaker's Bracers", "Wrist", "VERY HIGH", "Stabilizing Gemstone Bandolier", "High-value Frost crafted wrist option that complements the current ring-focused embellishment plan."),
     },
+    catalyst = {
+        { slot = "Head", source = "Voidscar Arena" },
+        { slot = "Shoulders", source = "Nymrissa Wavecaller" },
+        { slot = "Chest", source = "The Coiled Altar" },
+        { slot = "Hands", source = "The Twin Fangs" },
+        { slot = "Legs", source = "Ula'tek" },
+    },
     upgrades = {
         "Weapon quality is the first general upgrade concern; dual-wield means both weapon slots matter.",
         "After the core weapon and trinket targets, use Raidbots Top Gear for exact Crest spending instead of forcing a fixed slot order.",
@@ -137,7 +151,7 @@ GearData.specs[251] = {
 
 GearData.specs[252] = {
     sourceURL = "https://www.wowhead.com/guide/classes/death-knight/unholy/bis-gear",
-    sourceUpdated = "2026-09-02",
+    sourceUpdated = "2026-09-05",
     summary = "Unholy gearing prioritizes weapon power, the current active/passive trinket pair, and strong Venomous Abyss cantrip pieces while keeping Crit/Mastery-oriented crafted options flexible.",
     weaponNote = "Maze-roa is the headline two-handed target. A crafted two-handed weapon with Darkmoon Sigil: Hunt can be a strong early-season bridge when your weapon is far behind.",
     targets = {
@@ -161,6 +175,13 @@ GearData.specs[252] = {
         CraftTarget(237846, "Blood Knight's Warblade", "Weapon", "VERY HIGH", "Darkmoon Sigil: Hunt", "Early-season weapon bridge when you do not have a near-max two-handed weapon."),
         CraftTarget(237834, "Spellbreaker's Bracers", "Wrist", "VERY HIGH", "Arcanoweave Lining", "One of the strongest long-term Unholy crafted slots once weapon pressure is under control."),
         CraftTarget(237828, "Spellbreaker's March", "Feet", "HIGH", "Arcanoweave Lining", "Late-season complementary craft after the weapon problem is solved and Sparks are less constrained."),
+    },
+    catalyst = {
+        { slot = "Head", source = "Murder Row" },
+        { slot = "Shoulders", source = "Murder Row" },
+        { slot = "Chest", source = "The Coiled Altar" },
+        { slot = "Hands", source = "King's Rest" },
+        { slot = "Legs", source = "Ula'tek" },
     },
     upgrades = {
         "Current general upgrade order: Weapon > strong trinkets > lowest item-level pieces.",

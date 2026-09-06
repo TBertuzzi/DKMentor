@@ -71,3 +71,16 @@ The Season 2 class-set panel uses the public Death Knight set identity **Baleful
 Equipped tier detection reads the set ID returned by the WoW item API for the equipped item link, with canonical item-ID fallback. This is read-only and is intended to recognize equipped/catalyzed Season 2 tier pieces without changing them.
 
 The set identity and current Season 2 bonus behavior were cross-checked against current Wowhead / Warcraft Wiki data, including the August 18, 2026 Frost 2-piece tuning hotfix. Current Icy Veins Blood/Frost/Unholy gearing pages remain the primary source for broader gearing and Catalyst guidance.
+
+## DK Mentor 3.2 Stats / Folio / Gear Targets notes
+
+DK Mentor 3.2 keeps the same recommendation-only safety boundary while making more DK-specific planning information available inside the addon.
+
+- The public **Midnight Cheat Sheet** addon informed only high-level product/UX ideas such as surfacing live stats, diminishing-return awareness, Folio recommendations, freshness dates, and gear-target context in one place. DK Mentor does not copy its source code, assets, data files, talent import strings, layout implementation, or written guide text.
+- Blood/Frost/Unholy stat and Omnium Folio direction is independently summarized from current public Wowhead and Icy Veins Death Knight guidance, with short original DK Mentor explanations.
+- Season 2 Catalyst source plans are summarized from current public Wowhead Death Knight gearing pages and remain advisory.
+- Omnium Folio inspection is read-only. DK Mentor uses the supported `C_Traits` API for Folio tree **1186** when available, with a guarded spell-known fallback only when every Folio row resolves to exactly one candidate; ambiguous state is reported as not detected. It never purchases, selects, refunds, or changes a Folio rune.
+- Smart gear tooltips only annotate item tooltips for DK Mentor-known targets/crafts/tier pieces and read the player's owned/equipped state. They do not equip, loot, buy, craft, catalyze, upgrade, socket, enchant, or sell items.
+- `CURRENT` means the embedded recommendation has been reviewed against the listed source state. `REVIEW PENDING` means an important class/tuning change happened after the last verified guide update or the source has not yet been revalidated; DK Mentor deliberately keeps the last verified recommendation rather than inventing a new meta.
+- The Stats Advisor uses player-owned secondary-stat values and published rating-based diminishing-return thresholds for planning. It does not claim that a single generic stat weight replaces character simulation for close gear choices.
+

@@ -6,15 +6,15 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "3.1.6"
+VERSION = "3.2.0"
 INTERFACE = "120100"
 
-RUNTIME_LUA = ["Localization.lua", "Data.lua", "Builds.lua", "Guides.lua", "GearData.lua", "PreparationData.lua", "Codex.lua", "Voices.lua", "Core.lua", "MentorEngine.lua", "MentorReview.lua", "DKTools.lua", "MentorStudio.lua"]
+RUNTIME_LUA = ["Localization.lua", "Data.lua", "Builds.lua", "Guides.lua", "GearData.lua", "PreparationData.lua", "AdvisorData.lua", "ValeeraData.lua", "Codex.lua", "Voices.lua", "Core.lua", "Advisor.lua", "Valeera.lua", "MentorEngine.lua", "MentorReview.lua", "DKTools.lua", "MentorStudio.lua"]
 REQUIRED = [
     "DKMentor.toc", *RUNTIME_LUA, "README.md", "CHANGELOG.md", "LICENSE",
     "THIRD_PARTY_NOTICES.md", "POLICY_AND_SOURCES.md", "PUBLISHING.md",
-    "RELEASE_NOTES_v3.1.6.md", "TESTING_v3.1.6.md", "CURSEFORGE_CHANGELOG_v3.1.6.md", "VALIDATION_REPORT_v3.1.6.md", "DATA_AUDIT_v3.1.0.md",
-    "tests/localization_smoke.lua", "tests/review_smoke.lua", "tests/tools_smoke.lua", "tests/studio_smoke.lua", "tests/core_ux_smoke.lua", "tests/modal_navigation_smoke.lua", "tests/interrupt_enhancements_smoke.lua", "tests/gear_mentor_smoke.lua", "tests/build_mentor_smoke.lua", "tests/rune_order_smoke.lua", "tests/preparation_31_smoke.lua", "tests/accessibility_preset_31_smoke.lua", "tests/voice_portrait_315_smoke.lua", "tests/layout_preset_316_smoke.lua", "tests/portrait_position_316_smoke.lua",
+    "RELEASE_NOTES_v3.2.0.md", "TESTING_v3.2.0.md", "CURSEFORGE_CHANGELOG_v3.2.0.md", "VALIDATION_REPORT_v3.2.0.md", "DATA_AUDIT_v3.1.0.md",
+    "tests/localization_smoke.lua", "tests/review_smoke.lua", "tests/tools_smoke.lua", "tests/studio_smoke.lua", "tests/core_ux_smoke.lua", "tests/modal_navigation_smoke.lua", "tests/interrupt_enhancements_smoke.lua", "tests/gear_mentor_smoke.lua", "tests/build_mentor_smoke.lua", "tests/rune_order_smoke.lua", "tests/preparation_31_smoke.lua", "tests/accessibility_preset_31_smoke.lua", "tests/voice_portrait_315_smoke.lua", "tests/layout_preset_316_smoke.lua", "tests/portrait_position_316_smoke.lua", "tests/advisor_320_smoke.lua", "tests/guidance_refresh_320_smoke.lua", "tests/valeera_320_smoke.lua",
     "Media/DKArcFill.tga", "Media/DKArcBG.tga", "Media/DKArcGlow.tga",
     "Media/DKArcFillRight.tga", "Media/DKArcBGRight.tga", "Media/DKArcGlowRight.tga",
 ]
@@ -88,6 +88,10 @@ def main() -> int:
     codex = (ROOT / "Codex.lua").read_text(encoding="utf-8")
     gear_data = (ROOT / "GearData.lua").read_text(encoding="utf-8")
     preparation_data = (ROOT / "PreparationData.lua").read_text(encoding="utf-8")
+    advisor_data = (ROOT / "AdvisorData.lua").read_text(encoding="utf-8")
+    valeera_data = (ROOT / "ValeeraData.lua").read_text(encoding="utf-8")
+    valeera = (ROOT / "Valeera.lua").read_text(encoding="utf-8")
+    advisor = (ROOT / "Advisor.lua").read_text(encoding="utf-8")
     loc = (ROOT / "Localization.lua").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     mentor_review = (ROOT / "MentorReview.lua").read_text(encoding="utf-8")
@@ -130,7 +134,7 @@ def main() -> int:
     # 2.0.10 release-candidate polish guards.
     for snippet in (
         'majorReleaseNotice = ""',
-        'DB.majorReleaseNotice ~= "3.0"',
+        'DB.majorReleaseNotice ~= "3.2"',
         'local function SanitizeFrameConfig(key)',
         'cfg.x = Clamp(tonumber(cfg.x) or defaults.x or 0, -4000, 4000)',
         'function addon:ShowMentorAlertPreview()',
@@ -346,6 +350,15 @@ def main() -> int:
     # 3.1 adds persisted accessibility/portrait settings while keeping legacy loadout data inert.
     if "schema = 33" not in defaults:
         errors.append("3.1.x must use schema 33 for current SavedVariables defaults")
+    for starter_snippet in (
+        'coach = {\n        enabled = true,\n        onlyInCombat = true,\n        adaptiveHealth = true,\n        point = "BOTTOM",\n        relativePoint = "BOTTOM",\n        x = 0,\n        y = 250,',
+        'buffBar = {\n        enabled = false,\n        point = "BOTTOM",\n        relativePoint = "BOTTOM",\n        x = -220,\n        y = 395,',
+        'externalBuffBar = {\n        enabled = false,\n        point = "BOTTOM",\n        relativePoint = "BOTTOM",\n        x = 0,\n        y = 395,',
+        'debuffBar = {\n        enabled = false,\n        point = "BOTTOM",\n        relativePoint = "BOTTOM",\n        x = 220,\n        y = 395,',
+        'abilityBar = {\n        enabled = false,\n        point = "BOTTOM",\n        relativePoint = "BOTTOM",\n        x = 0,\n        y = 175,',
+    ):
+        if starter_snippet not in defaults:
+            errors.append(f"3.2 starter HUD layout regression: {starter_snippet.splitlines()[0]}")
     init = section(core, "function addon:InitializeDatabase()", "function addon:CreateUI()")
     for snippet in (
         'if DB.mainTab == "builds" then DB.mainTab = "guide" end',
@@ -402,8 +415,8 @@ def main() -> int:
             errors.append(f"2.0.1 compact UI regression: {snippet}")
 
     # Codex + recommendation-only builds.
-    if 'sectionOrder = { "overview", "builds", "rotation", "survival", "stats", "utility", "check" }' not in codex:
-        errors.append("DK Codex must expose seven sections including Builds")
+    if 'sectionOrder = { "overview", "advisor", "stats", "builds", "valeera", "rotation", "survival", "utility", "check" }' not in codex:
+        errors.append("DK Codex must expose nine sections including Stats & Folio, Gear Mentor, Builds, and Valeera")
     for snippet in ("DK mechanics — Runes", "PvE stat priority", "Runeforge", "Gems", "Enchants", "Consumables", "Cheat sheet", "Beginner opener", "Interrupt and crowd control handbook"):
         if snippet not in codex:
             errors.append(f"DK Codex content missing: {snippet}")
@@ -699,7 +712,7 @@ def main() -> int:
         'fadeAlpha = 0.20',
         'function addon:SetResourceVisibilityMode(mode)',
         'function addon:CycleResourceVisibilityMode()',
-        'DB.majorReleaseNotice ~= "3.0"',
+        'DB.majorReleaseNotice ~= "3.2"',
     ):
         if snippet not in core:
             errors.append(f"3.0 Core feature missing: {snippet}")
@@ -795,7 +808,7 @@ def main() -> int:
     for snippet in (
         'patch = "12.1.0"',
         'season = "Midnight Season 2"',
-        'reviewed = "2026-09-03"',
+        'reviewed = "2026-09-06"',
         'GearData.specs[250]',
         'GearData.specs[251]',
         'GearData.specs[252]',
@@ -1009,7 +1022,7 @@ def main() -> int:
     # 3.1 Preparation / Ready Check.
     for snippet in (
         'patch = "12.1.0"',
-        'reviewed = "2026-09-03"',
+        'reviewed = "2026-09-06"',
         'itemID=240983',
         'itemID=241288',
         'itemID=243734',
@@ -1050,7 +1063,7 @@ def main() -> int:
         'addon.LICH_KING_FALLBACK_ICON = "Interface\\\\Icons\\\\Achievement_Boss_LichKing"',
         'addon.lichKingPortraitFrame = addon.CreateLichKingPortraitFrame()',
         'self:ShowLichKingPortrait()',
-        'frame:SetSize(820, 720)',
+        'frame:SetSize(1060, 780)',
         'page:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -104)',
         'frame.hudSection = CreateSection(settingsPage, T("HUDs and layout"), -38, 288)',
         'voiceBusyUntil = addon.voiceStartedAt + 7',
@@ -1089,6 +1102,122 @@ def main() -> int:
         errors.append("3.1 package.ps1 must include PreparationData.lua")
     if 'loadstring' in core or 'RunScript' in core:
         errors.append("3.1 preset import must not evaluate script text")
+
+    # 3.2 Stats & Folio Advisor / Gear Targets 2.0.
+    for snippet in (
+        'folioTreeID = 1186',
+        'diminishingReturns = {',
+        'Rune of Unleashed Fire',
+        'Rune of Critical Power',
+        'Rune of Overload',
+        'reviewed = "2026-09-06"',
+    ):
+        if snippet not in advisor_data:
+            errors.append(f"3.2 AdvisorData regression: {snippet}")
+    for snippet in (
+        'function addon:RenderDKAdvisorVisual(specID)',
+        'function addon:GetDKAdvisorContextMode()',
+        'function addon:SetDKAdvisorContextMode(mode)',
+        'function addon:GetOmniumFolioSelectedSpellSet()',
+        'C_Traits',
+        'function addon:RegisterGearTargetTooltipIntegration()',
+        'TooltipDataProcessor.AddTooltipPostCall',
+        'Collection status: %s',
+    ):
+        if snippet not in advisor:
+            errors.append(f"3.2 Advisor runtime regression: {snippet}")
+    for snippet in (
+        'advisor = "Stats & Folio"',
+        'codexAdvisorContext = "auto"',
+        'self:RenderDKAdvisorVisual(specID)',
+        'self:RegisterGearTargetTooltipIntegration()',
+        'command == "advisor" or command == "statsfolio" or command == "folio"',
+        'AddSectionLabel("Catalyst plan")',
+        'Data status: %s • reviewed %s • source updated %s',
+    ):
+        if snippet not in core:
+            errors.append(f"3.2 Core integration regression: {snippet}")
+    for snippet in (
+        'updated="2026-09-05", freshness="current"',
+        'freshness = s.freshness or "current"',
+        'Smothering Offense carries the AoE profile',
+    ):
+        if snippet not in builds:
+            errors.append(f"3.2 build freshness regression: {snippet}")
+    for snippet in (
+        'catalyst = {',
+        "Nek'zali the Soulcoiler",
+        'Voidscar Arena',
+        'Nymrissa Wavecaller',
+        'Murder Row',
+    ):
+        if snippet not in gear_data:
+            errors.append(f"3.2 Catalyst data regression: {snippet}")
+    for snippet in (
+        'P("Stats & Folio", "Atributos e Folio")',
+        'P("REVIEW PENDING", "REVISÃO PENDENTE")',
+        'P("Catalyst plan", "Plano do Catalisador")',
+        'P("DK Mentor • Gear Target", "DK Mentor • Alvo de Equipamento")',
+    ):
+        if snippet not in loc:
+            errors.append(f"3.2 localization missing: {snippet}")
+    if any(name not in (ROOT / "scripts/package.sh").read_text(encoding="utf-8") for name in ('AdvisorData.lua', 'Advisor.lua', 'ValeeraData.lua', 'Valeera.lua')):
+        errors.append("3.2 package.sh must include Advisor and Valeera runtime modules")
+    if any(name not in (ROOT / "scripts/package.ps1").read_text(encoding="utf-8") for name in ('AdvisorData.lua', 'Advisor.lua', 'ValeeraData.lua', 'Valeera.lua')):
+        errors.append("3.2 package.ps1 must include Advisor and Valeera runtime modules")
+
+    # 3.2 Valeera / Delve Mentor integration.
+    for snippet in (
+        'valeeraPreset = "auto"',
+        'function addon:GetValeeraPreset()',
+        'function addon:SetValeeraPreset(presetKey)',
+        'self:RenderValeeraMentorVisual(specID)',
+        'command == "valeera" or command == "delvecompanion"',
+    ):
+        if snippet not in core:
+            errors.append(f"3.2 Valeera Core integration regression: {snippet}")
+    for snippet in (
+        'sourceName = "Icy Veins + Wowhead + Blizzard"',
+        'combat = "bilespear"',
+        'utility = "dreamcatcher"',
+        'poison = "bloodcrypt"',
+        'poison = "frostheart"',
+        'poison = "bursting"',
+        'utility = "dundun"',
+        'poison = "soulthirst"',
+        'liveHotfixes = {',
+    ):
+        if snippet not in valeera_data:
+            errors.append(f"3.2 Valeera data regression: {snippet}")
+    for snippet in (
+        'function addon:RenderValeeraMentorVisual(specID)',
+        'function addon:OpenValeeraCompanionConfiguration()',
+        'Blizzard_DelvesCompanionConfiguration',
+        'DelvesCompanionConfigurationFrame',
+        'Open Valeera setup',
+        'Recommended Valeera setup',
+        'Valeera roles',
+        'Combat Curios',
+        'Utility Curios',
+        'Valeera poisons',
+        'Season 2 live fixes',
+        'ValeeraData.liveHotfixes',
+    ):
+        if snippet not in valeera:
+            errors.append(f"3.2 Valeera UI regression: {snippet}")
+    for snippet in (
+        'P("Valeera — Delve Mentor", "Valeera — Mentor de Delves")',
+        'P("Safe", "Seguro")',
+        'P("Balanced", "Equilibrado")',
+        'P("High Tier", "Tier alto")',
+        'P("Leveling", "Nivelamento")',
+        'P("Valeera XP restored", "XP da Valeera restaurado")',
+        'P("Open Valeera setup", "Abrir configuração da Valeera")',
+        'P("Could not open Blizzard\'s Valeera companion configuration.",',
+        'P("/dkm valeera — open Valeera Delve Mentor",',
+    ):
+        if snippet not in loc:
+            errors.append(f"3.2 Valeera localization missing: {snippet}")
 
     # Media packaging scripts must copy the full texture folder.
     package_sh = (ROOT / "scripts/package.sh").read_text(encoding="utf-8")

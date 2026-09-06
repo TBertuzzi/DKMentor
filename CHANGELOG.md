@@ -1,3 +1,36 @@
+## 3.2.0 - 2026-09-03 - Stats & Folio Advisor and Gear Targets 2.0
+
+- Valeera live-data refresh reviewed 2026-09-06: added a dedicated **Leveling** preset after Blizzard restored companion XP from Mislaid Curiosities.
+- Leveling uses **Dundun's Favor** plus **Soulthirst Venom** for curiosity/XP routing while preserving the DK-specific role pairing for Blood/Frost/Unholy.
+- Added compact Season 2 live-fix notes for the Sep 4 Darkway curiosity spawn repair, restored Valeera XP, Dundun group-looting repair, the higher-rank **Corrosive Bilespear** proc fix, and Frostheart/Phantasmal poison cleanup on Delve exit.
+- Updated Valeera data sources to include Blizzard hotfixes while keeping Corrosive Bilespear + Soul-Cracking Dreamcatcher as the general Curio baseline.
+- Fixed the fresh-install / **Reset HUDs** starter layout so Resources, Abilities, Mentor Coach and aura bars no longer pile up near the bottom-center; aura bars now use a separated horizontal row.
+- Added a new **Valeera — Delve Mentor** Codex section with native WoW icons, spec-aware role pairing, Season 2 Curio/Poison guidance, and presets for Auto / Safe / Balanced / Fast / High Tier.
+- Blood defaults to DPS Valeera for normal farming; Frost and Unholy default to Healer Valeera, with defensive/high-tier variants clearly separated as DK Mentor recommendations rather than universal guide rules.
+- Added the current Season 2 Curio baseline (Corrosive Bilespear + Soul-Cracking Dreamcatcher), all six selectable Valeera poisons, concise in-game explanations, and `/dkm valeera`.
+- Valeera guidance is recommendation-only: it does not change Valeera's live role, Curios, or Poison automatically.
+- Added **Open Valeera setup / Abrir configuração da Valeera**, which loads Blizzard's native Delves Companion Configuration panel so the player can change Valeera's role, Curios, and poison manually from the recommendation page.
+- Layout hardening pass for the full DK Codex: expanded the main window to 980x760 and widened the content area so native icons and localized labels have room to breathe.
+- Fixed a visual-pool regression where Stats & Folio cards/rune rows could remain visible on top of Equipment subviews after navigation.
+- Reworked Gear, Preparation, Sources, Trinkets, Crafting, Upgrades, Overview, and stat-summary rows to measure text and grow vertically instead of overlapping neighboring content.
+- Increased spacing around metrics, tier-set panels, Folio rows, navigation buttons, and Equipment subtabs for ptBR/English readability.
+- Folio UI polish: native rune icons, spell tooltips, compact status badges, overflow-safe rune rows, and cleaner stat-card typography.
+- Added native WoW icons across the DK Codex section menu and key submenus (Build contexts/modes, Equipment views, and Stats & Folio context selectors) without bundling artwork.
+
+- Added the new **Stats & Folio** Codex section with live Critical Strike, Haste, Mastery, and Versatility percentages/ratings.
+- Added DK-specific stat direction by specialization, detected Hero Talent, and Auto / PvE / PvP planning context.
+- Added visible secondary-stat diminishing-return bands and rating thresholds so the player can see when stacking a stat is entering a weaker conversion band.
+- Added a read-only **Omnium Folio Mentor** for Blood, Frost, and Unholy, including PvE/PvP recommendations and live MATCH / REVIEW comparison when the WoW trait API exposes the active Folio safely.
+- Added **Gear Targets 2.0** Catalyst plans for each DK specialization and smart item-tooltip annotations for tracked gear, crafts, and Season 2 tier pieces.
+- Smart target tooltips now show DK specialization relevance, source, and live EQUIPPED / OWNED / MISSING state.
+- Added visible **CURRENT / REVIEW PENDING** freshness metadata to Advisor/build/gear guidance so older guide data is not silently presented as freshly verified.
+- Added `/dkm advisor` (plus `folio` / `statsfolio` aliases) to open the new Stats & Folio view directly.
+- Kept the system recommendation-only: it never changes talents, Omnium Folio runes, gear, Catalyst choices, crafts, gems, enchants, or combat actions.
+- Preserved all 3.1.6 portrait, Preparation, SBA-friendly, preset, DK Ready combat-visibility, and Season 2 data fixes.
+- Re-reviewed Frost and Unholy guidance on 2026-09-06 after the September 1 tuning: Frost Mythic+ now explicitly drops Frostbane from the recommended competitive direction, while Unholy build direction remains stable.
+- Updated Frost Preparation to Potion of Recklessness, Shattering-Blade-only Razorice main-hand logic, Stoneskin Gargoyle for all other dual-wield builds, and Fallen Crusader-only two-handed Ready Check.
+- Marked reviewed Frost/Unholy build/stat/PvP guidance CURRENT while preserving the original guide source-update dates.
+
 ## 3.1.6 - 2026-09-03 - Preparation, presets, Lich King portrait and Season 2 refresh
 
 - Prepared the complete 3.1 feature set for public release after the 3.1.0-3.1.6 live-test cycle.

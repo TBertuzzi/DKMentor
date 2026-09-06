@@ -4,7 +4,7 @@ local core = file:read("*a")
 file:close()
 
 for _, needle in ipairs({
-    'frame:SetSize(820, 720)',
+    'frame:SetSize(1060, 780)',
     'page:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -104)',
     'frame.hudSection = CreateSection(settingsPage, T("HUDs and layout"), -38, 288)',
     'frame.loadoutPilotSection = CreateSection(settingsPage, T("Loadout automation"), -331, 82)',

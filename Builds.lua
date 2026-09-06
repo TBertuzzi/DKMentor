@@ -7,15 +7,15 @@ local ADDON_NAME, DKM = ...
 local T = DKM.T or function(value) return value end
 
 local REVIEWED_PATCH = "12.1.0"
-local REVIEWED_DATE = "2026-09-03"
+local REVIEWED_DATE = "2026-09-06"
 
 local SOURCES = {
-    bloodPve = { name="Wowhead", url="https://www.wowhead.com/guide/classes/death-knight/blood/talent-builds-pve-tank", author="Mandl", updated="2026-08-20" },
-    frostPve = { name="Wowhead", url="https://www.wowhead.com/guide/classes/death-knight/frost/talent-builds-pve-dps", author="khazakdk", updated="2026-08-12" },
-    unholyPve = { name="Wowhead", url="https://www.wowhead.com/guide/classes/death-knight/unholy/talent-builds-pve-dps", author="Taeznak", updated="2026-08-12" },
-    bloodPvp = { name="Icy Veins", url="https://www.icy-veins.com/wow/blood-death-knight-pve-tank-spec-builds-talents", author="Mandl / Panthea", updated="2026-08-10" },
-    frostPvp = { name="Icy Veins", url="https://www.icy-veins.com/wow/frost-death-knight-pvp-talents-and-builds", author="Keator", updated="2026-08-10" },
-    unholyPvp = { name="Icy Veins", url="https://www.icy-veins.com/wow/unholy-death-knight-pvp-talents-and-builds", author="Keator", updated="2026-08-10" },
+    bloodPve = { name="Wowhead", url="https://www.wowhead.com/guide/classes/death-knight/blood/talent-builds-pve-tank", author="Mandl", updated="2026-08-20", freshness="current" },
+    frostPve = { name="Wowhead", url="https://www.wowhead.com/guide/classes/death-knight/frost/talent-builds-pve-dps", author="khazakdk", updated="2026-09-05", freshness="current" },
+    unholyPve = { name="Wowhead", url="https://www.wowhead.com/guide/classes/death-knight/unholy/talent-builds-pve-dps", author="Taeznak", updated="2026-09-05", freshness="current" },
+    bloodPvp = { name="Icy Veins", url="https://www.icy-veins.com/wow/blood-death-knight-pve-tank-spec-builds-talents", author="Mandl / Panthea", updated="2026-08-10", freshness="current" },
+    frostPvp = { name="Icy Veins", url="https://www.icy-veins.com/wow/frost-death-knight-pvp-talents-and-builds", author="Keator", updated="2026-08-10", freshness="current" },
+    unholyPvp = { name="Icy Veins", url="https://www.icy-veins.com/wow/unholy-death-knight-pvp-talents-and-builds", author="Keator", updated="2026-08-10", freshness="current" },
 }
 
 local function sourced(sourceKey, name, note, pvp, meta)
@@ -30,6 +30,7 @@ local function sourced(sourceKey, name, note, pvp, meta)
         sourceName = s.name,
         sourceAuthor = s.author,
         sourceUpdated = s.updated,
+        freshness = s.freshness or "current",
         code = "",
         reviewedPatch = REVIEWED_PATCH,
         reviewedDate = REVIEWED_DATE,
@@ -129,12 +130,12 @@ DKM.Builds = {
             }),
         },
         dungeon = {
-            sourced("frostPve", "Frost — Dungeon", "Frost's dungeon direction stays very close to the raid setup: keep the core burst package and lean on Frostscythe and Glacial Advance as target count rises.", nil, {
+            sourced("frostPve", "Frost — Dungeon", "Frost stays very close to the raid setup. Smothering Offense now carries the AoE profile; Frostbane is no longer a recommended competitive pick, while Frostscythe and Glacial Advance cover higher target counts.", nil, {
                 heroTalent="Deathbringer", heroSpellID=434765, focus="Dungeon damage, cleave, and utility", badge="RECOMMENDED", keyTalents=FROST_CORE,
             }),
         },
         mythicplus = {
-            sourced("frostPve", "Frost — Mythic+ / Deathbringer", "Frost currently builds almost the same in Mythic+ as in raid. Deathbringer remains the practical default, with Frostscythe and Glacial Advance covering higher target counts.", nil, {
+            sourced("frostPve", "Frost — Mythic+ / Deathbringer", "Frost currently builds almost the same in Mythic+ as in raid. Deathbringer remains the practical default; Smothering Offense carries the AoE profile, and Frostbane is no longer a recommended competitive option.", nil, {
                 heroTalent="Deathbringer", heroSpellID=434765, focus="Mythic+ damage, cleave, and utility", badge="RECOMMENDED", keyTalents=FROST_CORE,
             }),
         },

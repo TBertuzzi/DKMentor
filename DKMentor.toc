@@ -1,8 +1,8 @@
 ## Interface: 120100
 ## Title: DK Mentor
-## Notes: Death Knight build/gear preparation, SBA-friendly guidance, combat coaching, configurable HUDs/presets, Review, DK Codex, and optional Lich King commentary. Loadout automation is handled by Loadout Pilot.
+## Notes: Death Knight Stats/Folio Advisor, Valeera Delve Mentor, build/gear preparation, SBA-friendly guidance, combat coaching, configurable HUDs/presets, Review, DK Codex, and optional Lich King commentary. Loadout automation is handled by Loadout Pilot.
 ## Author: Thiago Bertuzzi
-## Version: 3.1.6
+## Version: 3.2.0
 ## SavedVariables: DKMentorDB
 ## X-Category: Combat
 ## X-License: MIT
@@ -14,9 +14,13 @@ Builds.lua
 Guides.lua
 GearData.lua
 PreparationData.lua
+AdvisorData.lua
+ValeeraData.lua
 Codex.lua
 Voices.lua
 Core.lua
+Advisor.lua
+Valeera.lua
 MentorEngine.lua
 MentorReview.lua
 DKTools.lua

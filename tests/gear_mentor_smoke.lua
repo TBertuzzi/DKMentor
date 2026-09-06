@@ -3,7 +3,7 @@ local DKM = {}
 assert(loadfile("GearData.lua"))("DKMentor", DKM)
 assert(type(DKM.GearData) == "table", "GearData table missing")
 assert(DKM.GearData.patch == "12.1.0", "GearData patch mismatch")
-assert(DKM.GearData.reviewed == "2026-09-01", "GearData review date mismatch")
+assert(DKM.GearData.reviewed == "2026-09-06", "GearData review date mismatch")
 
 local tier = assert(DKM.GearData.tierSet, "Season 2 tier set data missing")
 assert(tier.setID == 2055, "Death Knight Season 2 set ID mismatch")
@@ -17,12 +17,13 @@ assert(type(tier.bonuses[250]) == "table" and type(tier.bonuses[251]) == "table"
 
 for _, specID in ipairs({250, 251, 252}) do
     local spec = assert(DKM.GearData.specs[specID], "Missing Gear Mentor spec " .. tostring(specID))
-    assert(type(spec.sourceURL) == "string" and spec.sourceURL:find("icy%-veins%.com"), "Missing guide source URL for spec " .. tostring(specID))
+    assert(type(spec.sourceURL) == "string" and spec.sourceURL:find("wowhead%.com"), "Missing current Wowhead guide source URL for spec " .. tostring(specID))
     assert(type(spec.targets) == "table" and #spec.targets >= 5, "Not enough tracked targets for spec " .. tostring(specID))
     assert(type(spec.trinkets) == "table" and #spec.trinkets >= 2, "Trinket plan incomplete for spec " .. tostring(specID))
     assert(type(spec.crafting) == "table" and #spec.crafting >= 2, "Crafting plan incomplete for spec " .. tostring(specID))
     assert(type(spec.craftTargets) == "table" and #spec.craftTargets >= 3, "Visual craft targets incomplete for spec " .. tostring(specID))
     assert(type(spec.upgrades) == "table" and #spec.upgrades >= 2, "Upgrade plan incomplete for spec " .. tostring(specID))
+    assert(type(spec.catalyst) == "table" and #spec.catalyst == 5, "Catalyst plan incomplete for spec " .. tostring(specID))
 end
 
 local function hasTarget(specID, itemID)
@@ -88,6 +89,7 @@ for _, needle in ipairs({
     'function addon:AcquireGearTierCard(root)',
     'function addon:AcquireGearBonusCard(root)',
     'AddSectionLabel("Season 2 tier set")',
+    'AddSectionLabel("Catalyst plan")',
 }) do
     assert(core:find(needle, 1, true), "Gear Mentor Core feature missing: " .. needle)
 end
@@ -105,4 +107,4 @@ for _, forbidden in ipairs({
     assert(not core:find(forbidden, 1, true), "Gear Mentor must not automate gear: " .. forbidden)
 end
 
-print("DK Mentor 3.0.16 Gear Mentor smoke test passed")
+print("DK Mentor 3.2 Gear Mentor smoke test passed")

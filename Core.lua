@@ -295,8 +295,10 @@ local DEFAULTS = {
     codexSpecID = 0,
     codexSection = "overview",
     codexBuildContext = "auto",
+    codexAdvisorContext = "auto",
     codexBuildMode = "standard",
     codexGearView = "overview",
+    valeeraPreset = "auto",
     hudLocked = true,
     main = {
         point = "CENTER",
@@ -305,14 +307,17 @@ local DEFAULTS = {
         y = 20,
         scale = 1,
     },
+    -- Starter HUD layout: keep the main combat HUDs in distinct bands so a
+    -- fresh install (and Reset HUDs) never piles the preview bars on top of the
+    -- Mentor Coach near the bottom-center of the screen.
     coach = {
         enabled = true,
         onlyInCombat = true,
         adaptiveHealth = true,
-        point = "CENTER",
-        relativePoint = "CENTER",
+        point = "BOTTOM",
+        relativePoint = "BOTTOM",
         x = 0,
-        y = -245,
+        y = 250,
         scale = 1,
     },
     statusWidget = {
@@ -327,8 +332,8 @@ local DEFAULTS = {
         enabled = false,
         point = "BOTTOM",
         relativePoint = "BOTTOM",
-        x = 0,
-        y = 205,
+        x = -220,
+        y = 395,
         scale = 1,
         iconsPerRow = 5,
         opacity = 1,
@@ -338,7 +343,7 @@ local DEFAULTS = {
         point = "BOTTOM",
         relativePoint = "BOTTOM",
         x = 0,
-        y = 255,
+        y = 395,
         scale = 1,
         iconsPerRow = 5,
         opacity = 1,
@@ -347,8 +352,8 @@ local DEFAULTS = {
         enabled = false,
         point = "BOTTOM",
         relativePoint = "BOTTOM",
-        x = 0,
-        y = 305,
+        x = 220,
+        y = 395,
         scale = 1,
         iconsPerRow = 5,
         opacity = 1,
@@ -358,7 +363,7 @@ local DEFAULTS = {
         point = "BOTTOM",
         relativePoint = "BOTTOM",
         x = 0,
-        y = 155,
+        y = 175,
         scale = 1,
         iconsPerRow = 11,
         opacity = 1,
@@ -378,7 +383,7 @@ local DEFAULTS = {
         point = "BOTTOM",
         relativePoint = "BOTTOM",
         x = 0,
-        y = 85,
+        y = 95,
         scale = 1,
         opacity = 1,
         visibilityMode = "combat",
@@ -2142,7 +2147,7 @@ end
 
 local function CreateMainFrame()
     local frame = CreateFrame("Frame", "DKMentorMainFrame", UIParent, "BackdropTemplate")
-    frame:SetSize(820, 720)
+    frame:SetSize(1060, 780)
     frame:SetFrameStrata("DIALOG")
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
@@ -2176,7 +2181,7 @@ local function CreateMainFrame()
 
     frame.subtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     frame.subtitle:SetPoint("TOPLEFT", frame.title, "BOTTOMLEFT", 0, -4)
-    frame.subtitle:SetWidth(695)
+    frame.subtitle:SetWidth(930)
     frame.subtitle:SetJustifyH("LEFT")
 
     frame.closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
@@ -2190,10 +2195,13 @@ local function CreateMainFrame()
         guide = T("DK Codex"),
         settings = T("Settings"),
     }
-    local tabWidth = 252
+    local tabGap = 8
+    local tabLeft = 22
+    local tabRight = 22
+    local tabWidth = math.floor((frame:GetWidth() - tabLeft - tabRight - (tabGap * (#tabOrder - 1))) / #tabOrder)
     for index, tabKey in ipairs(tabOrder) do
         local button = CreateFlatTabButton(frame, tabWidth, 31, tabLabels[tabKey])
-        button:SetPoint("TOPLEFT", frame, "TOPLEFT", 22 + ((index - 1) * (tabWidth + 8)), -69)
+        button:SetPoint("TOPLEFT", frame, "TOPLEFT", tabLeft + ((index - 1) * (tabWidth + tabGap)), -69)
         button.tabKey = tabKey
         button:SetScript("OnClick", function(self)
             addon:SetMainTab(self.tabKey)
@@ -2312,7 +2320,7 @@ local function CreateMainFrame()
     -- DK CODEX TAB ---------------------------------------------------------
     guidePage.scope = guidePage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     guidePage.scope:SetPoint("TOPLEFT", guidePage, "TOPLEFT", 12, -8)
-    guidePage.scope:SetWidth(780)
+    guidePage.scope:SetWidth(1000)
     guidePage.scope:SetJustifyH("LEFT")
     guidePage.scope:SetText(T("DK Codex is an in-game Death Knight reference for Patch 12.1. Browse any DK specialization without changing the specialization you are playing. Choose a specialization above, then use the left menu to move between sections."))
     guidePage.scope:SetTextColor(0.68, 0.88, 0.97)
@@ -2327,7 +2335,8 @@ local function CreateMainFrame()
         { id = 252, labelKey = "Unholy" },
     }
     local specButtonGap = 8
-    local specButtonWidth = math.floor((760 - (specButtonGap * (#codexSpecChoices - 1))) / #codexSpecChoices)
+    local specButtonAreaWidth = math.max(840, frame:GetWidth() - 48)
+    local specButtonWidth = math.floor((specButtonAreaWidth - (specButtonGap * (#codexSpecChoices - 1))) / #codexSpecChoices)
     for index, choice in ipairs(codexSpecChoices) do
         local button = CreateFlatTabButton(guidePage, specButtonWidth, 28, T(choice.labelKey))
         button:SetPoint("TOPLEFT", guidePage, "TOPLEFT", 14 + ((index - 1) * (specButtonWidth + specButtonGap)), -34)
@@ -2339,22 +2348,37 @@ local function CreateMainFrame()
     end
 
     guidePage.sectionButtons = {}
-    local codexSections = { "overview", "stats", "builds", "rotation", "survival", "utility", "check" }
+    local codexSections = { "overview", "advisor", "stats", "builds", "valeera", "rotation", "survival", "utility", "check" }
     local codexSectionMenuLabels = {
         overview = "Overview",
+        advisor = "Stats & Folio",
         stats = "Equipment",
         builds = "Builds",
+        valeera = "Valeera",
         rotation = "Rotation",
         survival = "Survival",
         utility = "Utility",
         check = "Character check short",
     }
+    -- Native WoW icons only: no artwork is bundled by DK Mentor.
+    -- Spell-driven textures keep the navigation recognizably Death Knight-themed.
+    local codexSectionMenuIcons = {
+        overview = { texture = "Interface\\Icons\\spell_deathknight_classicon" },
+        advisor = { spellID = 1279609 }, -- Omnium Folio: Critical Power
+        stats = { spellID = 53344 },      -- Rune of the Fallen Crusader
+        builds = { dynamic = "spec" },
+        valeera = { spellID = 1784 },      -- Valeera / Rogue Stealth
+        rotation = { dynamic = "rotation" },
+        survival = { spellID = 48792 },   -- Icebound Fortitude
+        utility = { spellID = 49576 },    -- Death Grip
+        check = { spellID = 48707 },      -- Anti-Magic Shell
+    }
 
-    frame.guideSection = CreateSection(guidePage, T("DK Codex"), -81, 498)
+    frame.guideSection = CreateSection(guidePage, T("DK Codex"), -81, 538)
     local guide = frame.guideSection
-    guide.navWidth = 144
-    guide.contentLeft = 166
-    guide.contentWidth = 600
+    guide.navWidth = 160
+    guide.contentLeft = 182
+    guide.contentWidth = 780
 
     guide.navHint = guide:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     guide.navHint:SetPoint("TOPLEFT", guide, "TOPLEFT", 16, -31)
@@ -2373,13 +2397,17 @@ local function CreateMainFrame()
     for index, sectionKey in ipairs(codexSections) do
         local labelKey = codexSectionMenuLabels[sectionKey]
         local label = labelKey and T(labelKey) or (((DKM.Codex and DKM.Codex.sectionLabels) and (DKM.Codex and DKM.Codex.sectionLabels)[sectionKey]) or sectionKey)
-        local button = CreateFlatTabButton(guide.navPanel, 134, 38, label)
-        button:SetPoint("TOPLEFT", guide.navPanel, "TOPLEFT", 4, -((index - 1) * 42))
+        local button = CreateFlatTabButton(guide.navPanel, guide.navWidth - 10, 40, label)
+        button:SetPoint("TOPLEFT", guide.navPanel, "TOPLEFT", 4, -((index - 1) * 44))
         local buttonFont = button.label
         if buttonFont and GameFontNormalSmall then buttonFont:SetFontObject(GameFontNormalSmall) end
         SetFlatTabButtonMultiline(button, 6)
         button.codexSection = sectionKey
         button.menuLabelKey = labelKey
+        local iconInfo = codexSectionMenuIcons[sectionKey] or {}
+        button.menuIconSpellID = iconInfo.spellID
+        button.menuIconTexture = iconInfo.texture
+        button.menuIconDynamic = iconInfo.dynamic
         button:SetScript("OnClick", function(self) addon:SetCodexSection(self.codexSection) end)
         guidePage.sectionButtons[sectionKey] = button
     end
@@ -2413,26 +2441,28 @@ local function CreateMainFrame()
     guide.buildActions = CreateFrame("Frame", nil, guide)
     guide.buildActions:SetPoint("TOPLEFT", guide, "TOPLEFT", guide.contentLeft, -58)
     guide.buildActions:SetPoint("TOPRIGHT", guide, "TOPRIGHT", -12, -58)
-    guide.buildActions:SetHeight(88)
+    guide.buildActions:SetHeight(96)
     guide.buildActions:Hide()
 
     guide.buildContextButtons = {}
     local buildContexts = {
-        { key="auto", labelKey="Auto" },
-        { key="world", labelKey="World" },
-        { key="delve", labelKey="Delve" },
-        { key="dungeon", labelKey="Dungeon" },
-        { key="mythicplus", labelKey="Mythic+" },
-        { key="raid", labelKey="Raid" },
-        { key="pvp", labelKey="PvP" },
+        { key="auto", labelKey="Auto", iconSpellID=47568 },          -- Empower Rune Weapon
+        { key="world", labelKey="World", iconSpellID=48265 },      -- Death's Advance
+        { key="delve", labelKey="Delve", iconSpellID=48792 },      -- Icebound Fortitude
+        { key="dungeon", labelKey="Dungeon", iconSpellID=47528 },  -- Mind Freeze
+        { key="mythicplus", labelKey="Mythic+", iconSpellID=43265 }, -- Death and Decay
+        { key="raid", labelKey="Raid", iconSpellID=42650 },        -- Army of the Dead
+        { key="pvp", labelKey="PvP", iconSpellID=45524 },          -- Chains of Ice
     }
     local buildContextGap = 4
     local buildContextWidth = math.floor(((guide.contentWidth - 8) - (buildContextGap * (#buildContexts - 1))) / #buildContexts)
+    guide.buildContextOrder = { "auto", "world", "delve", "dungeon", "mythicplus", "raid", "pvp" }
     for index, choice in ipairs(buildContexts) do
         local button = CreateFlatTabButton(guide.buildActions, buildContextWidth, 24, T(choice.labelKey))
         button:SetPoint("TOPLEFT", guide.buildActions, "TOPLEFT", 2 + ((index - 1) * (buildContextWidth + buildContextGap)), 0)
         button.buildContext = choice.key
         button.labelKey = choice.labelKey
+        button.iconSpellID = choice.iconSpellID
         local font = button.label
         if font and GameFontNormalSmall then font:SetFontObject(GameFontNormalSmall) end
         button:SetScript("OnClick", function(self) addon:SetCodexBuildContext(self.buildContext) end)
@@ -2461,7 +2491,7 @@ local function CreateMainFrame()
 
     guide.sourceURLBox = CreateFrame("EditBox", nil, guide.buildActions, "InputBoxTemplate")
     guide.sourceURLBox:SetSize(238, 22)
-    guide.sourceURLBox:SetPoint("TOPLEFT", guide.buildActions, "TOPLEFT", 2, -62)
+    guide.sourceURLBox:SetPoint("TOPLEFT", guide.buildActions, "TOPLEFT", 2, -68)
     guide.sourceURLBox:SetAutoFocus(false)
     guide.sourceURLBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
@@ -2483,7 +2513,7 @@ local function CreateMainFrame()
     guide.gearActions = CreateFrame("Frame", nil, guide)
     guide.gearActions:SetPoint("TOPLEFT", guide, "TOPLEFT", guide.contentLeft, -58)
     guide.gearActions:SetPoint("TOPRIGHT", guide, "TOPRIGHT", -12, -58)
-    guide.gearActions:SetHeight(30)
+    guide.gearActions:SetHeight(32)
     guide.gearActions:Hide()
     guide.gearViewButtons = {}
     local gearViews = {
@@ -2497,10 +2527,29 @@ local function CreateMainFrame()
     }
     local gearViewGap = 4
     local gearViewWidth = math.floor(((guide.contentWidth - 8) - (gearViewGap * (#gearViews - 1))) / #gearViews)
+    guide.gearViewOrder = { "overview", "targets", "preparation", "crafting", "sources", "trinkets", "upgrades" }
     for index, choice in ipairs(gearViews) do
         local button = CreateFlatTabButton(guide.gearActions, gearViewWidth, 24, choice.label)
         button:SetPoint("LEFT", guide.gearActions, "LEFT", 2 + ((index - 1) * (gearViewWidth + gearViewGap)), 0)
+        if button.label and GameFontNormalSmall then button.label:SetFontObject(GameFontNormalSmall) end
+        button.label:SetWordWrap(true)
+        SetFlatTabButtonMultiline(button, 4)
         button.gearView = choice.key
+        if choice.key == "overview" then
+            button.iconTexture = "Interface\\Icons\\spell_deathknight_classicon"
+        elseif choice.key == "targets" then
+            button.iconSpellID = 53344 -- Fallen Crusader
+        elseif choice.key == "preparation" then
+            button.iconSpellID = 53343 -- Razorice
+        elseif choice.key == "crafting" then
+            button.iconSpellID = 2018 -- Blacksmithing
+        elseif choice.key == "sources" then
+            button.iconSpellID = 50977 -- Death Gate
+        elseif choice.key == "trinkets" then
+            button.iconItemID = 270175 -- current Season 2 DK target trinket icon
+        elseif choice.key == "upgrades" then
+            button.iconSpellID = 47568 -- Empower Rune Weapon
+        end
         button:SetScript("OnClick", function(self) addon:SetCodexGearView(self.gearView) end)
         guide.gearViewButtons[choice.key] = button
     end
@@ -8099,6 +8148,39 @@ function addon:OpenLoadoutPilot()
     return false
 end
 
+function addon:OpenOmniumFolio()
+    local function TryCall(func, ...)
+        if type(func) ~= "function" then return false end
+        local ok, result = pcall(func, ...)
+        if not ok then return false end
+        if result == nil then return true end
+        return result ~= false
+    end
+
+    local opened = false
+    if TryCall(_G.TogglePlayerSpellsFrame) then
+        opened = true
+    elseif _G.PlayerSpellsMicroButton and TryCall(_G.PlayerSpellsMicroButton.Click, _G.PlayerSpellsMicroButton) then
+        opened = true
+    elseif _G.TalentMicroButton and TryCall(_G.TalentMicroButton.Click, _G.TalentMicroButton) then
+        opened = true
+    elseif _G.ToggleSpellBook and BOOKTYPE_SPELL and TryCall(_G.ToggleSpellBook, BOOKTYPE_SPELL) then
+        opened = true
+    elseif _G.ShowUIPanel and _G.PlayerSpellsFrame and TryCall(_G.ShowUIPanel, _G.PlayerSpellsFrame) then
+        opened = true
+    elseif _G.ShowUIPanel and _G.SpellBookFrame and TryCall(_G.ShowUIPanel, _G.SpellBookFrame) then
+        opened = true
+    end
+
+    if opened then
+        Print(T("Opened Blizzard's Player Spells frame. If Omnium Folio is not selected automatically, click its tab there."))
+        return true
+    end
+
+    Print(T("Could not open Omnium Folio automatically on this client. Open Blizzard's Player Spells/Talents frame and select Omnium Folio manually."))
+    return false
+end
+
 function addon:UpdateLoadoutPilotIntegration()
     if not mainFrame or not mainFrame.loadoutPilotSection then return end
     local section = mainFrame.loadoutPilotSection
@@ -8174,7 +8256,7 @@ end
 
 function addon:SetCodexSection(sectionKey)
     if not DB then return end
-    local valid = { overview = true, builds = true, stats = true, rotation = true, survival = true, utility = true, check = true }
+    local valid = { overview = true, advisor = true, builds = true, stats = true, valeera = true, rotation = true, survival = true, utility = true, check = true }
     if not valid[sectionKey] then sectionKey = "overview" end
     DB.codexSection = sectionKey
     self:UpdateGuideSection()
@@ -8222,6 +8304,23 @@ function addon:SetCodexGearView(viewKey)
     if not valid[viewKey] then viewKey = "overview" end
     DB.codexGearView = viewKey
     DB.codexSection = "stats"
+    self:UpdateGuideSection()
+end
+
+function addon:GetValeeraPreset()
+    local preset = DB and tostring(DB.valeeraPreset or "auto") or "auto"
+    local valid = { auto = true, safe = true, balanced = true, fast = true, high = true }
+    if not valid[preset] then preset = "auto" end
+    return preset
+end
+
+function addon:SetValeeraPreset(presetKey)
+    if not DB then return end
+    presetKey = string.lower(tostring(presetKey or "auto"))
+    local valid = { auto = true, safe = true, balanced = true, fast = true, high = true }
+    if not valid[presetKey] then presetKey = "auto" end
+    DB.valeeraPreset = presetKey
+    DB.codexSection = "valeera"
     self:UpdateGuideSection()
 end
 
@@ -8555,6 +8654,9 @@ function addon:ResetGearVisual(root)
     for _, frame in ipairs(root.tierPool or {}) do frame:Hide() end
     for _, frame in ipairs(root.bonusPool or {}) do frame:Hide() end
     for _, frame in ipairs(root.prepPool or {}) do frame:Hide() end
+    for _, frame in ipairs(root.advisorContextButtons or {}) do frame:Hide() end
+    if self.HideDKAdvisorVisualPools then self:HideDKAdvisorVisualPools(root) end
+    if self.HideValeeraVisualPools then self:HideValeeraVisualPools(root) end
 end
 
 function addon:AcquireGearText(root, fontObject)
@@ -8617,6 +8719,18 @@ function addon:AcquireGearPanelText(panel, fontObject)
     text:SetShadowOffset(1, -1)
     text:Show()
     return text
+end
+
+function addon:SetGearTextBlockHeight(fontString, width, textValue, minHeight)
+    if not fontString then return minHeight or 0 end
+    fontString:SetWidth(width or 0)
+    fontString:SetWordWrap(true)
+    fontString:SetText(textValue or "")
+    fontString:SetHeight(1)
+    local actual = fontString.GetStringHeight and fontString:GetStringHeight() or (minHeight or 16)
+    actual = math.max(minHeight or 16, math.ceil(actual))
+    fontString:SetHeight(actual)
+    return actual
 end
 
 function addon:AcquireGearMetric(root)
@@ -8718,7 +8832,9 @@ function addon:AcquireGearItemCard(root)
 end
 
 function addon:ConfigureGearItemCard(card, target, width, height)
-    card:SetSize(width or 336, math.max(height or 60, 82))
+    local cardWidth = width or 336
+    local minHeight = math.max(height or 60, 86)
+    card:SetWidth(cardWidth)
     card.target = target
     local state = addon:GetGearTargetState(target)
     local statusText, sr, sg, sb
@@ -8736,15 +8852,28 @@ function addon:ConfigureGearItemCard(card, target, width, height)
     card.icon:SetTexture(addon:GetGearTargetIcon(target))
     local qr, qg, qb = addon:GetGearTargetQualityColor(target)
     card.iconFrame:SetBackdropBorderColor(qr, qg, qb, 1)
-    card.name:SetText(addon:GetGearTargetName(target))
     card.name:SetTextColor(qr, qg, qb)
-    card.meta:SetText(string.format("%s  •  %s", T(target.slot or "Gear"), T(target.priority or "HIGH")))
+
+    card.iconFrame:ClearAllPoints()
+    card.iconFrame:SetPoint("TOPLEFT", card, "TOPLEFT", 7, -10)
+    local textWidth = math.max(150, cardWidth - 69)
+    card.name:ClearAllPoints()
+    card.name:SetPoint("TOPLEFT", card, "TOPLEFT", 61, -8)
+    local nameHeight = self:SetGearTextBlockHeight(card.name, textWidth, addon:GetGearTargetName(target), 18)
+    card.meta:ClearAllPoints()
+    card.meta:SetPoint("TOPLEFT", card.name, "BOTTOMLEFT", 0, -4)
+    local metaHeight = self:SetGearTextBlockHeight(card.meta, textWidth, string.format("%s  •  %s", T(target.slot or "Gear"), T(target.priority or "HIGH")), 14)
     local detail = target.craft and (target.embellishment or T("Crafting")) or (target.source or "")
-    card.status:SetText(statusText .. ((detail and detail ~= "") and ("  •  " .. T(detail)) or ""))
+    local finalStatus = statusText .. ((detail and detail ~= "") and ("  •  " .. T(detail)) or "")
+    card.status:ClearAllPoints()
+    card.status:SetPoint("TOPLEFT", card.meta, "BOTTOMLEFT", 0, -4)
+    local statusHeight = self:SetGearTextBlockHeight(card.status, textWidth, finalStatus, 16)
     card.status:SetTextColor(sr, sg, sb)
+    local finalHeight = math.max(minHeight, 18 + nameHeight + metaHeight + statusHeight + 18)
+    card:SetHeight(finalHeight)
+    return finalHeight
 end
 
--- 3.1 Preparation / Ready Check -------------------------------------------------
 function addon:GetPreparationSpec(specID)
     return DKM.PreparationData and DKM.PreparationData.specs and DKM.PreparationData.specs[tonumber(specID)] or nil
 end
@@ -8773,10 +8902,13 @@ function addon:GetRecommendedRuneforgeStatus(specID)
             local offName = fallen and select(1, GetSpellData(fallen.spellID, fallen.fallbackName)) or T("Rune of the Fallen Crusader")
             detail = T("Dual Wield: Main Hand %s • Off Hand %s", tostring(mainName), tostring(offName))
         else
+            -- Current Wowhead 12.1 Frost guidance uses Fallen Crusader for
+            -- two-handed setups. Keep the Ready Check strict so it cannot
+            -- bless an older niche Runeforge recommendation as current.
             ready = mainEnchant == 3368
             local fallen = Data.runeforges and Data.runeforges[3368]
-            local name = fallen and select(1, GetSpellData(fallen.spellID, fallen.fallbackName)) or T("Rune of the Fallen Crusader")
-            detail = T("Two-Hand: %s", tostring(name))
+            local fallenName = fallen and select(1, GetSpellData(fallen.spellID, fallen.fallbackName)) or T("Rune of the Fallen Crusader")
+            detail = T("Two-Hand: %s", tostring(fallenName))
         end
     elseif specID == 250 then
         ready = mainEnchant == 6241 or mainEnchant == 3368
@@ -8979,7 +9111,9 @@ function addon:GetPreparationEntryState(entry, specID)
 end
 
 function addon:ConfigurePreparationCard(card, entry, specID, width, height)
-    card:SetSize(width or 290, math.max(height or 76, 76))
+    local cardWidth = width or 290
+    local minHeight = math.max(height or 76, 86)
+    card:SetWidth(cardWidth)
     card.entry = entry
     local state, label = self:GetPreparationEntryState(entry, specID)
     local border = state == "ready" and {0.22,0.72,0.42,0.95} or (state == "owned" and {0.22,0.60,0.76,0.95} or (state == "waiting" and {0.70,0.60,0.22,0.92} or {0.52,0.42,0.18,0.92}))
@@ -8998,14 +9132,26 @@ function addon:ConfigurePreparationCard(card, entry, specID, width, height)
         card.name:SetTextColor(r,g,b)
     end
     card.icon:SetTexture(icon or QUESTION_MARK_ICON)
-    card.name:SetText(name or T(entry.fallbackName or "Preparation recommendation"))
-    card.meta:SetText(T("%s • %s", T(entry.slot or "Preparation"), T(entry.priority or "RECOMMENDED")))
-    card.status:SetText(label)
+    card.iconFrame:ClearAllPoints()
+    card.iconFrame:SetPoint("TOPLEFT", card, "TOPLEFT", 7, -10)
+    local textWidth = math.max(150, cardWidth - 67)
+    card.name:ClearAllPoints()
+    card.name:SetPoint("TOPLEFT", card, "TOPLEFT", 59, -8)
+    local nameHeight = self:SetGearTextBlockHeight(card.name, textWidth, name or T(entry.fallbackName or "Preparation recommendation"), 18)
+    card.meta:ClearAllPoints()
+    card.meta:SetPoint("TOPLEFT", card.name, "BOTTOMLEFT", 0, -4)
+    local metaHeight = self:SetGearTextBlockHeight(card.meta, textWidth, T("%s • %s", T(entry.slot or "Preparation"), T(entry.priority or "RECOMMENDED")), 14)
+    card.status:ClearAllPoints()
+    card.status:SetPoint("TOPLEFT", card.meta, "BOTTOMLEFT", 0, -4)
+    local statusHeight = self:SetGearTextBlockHeight(card.status, textWidth, label, 16)
     if state == "ready" then card.status:SetTextColor(0.40,1.00,0.60)
     elseif state == "owned" then card.status:SetTextColor(0.42,0.82,1.00)
     elseif state == "waiting" then card.status:SetTextColor(1.00,0.82,0.35)
     elseif state == "missing" then card.status:SetTextColor(1.00,0.48,0.42)
     else card.status:SetTextColor(1.00,0.82,0.35) end
+    local finalHeight = math.max(minHeight, 18 + nameHeight + metaHeight + statusHeight + 18)
+    card:SetHeight(finalHeight)
+    return finalHeight
 end
 
 function addon:AcquireGearTierCard(root)
@@ -9182,7 +9328,11 @@ function addon:RenderGearMentorVisual(specID, viewKey)
 
     local targets = spec.targets or {}
     local y = 0
-    local contentWidth = math.max(560, (root:GetWidth() or 620) - 4)
+    local rootParent = root:GetParent()
+    local availableWidth = (rootParent and rootParent:GetWidth()) or root:GetWidth() or 0
+    if not availableWidth or availableWidth < 620 then availableWidth = root:GetWidth() or 760 end
+    root:SetWidth(availableWidth)
+    local contentWidth = math.max(620, math.floor(availableWidth - 4))
     local splitGap = 10
     local splitWidth = math.floor((contentWidth - splitGap) / 2)
     local metricGap = 8
@@ -9200,7 +9350,7 @@ function addon:RenderGearMentorVisual(specID, viewKey)
 
     local hint = self:AcquireGearText(root, "GameFontHighlightSmall")
     hint:SetPoint("TOPRIGHT", root, "TOPRIGHT", -2, y - 3)
-    hint:SetWidth(math.min(190, math.floor(contentWidth * 0.34)))
+    hint:SetWidth(math.min(230, math.floor(contentWidth * 0.36)))
     hint:SetHeight(18)
     hint:SetJustifyH("RIGHT")
     hint:SetText(T("Hover for item details"))
@@ -9219,18 +9369,55 @@ function addon:RenderGearMentorVisual(specID, viewKey)
     end
 
     local function AddItemGrid(list, cardHeight)
-        local h = math.max(cardHeight or 60, 82)
-        local columns = contentWidth >= 540 and 2 or 1
+        local h = math.max(cardHeight or 60, 86)
+        local columns = contentWidth >= 560 and 2 or 1
         local cardWidth = columns == 2 and math.floor((contentWidth - splitGap) / 2) or contentWidth
-        for index, target in ipairs(list) do
+        local placements, rowHeights = {}, {}
+        local maxRow = 0
+        for index, target in ipairs(list or {}) do
             local col = (index - 1) % columns
-            local row = math.floor((index - 1) / columns)
+            local row = math.floor((index - 1) / columns) + 1
+            maxRow = math.max(maxRow, row)
             local card = self:AcquireGearItemCard(root)
-            self:ConfigureGearItemCard(card, target, cardWidth, h)
-            card:SetPoint("TOPLEFT", root, "TOPLEFT", 2 + col * (cardWidth + splitGap), y - row * (h + 8))
+            local actualHeight = self:ConfigureGearItemCard(card, target, cardWidth, h) or h
+            rowHeights[row] = math.max(rowHeights[row] or 0, actualHeight)
+            placements[#placements + 1] = { card = card, col = col, row = row }
         end
-        local rows = math.max(1, math.ceil(#list / columns))
-        y = y - rows * (h + 8)
+        local rowOffsets, totalHeight = {}, 0
+        for row = 1, maxRow do
+            rowOffsets[row] = totalHeight
+            totalHeight = totalHeight + (rowHeights[row] or h) + 8
+        end
+        for _, placement in ipairs(placements) do
+            placement.card:SetPoint("TOPLEFT", root, "TOPLEFT", 2 + placement.col * (cardWidth + splitGap), y - (rowOffsets[placement.row] or 0))
+        end
+        y = y - totalHeight
+    end
+
+    local function AddPreparationGrid(list, cardHeight)
+        local h = math.max(cardHeight or 76, 86)
+        local columns = contentWidth >= 560 and 2 or 1
+        local cardWidth = columns == 2 and math.floor((contentWidth - splitGap) / 2) or contentWidth
+        local placements, rowHeights = {}, {}
+        local maxRow = 0
+        for index, entry in ipairs(list or {}) do
+            local col = (index - 1) % columns
+            local row = math.floor((index - 1) / columns) + 1
+            maxRow = math.max(maxRow, row)
+            local card = self:AcquirePreparationCard(root)
+            local actualHeight = self:ConfigurePreparationCard(card, entry, specID, cardWidth, h) or h
+            rowHeights[row] = math.max(rowHeights[row] or 0, actualHeight)
+            placements[#placements + 1] = { card = card, col = col, row = row }
+        end
+        local rowOffsets, totalHeight = {}, 0
+        for row = 1, maxRow do
+            rowOffsets[row] = totalHeight
+            totalHeight = totalHeight + (rowHeights[row] or h) + 8
+        end
+        for _, placement in ipairs(placements) do
+            placement.card:SetPoint("TOPLEFT", root, "TOPLEFT", 2 + placement.col * (cardWidth + splitGap), y - (rowOffsets[placement.row] or 0))
+        end
+        y = y - totalHeight
     end
 
     local function AddReadablePanelRow(textValue, minHeight)
@@ -9244,10 +9431,10 @@ function addon:RenderGearMentorVisual(specID, viewKey)
         text:SetJustifyV("TOP")
         text:SetWordWrap(true)
         text:SetTextColor(0.94, 0.97, 0.99)
-        text:SetHeight(200)
+        text:SetHeight(1)
         text:SetText("• " .. T(textValue or ""))
         local stringHeight = text.GetStringHeight and text:GetStringHeight() or 28
-        local panelHeight = math.max(minHeight or 42, math.ceil(stringHeight or 28) + 18)
+        local panelHeight = math.max(minHeight or 42, math.ceil(stringHeight or 28) + 20)
         text:SetHeight(panelHeight - 16)
         panel:SetHeight(panelHeight)
         y = y - panelHeight - 7
@@ -9259,10 +9446,15 @@ function addon:RenderGearMentorVisual(specID, viewKey)
         local note = self:AcquireGearText(root, "GameFontHighlightSmall")
         note:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
         note:SetWidth(contentWidth)
-        note:SetHeight(32)
-        note:SetTextColor(0.92, 0.95, 0.97)
-        note:SetText(T(GearData.sourceNote or "Guide-backed targets are a farming reference, not a replacement for simming your character."))
-        y = y - 38
+        note:SetHeight(1)
+        note:SetWordWrap(true)
+        local freshness = DKM.AdvisorData and DKM.AdvisorData.freshness and DKM.AdvisorData.freshness.gear and DKM.AdvisorData.freshness.gear[specID] or "current"
+        local freshnessLabel = freshness == "review" and T("REVIEW PENDING") or T("CURRENT")
+        if freshness == "review" then note:SetTextColor(1.00, 0.78, 0.28) else note:SetTextColor(0.72, 0.92, 0.82) end
+        note:SetText(T("Data status: %s • reviewed %s • source updated %s", freshnessLabel, tostring(GearData.reviewed or "-"), tostring(spec.sourceUpdated or "-")) .. "\n" .. T(GearData.sourceNote or "Guide-backed targets are a farming reference, not a replacement for simming your character."))
+        local noteHeight = math.max(46, math.ceil((note.GetStringHeight and note:GetStringHeight()) or 40) + 4)
+        note:SetHeight(noteHeight)
+        y = y - noteHeight - 6
     end
 
     if viewKey == "targets" then
@@ -9295,6 +9487,14 @@ function addon:RenderGearMentorVisual(specID, viewKey)
             end
             y = y - 94
         end
+        if spec.catalyst and #spec.catalyst > 0 then
+            AddSectionLabel("Catalyst plan")
+            local catalystLines = {}
+            for _, entry in ipairs(spec.catalyst) do
+                catalystLines[#catalystLines + 1] = T("%s — %s", T(entry.slot or "Gear"), T(entry.source or "Unknown source"))
+            end
+            AddReadablePanelRow(table.concat(catalystLines, "\n"), 92)
+        end
         AddSourceNote()
     elseif viewKey == "preparation" then
         title:SetText(T("Preparation & Ready Check"))
@@ -9310,29 +9510,30 @@ function addon:RenderGearMentorVisual(specID, viewKey)
         }
         for index, data in ipairs(metrics) do
             local card = self:AcquireGearMetric(root)
-            card:SetSize(metricWidth, 48)
+            card:SetSize(metricWidth, 56)
             card:SetPoint("TOPLEFT", root, "TOPLEFT", 2 + (index - 1) * (metricWidth + metricGap), y)
             card.label:SetText(data[1])
             card.value:SetText(data[2])
             card.value:SetTextColor(data[3], data[4], data[5])
         end
-        y = y - 62
+        y = y - 70
 
         local summaryPanel = self:AcquireGearPanel(root)
-        summaryPanel:SetSize(contentWidth, 56)
+        summaryPanel:SetWidth(contentWidth)
         summaryPanel:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
         local summaryTitle = self:AcquireGearPanelText(summaryPanel, "GameFontNormal")
         summaryTitle:SetPoint("TOPLEFT", summaryPanel, "TOPLEFT", 10, -8)
         summaryTitle:SetWidth(contentWidth - 20)
-        summaryTitle:SetHeight(18)
         summaryTitle:SetTextColor(scoreColor[1], scoreColor[2], scoreColor[3])
-        summaryTitle:SetText(readiness.score == readiness.total and T("READY FOR ENDGAME") or T("PREPARATION NEEDS ATTENTION"))
+        local summaryTitleText = readiness.score == readiness.total and T("READY FOR ENDGAME") or T("PREPARATION NEEDS ATTENTION")
+        local summaryTitleHeight = self:SetGearTextBlockHeight(summaryTitle, contentWidth - 20, summaryTitleText, 18)
         local summaryText = self:AcquireGearPanelText(summaryPanel, "GameFontHighlightSmall")
-        summaryText:SetPoint("TOPLEFT", summaryPanel, "TOPLEFT", 10, -29)
+        summaryText:SetPoint("TOPLEFT", summaryTitle, "BOTTOMLEFT", 0, -4)
         summaryText:SetWidth(contentWidth - 20)
-        summaryText:SetHeight(20)
-        summaryText:SetText(T("Read-only checklist: DK Mentor never applies enchants, gems, runes, or consumables automatically."))
-        y = y - 66
+        local summaryTextHeight = self:SetGearTextBlockHeight(summaryText, contentWidth - 20, T("Read-only checklist: DK Mentor never applies enchants, gems, runes, or consumables automatically."), 16)
+        local summaryPanelHeight = math.max(62, 18 + summaryTitleHeight + summaryTextHeight)
+        summaryPanel:SetHeight(summaryPanelHeight)
+        y = y - summaryPanelHeight - 10
 
         if prep then
             AddSectionLabel("Runeforge")
@@ -9347,7 +9548,7 @@ function addon:RenderGearMentorVisual(specID, viewKey)
                 local mainSource
                 local offSource
                 for _, entry in ipairs(prep.runeforge or {}) do
-                    if tonumber(entry.enchantID) == mainEnchantID then mainSource = entry end
+                    if tonumber(entry.enchantID) == mainEnchantID and entry.mode ~= "twohand" then mainSource = entry end
                     if tonumber(entry.enchantID) == 3368 then offSource = entry end
                 end
                 if mainSource then
@@ -9365,44 +9566,23 @@ function addon:RenderGearMentorVisual(specID, viewKey)
             else
                 for _, entry in ipairs(prep.runeforge or {}) do
                     local include = true
-                    if specID == 251 and not dual and tonumber(entry.enchantID) ~= 3368 then include = false end
+                    if specID == 251 and not dual then
+                        include = tonumber(entry.enchantID) == 3368 or entry.mode == "twohand"
+                    end
                     if include then runeEntries[#runeEntries + 1] = entry end
                 end
             end
-            local columns = 2
-            local cardWidth = math.floor((contentWidth - splitGap) / 2)
-            for index, entry in ipairs(runeEntries) do
-                local card = self:AcquirePreparationCard(root)
-                self:ConfigurePreparationCard(card, entry, specID, cardWidth, 76)
-                local col = (index - 1) % columns
-                local row = math.floor((index - 1) / columns)
-                card:SetPoint("TOPLEFT", root, "TOPLEFT", 2 + col * (cardWidth + splitGap), y - row * 84)
-            end
-            y = y - math.max(1, math.ceil(#runeEntries / 2)) * 84
+            AddPreparationGrid(runeEntries, 86)
 
             AddSectionLabel("Enchants")
             local enchants = {}
             for _, entry in ipairs(DKM.PreparationData.commonEnchants or {}) do enchants[#enchants+1] = entry end
             if prep.ringEnchant then enchants[#enchants+1] = prep.ringEnchant end
             if prep.ringAlternative then enchants[#enchants+1] = prep.ringAlternative end
-            for index, entry in ipairs(enchants) do
-                local card = self:AcquirePreparationCard(root)
-                self:ConfigurePreparationCard(card, entry, specID, cardWidth, 76)
-                local col = (index - 1) % 2
-                local row = math.floor((index - 1) / 2)
-                card:SetPoint("TOPLEFT", root, "TOPLEFT", 2 + col * (cardWidth + splitGap), y - row * 84)
-            end
-            y = y - math.max(1, math.ceil(#enchants / 2)) * 84
+            AddPreparationGrid(enchants, 86)
 
             AddSectionLabel("Gems")
-            for index, entry in ipairs(prep.gems or {}) do
-                local card = self:AcquirePreparationCard(root)
-                self:ConfigurePreparationCard(card, entry, specID, cardWidth, 76)
-                local col = (index - 1) % 2
-                local row = math.floor((index - 1) / 2)
-                card:SetPoint("TOPLEFT", root, "TOPLEFT", 2 + col * (cardWidth + splitGap), y - row * 84)
-            end
-            y = y - math.max(1, math.ceil(#(prep.gems or {}) / 2)) * 84
+            AddPreparationGrid(prep.gems or {}, 86)
 
             AddSectionLabel("Consumables")
             local ordered = { "flask", "combatPotion", "healthPotion", "weaponBuff", "augmentRune", "food" }
@@ -9411,31 +9591,30 @@ function addon:RenderGearMentorVisual(specID, viewKey)
                 local entries = prep.consumables and prep.consumables[key] or nil
                 if entries and entries[1] then consumableEntries[#consumableEntries+1] = entries[1] end
             end
-            for index, entry in ipairs(consumableEntries) do
-                local card = self:AcquirePreparationCard(root)
-                self:ConfigurePreparationCard(card, entry, specID, cardWidth, 76)
-                local col = (index - 1) % 2
-                local row = math.floor((index - 1) / 2)
-                card:SetPoint("TOPLEFT", root, "TOPLEFT", 2 + col * (cardWidth + splitGap), y - row * 84)
-            end
-            y = y - math.max(1, math.ceil(#consumableEntries / 2)) * 84
+            AddPreparationGrid(consumableEntries, 86)
 
             y = y - 2
             local note = self:AcquireGearText(root, "GameFontHighlightSmall")
             note:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
             note:SetWidth(contentWidth)
-            note:SetHeight(44)
+            note:SetHeight(1)
+            note:SetWordWrap(true)
             note:SetTextColor(0.78,0.87,0.92)
             note:SetText(T("Enchant readiness checks whether a permanent enchant is present; the recommended cards show the current guide choice. Gem readiness checks empty sockets because the live API does not safely prove every socketed recommendation in all states."))
-            y = y - 50
+            local prepNoteHeight = math.max(44, math.ceil((note.GetStringHeight and note:GetStringHeight()) or 40) + 4)
+            note:SetHeight(prepNoteHeight)
+            y = y - prepNoteHeight - 6
 
             local source = self:AcquireGearText(root, "GameFontHighlightSmall")
             source:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
             source:SetWidth(contentWidth)
-            source:SetHeight(32)
+            source:SetHeight(1)
+            source:SetWordWrap(true)
             source:SetTextColor(0.72,0.82,0.88)
             source:SetText(T("Preparation data: %s • Patch %s • reviewed %s", DKM.PreparationData.sourceName or "Wowhead", DKM.PreparationData.patch or "?", DKM.PreparationData.reviewed or "?"))
-            y = y - 38
+            local prepSourceHeight = math.max(24, math.ceil((source.GetStringHeight and source:GetStringHeight()) or 20) + 4)
+            source:SetHeight(prepSourceHeight)
+            y = y - prepSourceHeight - 6
         end
     elseif viewKey == "sources" then
         title:SetText(T("Loot sources"))
@@ -9447,26 +9626,37 @@ function addon:RenderGearMentorVisual(specID, viewKey)
         end
         for _, source in ipairs(order) do
             local group = grouped[source]
-            local columns = contentWidth >= 540 and 2 or 1
+            local columns = contentWidth >= 560 and 2 or 1
             local cardWidth = columns == 2 and math.floor((contentWidth - 24) / 2) or (contentWidth - 16)
-            local rows = math.ceil(#group / columns)
-            local panelHeight = 40 + rows * 90
             local panel = self:AcquireGearPanel(root)
-            panel:SetSize(contentWidth, panelHeight)
+            panel:SetWidth(contentWidth)
             panel:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
             local label = self:AcquireGearPanelText(panel, "GameFontNormal")
             label:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, -9)
-            label:SetWidth(contentWidth - 20)
-            label:SetHeight(20)
+            local labelHeight = self:SetGearTextBlockHeight(label, contentWidth - 20, source, 20)
             label:SetTextColor(0.92, 0.80, 0.45)
-            label:SetText(source)
+            local placements, rowHeights = {}, {}
+            local maxRow = 0
             for index, target in ipairs(group) do
                 local col = (index - 1) % columns
-                local row = math.floor((index - 1) / columns)
+                local row = math.floor((index - 1) / columns) + 1
+                maxRow = math.max(maxRow, row)
                 local card = self:AcquireGearItemCard(root)
-                self:ConfigureGearItemCard(card, target, cardWidth, 82)
-                card:SetPoint("TOPLEFT", panel, "TOPLEFT", 8 + col * (cardWidth + 8), -34 - row * 90)
+                local actualHeight = self:ConfigureGearItemCard(card, target, cardWidth, 86) or 86
+                rowHeights[row] = math.max(rowHeights[row] or 0, actualHeight)
+                placements[#placements + 1] = { card = card, col = col, row = row }
             end
+            local rowOffsets, rowsHeight = {}, 0
+            for row = 1, maxRow do
+                rowOffsets[row] = rowsHeight
+                rowsHeight = rowsHeight + (rowHeights[row] or 86) + 8
+            end
+            local cardsTop = 14 + labelHeight
+            for _, placement in ipairs(placements) do
+                placement.card:SetPoint("TOPLEFT", panel, "TOPLEFT", 8 + placement.col * (cardWidth + 8), -cardsTop - (rowOffsets[placement.row] or 0))
+            end
+            local panelHeight = cardsTop + rowsHeight + 8
+            panel:SetHeight(panelHeight)
             y = y - panelHeight - 10
         end
         AddSourceNote()
@@ -9511,19 +9701,19 @@ function addon:RenderGearMentorVisual(specID, viewKey)
         }
         for index, data in ipairs(metrics) do
             local card = self:AcquireGearMetric(root)
-            card:SetSize(metricWidth, 48)
+            card:SetSize(metricWidth, 56)
             card:SetPoint("TOPLEFT", root, "TOPLEFT", 2 + (index - 1) * (metricWidth + metricGap), y)
             card.label:SetText(data[1])
             card.value:SetText(data[2])
             card.value:SetTextColor(data[3], data[4], data[5])
         end
-        y = y - 62
+        y = y - 70
 
         AddSectionLabel("Season 2 tier set")
         local tier = GearData and GearData.tierSet or nil
         if tier then
             local setPanel = self:AcquireGearPanel(root)
-            setPanel:SetSize(contentWidth, 130)
+            setPanel:SetSize(contentWidth, 142)
             setPanel:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
             local setName = self:AcquireGearPanelText(setPanel, "GameFontNormal")
             setName:SetPoint("TOPLEFT", setPanel, "TOPLEFT", 9, -7)
@@ -9550,7 +9740,7 @@ function addon:RenderGearMentorVisual(specID, viewKey)
             local four = self:AcquireGearBonusCard(root)
             self:ConfigureGearBonusCard(four, 4, tierCount, bonusData.fourPiece, bonusWidth)
             four:SetPoint("TOPLEFT", setPanel, "TOPLEFT", 16 + bonusWidth, -82)
-            y = y - 140
+            y = y - 152
         end
 
         AddSectionLabel("Recommended gear")
@@ -9560,23 +9750,22 @@ function addon:RenderGearMentorVisual(specID, viewKey)
         local codexSpec = DKM.Codex and DKM.Codex.specs and DKM.Codex.specs[specID]
         local firstStats = codexSpec and codexSpec.stats and codexSpec.stats[1] or nil
         local statPanel = self:AcquireGearPanel(root)
-        statPanel:SetSize(contentWidth, 62)
+        statPanel:SetWidth(contentWidth)
         statPanel:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
         local priority = self:AcquireGearPanelText(statPanel, "GameFontNormal")
         priority:SetPoint("TOPLEFT", statPanel, "TOPLEFT", 10, -9)
-        priority:SetWidth(contentWidth - 20)
-        priority:SetHeight(21)
         priority:SetTextColor(0.92, 0.80, 0.45)
-        priority:SetText(firstStats and self:FirstGearSentence(T(firstStats.body or "")) or T("Simulate close upgrades."))
+        local priorityHeight = self:SetGearTextBlockHeight(priority, contentWidth - 20, firstStats and self:FirstGearSentence(T(firstStats.body or "")) or T("Simulate close upgrades."), 21)
         local stats = self:GetCurrentStatSnapshot()
         local current = self:AcquireGearPanelText(statPanel, "GameFontHighlightSmall")
-        current:SetPoint("BOTTOMLEFT", statPanel, "BOTTOMLEFT", 10, 9)
-        current:SetWidth(contentWidth - 20)
-        current:SetHeight(18)
+        current:SetPoint("TOPLEFT", priority, "BOTTOMLEFT", 0, -7)
         current:SetTextColor(0.92, 0.95, 0.97)
-        current:SetText(T("Current: Crit %s  •  Haste %s  •  Mastery %s  •  Vers %s",
-            self:FormatStatPercent(stats.crit), self:FormatStatPercent(stats.haste), self:FormatStatPercent(stats.mastery), self:FormatStatPercent(stats.versatility)))
-        y = y - 74
+        local currentText = T("Current: Crit %s  •  Haste %s  •  Mastery %s  •  Vers %s",
+            self:FormatStatPercent(stats.crit), self:FormatStatPercent(stats.haste), self:FormatStatPercent(stats.mastery), self:FormatStatPercent(stats.versatility))
+        local currentHeight = self:SetGearTextBlockHeight(current, contentWidth - 20, currentText, 18)
+        local statPanelHeight = math.max(68, priorityHeight + currentHeight + 28)
+        statPanel:SetHeight(statPanelHeight)
+        y = y - statPanelHeight - 10
         AddSourceNote()
     end
 
@@ -9987,6 +10176,14 @@ function addon:ConfigureBuildProfileCard(root, card, profile, width)
     local sourceText = profile.sourceName or ""
     if profile.sourceAuthor and profile.sourceAuthor ~= "" then sourceText = sourceText .. " • " .. profile.sourceAuthor end
     if profile.sourceUpdated and profile.sourceUpdated ~= "" then sourceText = sourceText .. " • " .. T("updated %s", profile.sourceUpdated) end
+    local freshness = tostring(profile.freshness or "current")
+    local freshnessLabel = freshness == "review" and T("REVIEW PENDING") or T("CURRENT")
+    sourceText = sourceText .. " • " .. freshnessLabel
+    if freshness == "review" then
+        card.source:SetTextColor(1.00, 0.78, 0.28)
+    else
+        card.source:SetTextColor(0.52, 0.90, 0.68)
+    end
     card.source:SetText(sourceText)
     return height
 end
@@ -10202,6 +10399,91 @@ function addon:GetCharacterCheckReport(selectedSpecID)
     }
 end
 
+local function RefreshGuideResponsiveLayout()
+    local frame = mainFrame
+    local guide = frame and frame.guideSection
+    if not guide then return end
+
+    local guidePage = frame.pages and frame.pages.guide or nil
+    local sectionWidth = (guide.GetWidth and guide:GetWidth()) or 0
+    if sectionWidth < 700 then sectionWidth = (frame.GetWidth and frame:GetWidth() or 1060) - 48 end
+
+    local navWidth = math.max(160, math.min(184, math.floor(sectionWidth * 0.19)))
+    local contentLeft = navWidth + 22
+    local contentWidth = math.max(620, math.floor(sectionWidth - contentLeft - 38))
+
+    guide.navWidth = navWidth
+    guide.contentLeft = contentLeft
+    guide.contentWidth = contentWidth
+
+    if guide.navHint then guide.navHint:SetWidth(navWidth - 8) end
+    if guide.navPanel then guide.navPanel:SetWidth(navWidth) end
+    if guide.specTitle then guide.specTitle:SetWidth(contentWidth - 10) end
+    if guide.scroll then
+        guide.scroll:ClearAllPoints()
+        guide.scroll:SetPoint("TOPLEFT", guide, "TOPLEFT", contentLeft, -64)
+        guide.scroll:SetPoint("BOTTOMRIGHT", guide, "BOTTOMRIGHT", -31, 18)
+    end
+    if guide.content then guide.content:SetWidth(contentWidth) end
+    if guide.text then guide.text:SetWidth(contentWidth - 28) end
+
+    if guidePage and guidePage.scope then
+        guidePage.scope:SetWidth(math.max(700, (frame.GetWidth and frame:GetWidth() or 1060) - 72))
+    end
+
+    local orderedSections = { "overview", "advisor", "stats", "builds", "valeera", "rotation", "survival", "utility", "check" }
+    if guidePage and guidePage.sectionButtons then
+        for index, key in ipairs(orderedSections) do
+            local button = guidePage.sectionButtons[key]
+            if button then
+                button:ClearAllPoints()
+                button:SetSize(navWidth - 10, 40)
+                button:SetPoint("TOPLEFT", guide.navPanel, "TOPLEFT", 4, -((index - 1) * 44))
+            end
+        end
+    end
+
+    if guide.buildActions and guide.buildContextButtons then
+        local buildOrder = guide.buildContextOrder or { "auto", "world", "delve", "dungeon", "mythicplus", "raid", "pvp" }
+        local buildGap = 4
+        local buildWidth = math.floor(((contentWidth - 8) - (buildGap * (#buildOrder - 1))) / #buildOrder)
+        for index, key in ipairs(buildOrder) do
+            local button = guide.buildContextButtons[key]
+            if button then
+                button:ClearAllPoints()
+                button:SetSize(buildWidth, 24)
+                button:SetPoint("TOPLEFT", guide.buildActions, "TOPLEFT", 2 + ((index - 1) * (buildWidth + buildGap)), 0)
+            end
+        end
+    end
+
+    if guide.gearActions and guide.gearViewButtons then
+        local gearOrder = guide.gearViewOrder or { "overview", "targets", "preparation", "crafting", "sources", "trinkets", "upgrades" }
+        local gearGap = 4
+        local gearWidth = math.floor(((contentWidth - 8) - (gearGap * (#gearOrder - 1))) / #gearOrder)
+        for index, key in ipairs(gearOrder) do
+            local button = guide.gearViewButtons[key]
+            if button then
+                button:ClearAllPoints()
+                button:SetSize(gearWidth, 24)
+                button:SetPoint("LEFT", guide.gearActions, "LEFT", 2 + ((index - 1) * (gearWidth + gearGap)), 0)
+            end
+        end
+    end
+
+    if guide.sourceURLBox and guide.selectSourceButton and guide.openPilotButton then
+        local fixedButtonsWidth = 152 + 8 + 160 + 8
+        local desired = math.floor(contentWidth * 0.34)
+        local maxAllowed = math.max(170, contentWidth - fixedButtonsWidth - 20)
+        local urlWidth = math.max(170, math.min(260, math.min(desired, maxAllowed)))
+        guide.sourceURLBox:SetWidth(urlWidth)
+        guide.selectSourceButton:ClearAllPoints()
+        guide.selectSourceButton:SetPoint("LEFT", guide.sourceURLBox, "RIGHT", 8, 0)
+        guide.openPilotButton:ClearAllPoints()
+        guide.openPilotButton:SetPoint("LEFT", guide.selectSourceButton, "RIGHT", 8, 0)
+    end
+end
+
 function addon:UpdateGuideSection()
     if not mainFrame or not mainFrame.guideSection then
         return
@@ -10210,10 +10492,11 @@ function addon:UpdateGuideSection()
     local specID = self:GetCodexSpecID()
     local currentSpecID = select(1, self:GetSpecInfo())
     local sectionKey = DB and DB.codexSection or "overview"
-    local valid = { overview = true, builds = true, stats = true, rotation = true, survival = true, utility = true, check = true }
+    local valid = { overview = true, advisor = true, builds = true, stats = true, valeera = true, rotation = true, survival = true, utility = true, check = true }
     if not valid[sectionKey] then sectionKey = "overview" end
 
     local guide = mainFrame.guideSection
+    RefreshGuideResponsiveLayout()
     local specData = (DKM.Codex and DKM.Codex.specs) and (DKM.Codex and DKM.Codex.specs)[specID] or nil
     local specName = (specData and specData.name) or (Data.specNames and Data.specNames[specID]) or T("Death Knight")
     local sectionLabel = ((DKM.Codex and DKM.Codex.sectionLabels) and (DKM.Codex and DKM.Codex.sectionLabels)[sectionKey]) or sectionKey
@@ -10238,6 +10521,23 @@ function addon:UpdateGuideSection()
         end
         for key, button in pairs(page.sectionButtons or {}) do
             if button.menuLabelKey then button.label:SetText(T(button.menuLabelKey)) end
+            local iconTexture = button.menuIconTexture
+            if button.menuIconDynamic == "spec" then
+                iconTexture = self:GetSpecIconByID(specID)
+            elseif button.menuIconDynamic == "rotation" then
+                local rotationSpellID = specID == 250 and 49998 or (specID == 252 and 55090 or 49020)
+                iconTexture = select(2, GetSpellData(rotationSpellID))
+            elseif button.menuIconSpellID then
+                iconTexture = select(2, GetSpellData(button.menuIconSpellID))
+            end
+            SetFlatTabButtonIcon(button, iconTexture, 17)
+            if button.icon and button.icon:IsShown() then
+                button.icon:ClearAllPoints()
+                button.icon:SetPoint("LEFT", button, "LEFT", 5, 0)
+                button.label:ClearAllPoints()
+                button.label:SetPoint("LEFT", button.icon, "RIGHT", 5, 0)
+                button.label:SetPoint("RIGHT", button, "RIGHT", -5, 0)
+            end
             StyleTabButton(button, key == sectionKey)
         end
     end
@@ -10250,12 +10550,26 @@ function addon:UpdateGuideSection()
         local selectedBuildContext = DB and tostring(DB.codexBuildContext or "auto") or "auto"
         for key, button in pairs(guide.buildContextButtons or {}) do
             if button.labelKey then button.label:SetText(T(button.labelKey)) end
+            SetFlatTabButtonIcon(button, button.iconSpellID and select(2, GetSpellData(button.iconSpellID)) or nil, 11)
+            if button.icon and button.icon:IsShown() then
+                button.icon:ClearAllPoints()
+                button.icon:SetPoint("LEFT", button, "LEFT", 4, 0)
+                button.label:ClearAllPoints()
+                button.label:SetPoint("LEFT", button.icon, "RIGHT", 3, 0)
+                button.label:SetPoint("RIGHT", button, "RIGHT", -3, 0)
+            end
             StyleTabButton(button, key == selectedBuildContext)
         end
         local buildMode = self:GetCodexBuildMode()
         for key, button in pairs(guide.buildModeButtons or {}) do StyleTabButton(button, key == buildMode) end
-        if guide.buildModeButtons and guide.buildModeButtons.standard then guide.buildModeButtons.standard:SetText(T("Standard")) end
-        if guide.buildModeButtons and guide.buildModeButtons.sba then guide.buildModeButtons.sba:SetText(T("SBA-friendly")) end
+        if guide.buildModeButtons and guide.buildModeButtons.standard then
+            guide.buildModeButtons.standard.label:SetText(T("Standard"))
+            SetFlatTabButtonIcon(guide.buildModeButtons.standard, self:GetSpecIconByID(specID), 14)
+        end
+        if guide.buildModeButtons and guide.buildModeButtons.sba then
+            guide.buildModeButtons.sba.label:SetText(T("SBA-friendly"))
+            SetFlatTabButtonIcon(guide.buildModeButtons.sba, select(2, GetSpellData(47568)), 14)
+        end
         if guide.buildModeHint then
             guide.buildModeHint:SetText(buildMode == "sba" and T("Accessibility profile • complements Blizzard SBA") or T("Guide-backed standard recommendations"))
         end
@@ -10265,6 +10579,21 @@ function addon:UpdateGuideSection()
         local gearView = DB and DB.codexGearView or "overview"
         if gearView == "plan" then gearView = "upgrades" end
         for key, button in pairs(guide.gearViewButtons or {}) do
+            local iconTexture = button.iconTexture
+            if button.iconSpellID then
+                iconTexture = select(2, GetSpellData(button.iconSpellID))
+            elseif button.iconItemID and GetItemInfoInstant then
+                local okItem, _, _, _, _, itemIcon = pcall(GetItemInfoInstant, button.iconItemID)
+                if okItem and itemIcon then iconTexture = itemIcon end
+            end
+            SetFlatTabButtonIcon(button, iconTexture or QUESTION_MARK_ICON, 11)
+            if button.icon and button.icon:IsShown() then
+                button.icon:ClearAllPoints()
+                button.icon:SetPoint("LEFT", button, "LEFT", 4, 0)
+                button.label:ClearAllPoints()
+                button.label:SetPoint("LEFT", button.icon, "RIGHT", 3, 0)
+                button.label:SetPoint("RIGHT", button, "RIGHT", -3, 0)
+            end
             StyleTabButton(button, key == gearView)
         end
     end
@@ -10272,7 +10601,7 @@ function addon:UpdateGuideSection()
         guide.scroll:ClearAllPoints()
         local topOffset = -64
         if sectionKey == "builds" then
-            topOffset = -158
+            topOffset = -168
         elseif sectionKey == "stats" then
             topOffset = -96
         end
@@ -10292,10 +10621,14 @@ function addon:UpdateGuideSection()
         end
         if guide.selectSourceButton then guide.selectSourceButton:SetEnabled(sourceURL ~= nil and sourceURL ~= ""); StyleActionButton(guide.selectSourceButton) end
         self:UpdateLoadoutPilotIntegration()
+    elseif sectionKey == "advisor" then
+        self.currentGearVisualHeight = self.RenderDKAdvisorVisual and self:RenderDKAdvisorVisual(specID) or nil
     elseif sectionKey == "stats" then
         local gearView = DB and DB.codexGearView or "overview"
         if gearView == "plan" then gearView = "upgrades" end
         self.currentGearVisualHeight = self:RenderGearMentorVisual(specID, gearView)
+    elseif sectionKey == "valeera" then
+        self.currentGearVisualHeight = self.RenderValeeraMentorVisual and self:RenderValeeraMentorVisual(specID) or nil
     elseif sectionKey == "check" then
         table.insert(lines, "|cff89d8ff" .. T("Character Check — live diagnostics") .. "|r")
         table.insert(lines, T("This check inspects your active character. It never changes gear, talents, enchants, gems, or abilities."))
@@ -10325,7 +10658,7 @@ function addon:UpdateGuideSection()
         end
     end
 
-    if sectionKey == "stats" and self.currentGearVisualHeight then
+    if (sectionKey == "stats" or sectionKey == "advisor" or sectionKey == "valeera") and self.currentGearVisualHeight then
         self.currentBuildVisualHeight = nil
         if guide.buildVisual then guide.buildVisual:Hide() end
         guide.text:Hide()
@@ -10433,7 +10766,7 @@ function addon:ResetHUDPositions()
     if addon.lichKingPortraitFrame and DB.voice and DB.voice.portrait then
         addon.RestoreLichKingPortraitPosition()
     end
-    Print(T("Combat HUD positions restored."))
+    Print(T("Combat HUD positions restored to the starter layout."))
 end
 
 function addon:ResetPositions()
@@ -10498,7 +10831,9 @@ function addon:ShowHelp()
     Print(T("/dkm — open or close the main window"))
     Print(T("/dkm mode — content detection is automatic"))
     Print(T("/dkm codex — open the DK Codex"))
+    Print(T("/dkm advisor — open DK Stats & Folio Advisor"))
     Print(T("/dkm builds — open DK Codex build recommendations"))
+    Print(T("/dkm valeera — open Valeera Delve Mentor"))
     Print(T("/dkm loadouts — open Loadout Pilot when installed"))
     Print(T("/dkm coach on|off — show or hide the compact survival coach"))
     Print(T("/dkm coach health on|off — toggle health-adaptive recommendations"))
@@ -10679,9 +11014,19 @@ function addon:HandleSlashCommand(message)
         else
             self:SetCombatBarsOnlyInCombat(not DB.combatBarsOnlyInCombat)
         end
+    elseif command == "advisor" or command == "statsfolio" or command == "folio" then
+        mainFrame:Show()
+        DB.codexSection = "advisor"
+        self:SetMainTab("guide")
+        self:UpdateGuideSection()
     elseif command == "build" or command == "builds" then
         mainFrame:Show()
         DB.codexSection = "builds"
+        self:SetMainTab("guide")
+        self:UpdateGuideSection()
+    elseif command == "valeera" or command == "delvecompanion" then
+        mainFrame:Show()
+        DB.codexSection = "valeera"
         self:SetMainTab("guide")
         self:UpdateGuideSection()
     elseif command == "gearmentor" or command == "gearing" then
@@ -11600,6 +11945,7 @@ addon:SetScript("OnEvent", function(self, event, ...)
             minimapButton:Show()
         end
         self:UpdateAll()
+        if self.RegisterGearTargetTooltipIntegration then self:RegisterGearTargetTooltipIntegration() end
         self:CheckActionBarCoverage(true)
         self:ScheduleInterruptActionGlowRefresh()
 
@@ -11609,10 +11955,10 @@ addon:SetScript("OnEvent", function(self, event, ...)
             mainFrame:Show()
         end
 
-        if DB.majorReleaseNotice ~= "3.0" then
-            DB.majorReleaseNotice = "3.0"
-            Print(T("DK Mentor 3.0 — Live Mentor + Review is ready."))
-            Print(T("Review, Timeline, Patterns, DK Tools, Alert Studio, and the Setup Wizard are now available. Loadout automation remains in Loadout Pilot."))
+        if DB.majorReleaseNotice ~= "3.2" then
+            DB.majorReleaseNotice = "3.2"
+            Print(T("DK Mentor 3.2 — Stats & Folio Advisor is ready."))
+            Print(T("Use /dkm advisor for live stats, diminishing returns, Omnium Folio guidance, and data freshness. Gear Mentor also includes Catalyst plans and smart DK target tooltips."))
             Print(T("DK Mentor recommends actions; it never casts abilities automatically. Use /dkm help for commands."))
         elseif firstRunNow then
             Print(T("Ready. Explore the DK Codex and use /dkm help to view commands."))

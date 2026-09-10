@@ -6,15 +6,15 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "3.2.0"
+VERSION = "3.3.0"
 INTERFACE = "120100"
 
-RUNTIME_LUA = ["Localization.lua", "Data.lua", "Builds.lua", "Guides.lua", "GearData.lua", "PreparationData.lua", "AdvisorData.lua", "ValeeraData.lua", "Codex.lua", "Voices.lua", "Core.lua", "Advisor.lua", "Valeera.lua", "MentorEngine.lua", "MentorReview.lua", "DKTools.lua", "MentorStudio.lua"]
+RUNTIME_LUA = ["Localization.lua", "Data.lua", "Builds.lua", "Guides.lua", "GearData.lua", "PreparationData.lua", "AdvisorData.lua", "ValeeraData.lua", "MetaData.lua", "MetaProvider.lua", "Codex.lua", "Voices.lua", "Core.lua", "TalentTree.lua", "Advisor.lua", "Valeera.lua", "Meta.lua", "MentorEngine.lua", "MentorReview.lua", "DKTools.lua", "MentorStudio.lua"]
 REQUIRED = [
     "DKMentor.toc", *RUNTIME_LUA, "README.md", "CHANGELOG.md", "LICENSE",
     "THIRD_PARTY_NOTICES.md", "POLICY_AND_SOURCES.md", "PUBLISHING.md",
-    "RELEASE_NOTES_v3.2.0.md", "TESTING_v3.2.0.md", "CURSEFORGE_CHANGELOG_v3.2.0.md", "VALIDATION_REPORT_v3.2.0.md", "DATA_AUDIT_v3.1.0.md",
-    "tests/localization_smoke.lua", "tests/review_smoke.lua", "tests/tools_smoke.lua", "tests/studio_smoke.lua", "tests/core_ux_smoke.lua", "tests/modal_navigation_smoke.lua", "tests/interrupt_enhancements_smoke.lua", "tests/gear_mentor_smoke.lua", "tests/build_mentor_smoke.lua", "tests/rune_order_smoke.lua", "tests/preparation_31_smoke.lua", "tests/accessibility_preset_31_smoke.lua", "tests/voice_portrait_315_smoke.lua", "tests/layout_preset_316_smoke.lua", "tests/portrait_position_316_smoke.lua", "tests/advisor_320_smoke.lua", "tests/guidance_refresh_320_smoke.lua", "tests/valeera_320_smoke.lua",
+    "RELEASE_NOTES_v3.3.0.md", "TESTING_v3.3.0.md", "CURSEFORGE_CHANGELOG_v3.3.0.md", "VALIDATION_REPORT_v3.3.0.md", "DATA_AUDIT_v3.1.0.md",
+    "tests/localization_smoke.lua", "tests/review_smoke.lua", "tests/tools_smoke.lua", "tests/studio_smoke.lua", "tests/core_ux_smoke.lua", "tests/modal_navigation_smoke.lua", "tests/interrupt_enhancements_smoke.lua", "tests/gear_mentor_smoke.lua", "tests/build_mentor_smoke.lua", "tests/rune_order_smoke.lua", "tests/preparation_31_smoke.lua", "tests/accessibility_preset_31_smoke.lua", "tests/voice_portrait_315_smoke.lua", "tests/layout_preset_316_smoke.lua", "tests/portrait_position_316_smoke.lua", "tests/advisor_320_smoke.lua", "tests/guidance_refresh_320_smoke.lua", "tests/valeera_320_smoke.lua", "tests/unholy_gear_321_smoke.lua", "tests/meta_330_smoke.lua", "tests/meta_provider_330_smoke.lua", "tests/talent_tree_330_smoke.lua", "tests/talent_tree_runtime_330_smoke.lua", "tests/talent_tree_ids_330_smoke.lua", "tests/talent_tree_create_330_smoke.lua",
     "Media/DKArcFill.tga", "Media/DKArcBG.tga", "Media/DKArcGlow.tga",
     "Media/DKArcFillRight.tga", "Media/DKArcBGRight.tga", "Media/DKArcGlowRight.tga",
 ]
@@ -90,7 +90,10 @@ def main() -> int:
     preparation_data = (ROOT / "PreparationData.lua").read_text(encoding="utf-8")
     advisor_data = (ROOT / "AdvisorData.lua").read_text(encoding="utf-8")
     valeera_data = (ROOT / "ValeeraData.lua").read_text(encoding="utf-8")
+    meta_data = (ROOT / "MetaData.lua").read_text(encoding="utf-8")
+    meta_provider = (ROOT / "MetaProvider.lua").read_text(encoding="utf-8")
     valeera = (ROOT / "Valeera.lua").read_text(encoding="utf-8")
+    meta_runtime = (ROOT / "Meta.lua").read_text(encoding="utf-8")
     advisor = (ROOT / "Advisor.lua").read_text(encoding="utf-8")
     loc = (ROOT / "Localization.lua").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -348,8 +351,8 @@ def main() -> int:
         errors.append("/dkm loadouts handoff command is missing")
 
     # 3.1 adds persisted accessibility/portrait settings while keeping legacy loadout data inert.
-    if "schema = 33" not in defaults:
-        errors.append("3.1.x must use schema 33 for current SavedVariables defaults")
+    if "schema = 34" not in defaults:
+        errors.append("3.3 must use schema 34 for current SavedVariables defaults")
     for starter_snippet in (
         'coach = {\n        enabled = true,\n        onlyInCombat = true,\n        adaptiveHealth = true,\n        point = "BOTTOM",\n        relativePoint = "BOTTOM",\n        x = 0,\n        y = 250,',
         'buffBar = {\n        enabled = false,\n        point = "BOTTOM",\n        relativePoint = "BOTTOM",\n        x = -220,\n        y = 395,',
@@ -415,8 +418,8 @@ def main() -> int:
             errors.append(f"2.0.1 compact UI regression: {snippet}")
 
     # Codex + recommendation-only builds.
-    if 'sectionOrder = { "overview", "advisor", "stats", "builds", "valeera", "rotation", "survival", "utility", "check" }' not in codex:
-        errors.append("DK Codex must expose nine sections including Stats & Folio, Gear Mentor, Builds, and Valeera")
+    if 'sectionOrder = { "overview", "advisor", "stats", "builds", "meta", "valeera", "rotation", "survival", "utility", "check" }' not in codex:
+        errors.append("DK Codex must expose ten sections including Stats & Folio, Gear Mentor, Builds, Meta, and Valeera")
     for snippet in ("DK mechanics — Runes", "PvE stat priority", "Runeforge", "Gems", "Enchants", "Consumables", "Cheat sheet", "Beginner opener", "Interrupt and crowd control handbook"):
         if snippet not in codex:
             errors.append(f"DK Codex content missing: {snippet}")
@@ -808,7 +811,7 @@ def main() -> int:
     for snippet in (
         'patch = "12.1.0"',
         'season = "Midnight Season 2"',
-        'reviewed = "2026-09-06"',
+        'reviewed = "2026-09-08"',
         'GearData.specs[250]',
         'GearData.specs[251]',
         'GearData.specs[252]',
@@ -1079,9 +1082,9 @@ def main() -> int:
         if snippet not in core:
             errors.append(f"3.1 Core regression: {snippet}")
     for snippet in (
-        'profile.sbaFriendly = profile.heroTalent == "Deathbringer"',
-        'profile.sbaFriendly = not (contextKey == "pvp" and profile.heroTalent == "Deathbringer")',
-        'profile.sbaFriendly = profile.heroTalent == "Rider of the Apocalypse"',
+        'profile.sbaFriendly = profile.heroSubTreeID == 33',
+        'profile.sbaFriendly = not (contextKey == "pvp" and profile.heroSubTreeID == 33)',
+        'profile.sbaFriendly = profile.heroSubTreeID == 32',
         'FROST_SBA_CORE',
     ):
         if snippet not in builds:
@@ -1154,6 +1157,16 @@ def main() -> int:
         if snippet not in gear_data:
             errors.append(f"3.2 Catalyst data regression: {snippet}")
     for snippet in (
+        'reviewed = "2026-09-08"',
+        'sourceUpdated = "2026-09-08"',
+        'Target(268249, "Vile Alchemist\'s Band", "Finger"',
+        'Target(252258, "Sickening Signet of Atroxus", "Finger"',
+    ):
+        if snippet not in gear_data:
+            errors.append(f"3.2.1 Unholy gear hotfix regression: {snippet}")
+    if 'Band of the Amani Warlord' in gear_data:
+        errors.append("3.2.1 obsolete Band of the Amani Warlord target returned")
+    for snippet in (
         'P("Stats & Folio", "Atributos e Folio")',
         'P("REVIEW PENDING", "REVISÃO PENDENTE")',
         'P("Catalyst plan", "Plano do Catalisador")',
@@ -1161,9 +1174,9 @@ def main() -> int:
     ):
         if snippet not in loc:
             errors.append(f"3.2 localization missing: {snippet}")
-    if any(name not in (ROOT / "scripts/package.sh").read_text(encoding="utf-8") for name in ('AdvisorData.lua', 'Advisor.lua', 'ValeeraData.lua', 'Valeera.lua')):
+    if any(name not in (ROOT / "scripts/package.sh").read_text(encoding="utf-8") for name in ('AdvisorData.lua', 'Advisor.lua', 'ValeeraData.lua', 'Valeera.lua', 'MetaData.lua', 'MetaProvider.lua', 'Meta.lua')):
         errors.append("3.2 package.sh must include Advisor and Valeera runtime modules")
-    if any(name not in (ROOT / "scripts/package.ps1").read_text(encoding="utf-8") for name in ('AdvisorData.lua', 'Advisor.lua', 'ValeeraData.lua', 'Valeera.lua')):
+    if any(name not in (ROOT / "scripts/package.ps1").read_text(encoding="utf-8") for name in ('AdvisorData.lua', 'Advisor.lua', 'ValeeraData.lua', 'Valeera.lua', 'MetaData.lua', 'MetaProvider.lua', 'Meta.lua')):
         errors.append("3.2 package.ps1 must include Advisor and Valeera runtime modules")
 
     # 3.2 Valeera / Delve Mentor integration.
@@ -1218,6 +1231,74 @@ def main() -> int:
     ):
         if snippet not in loc:
             errors.append(f"3.2 Valeera localization missing: {snippet}")
+
+    # 3.3 DK Meta Pulse integration.
+    for snippet in (
+        'codexMetaContext = "raid"',
+        'meta = "Meta"',
+        'sectionKey == "meta"',
+        'self:RenderMetaAdvisorVisual(specID)',
+        'command == "meta" or command == "metapulse"',
+        'leveling = true',
+    ):
+        if snippet not in core:
+            errors.append(f"3.3 Meta/Core integration regression: {snippet}")
+    for snippet in (
+        'reviewed = "2026-09-08"',
+        'contextOrder = { "raid", "mythicplus", "highkeys" }',
+        'heroUsage = 97.4',
+        'heroUsage = 53.3',
+        'heroUsage = 80.9',
+        'heroUsage = 98.5',
+        'weaponUsage = 48.9',
+        'sourceName = "Archon.gg / Warcraft Logs"',
+        '["Deathbringer"] = 434765',
+        '["San\'layn"] = 433895',
+        '["Rider of the Apocalypse"] = 444040',
+    ):
+        if snippet not in meta_data:
+            errors.append(f"3.3 MetaData regression: {snippet}")
+    for snippet in (
+        'function addon:RenderMetaAdvisorVisual(specID)',
+        'function addon:GetMetaContext()',
+        'function addon:SetMetaContext(contextKey)',
+        'local function GetAlignment(specID, contextKey, row)',
+        'local HERO_SPELL_IDS = BuiltInMetaData.heroSpellIDs',
+        'guideSpellID == metaSpellID',
+        'META DIFFERS',
+        'SPLIT SIGNAL',
+        'Observed DK meta by specialization',
+        'Archon: Tooltip detected',
+        'Data source: Archon addon data',
+        'Data source: built-in snapshot',
+    ):
+        if snippet not in meta_runtime:
+            errors.append(f"3.3 Meta UI regression: {snippet}")
+    for snippet in (
+        'function Provider:ValidateSnapshot(snapshot)',
+        'function Provider:FindArchonAggregateSnapshot()',
+        'function Provider:GetActiveSnapshot()',
+        '_G.DKMentorMetaBridge.RegisterSnapshot',
+        'ArchonTooltipPrivate',
+        'no compatible aggregate meta feed is exposed',
+        'row.heroSpellID',
+        'row.alternativeHeroSpellID',
+    ):
+        if snippet not in meta_provider:
+            errors.append(f"3.3 Meta provider regression: {snippet}")
+    for snippet in (
+        'P("DK Meta Pulse", "Pulso do Meta DK")',
+        'P("What should I play?", "O que devo jogar?")',
+        'P("META DIFFERS", "META DIVERGE")',
+        'P("SPLIT SIGNAL", "SINAL DIVIDIDO")',
+        'P("/dkm meta — open DK Meta Pulse",',
+        'P("Data source: Archon addon data • reviewed %s",',
+        'P("Data source: built-in snapshot • reviewed %s",',
+        'P("Archon: Tooltip + DB detected • aggregate meta feed unavailable",',
+        'P("Archon: not detected",',
+    ):
+        if snippet not in loc:
+            errors.append(f"3.3 Meta localization missing: {snippet}")
 
     # Media packaging scripts must copy the full texture folder.
     package_sh = (ROOT / "scripts/package.sh").read_text(encoding="utf-8")

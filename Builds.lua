@@ -2,12 +2,20 @@ local ADDON_NAME, DKM = ...
 
 -- DK Mentor build guidance. PvE profiles reference current Wowhead guides;
 -- PvP profiles reference current Icy Veins guides where available. DK Mentor
--- does not bundle third-party prose, artwork, or talent import strings and does
--- not create, select, or switch WoW loadouts. Automation belongs to Loadout Pilot.
+-- does not bundle third-party prose, artwork, or talent import strings. The Build
+-- Mentor may clone an already-aligned player loadout into Blizzard's saved loadout
+-- list, but it never auto-purchases guide nodes or silently changes the active build.
+-- Context automation remains the responsibility of Loadout Pilot.
 local T = DKM.T or function(value) return value end
 
 local REVIEWED_PATCH = "12.1.0"
-local REVIEWED_DATE = "2026-09-06"
+local REVIEWED_DATE = "2026-09-09"
+
+local HERO_SUBTREE_BY_SPELL = {
+    [433895] = 31, -- San'layn
+    [444040] = 32, -- Rider of the Apocalypse
+    [434765] = 33, -- Deathbringer
+}
 
 local SOURCES = {
     bloodPve = { name="Wowhead", url="https://www.wowhead.com/guide/classes/death-knight/blood/talent-builds-pve-tank", author="Mandl", updated="2026-08-20", freshness="current" },
@@ -38,6 +46,9 @@ local function sourced(sourceKey, name, note, pvp, meta)
     }
     if meta then
         for key, value in pairs(meta) do profile[key] = value end
+    end
+    if profile.heroSpellID and not profile.heroSubTreeID then
+        profile.heroSubTreeID = HERO_SUBTREE_BY_SPELL[profile.heroSpellID]
     end
     return profile
 end
@@ -75,6 +86,53 @@ local UNHOLY_CORE = {
     { spellID = 55090 },  -- Scourge Strike
     { spellID = 207317 }, -- Epidemic
 }
+
+-- 3.3 visual-tree guidance. These are context-specific markers confirmed by
+-- the current guide text, not a pretend copy of an entire third-party build.
+-- r10 deliberately stopped assigning one generic spec-wide marker set to every
+-- context because Raid, Mythic+, Delves and Open World can use different paths.
+local BLOOD_RAID_KEYS = {
+    { spellID = 49028, fallbackName = "Dancing Rune Weapon", reason = "Current Blood raid guidance is built around Dancing Rune Weapon throughput; utility points remain encounter-flexible." },
+}
+
+local BLOOD_MPLUS_KEYS = {
+    { spellID = 391517, fallbackName = "Umbilicus Eternus", reason = "Current Mythic+ guide explicitly provides an Umbilicus Eternus option as a low-cost ease-of-use defensive choice." },
+    { spellID = 374598, fallbackName = "Blood Draw", reason = "Current Mythic+ guidance recommends retaining Blood Draw because its Death Strike Runic Power reduction is meaningful." },
+    { spellID = 317610, fallbackName = "Relish in Blood", reason = "Current Mythic+ default keeps Relish in Blood, with Foul Bulwark documented as an EHP trade-in." },
+}
+
+local BLOOD_DELVE_KEYS = {
+    { spellID = 391517, fallbackName = "Umbilicus Eternus", reason = "The current Delve build is derived from the Mythic+ shell with group-only elements removed; this is a confirmed low-friction marker, not a full-tree claim." },
+    { spellID = 374598, fallbackName = "Blood Draw", reason = "Retained as a current defensive/resource marker from the solo-friendly Mythic+ shell." },
+}
+
+local FROST_RAID_MPLUS_KEYS = {
+    { spellID = 1230301, fallbackName = "Frostreaper", reason = "Current Wowhead Raid/Mythic+ build keeps Frostreaper for boss and priority damage; Northwinds is the documented encounter-specific swap." },
+    { spellID = 435005, fallbackName = "Smothering Offense", reason = "Current Wowhead guidance says Smothering Offense carries Frost AoE in Mythic+, which builds the same as Raid." },
+    { spellID = 207230, spellIDs = { 1237388 }, fallbackName = "Frostscythe", reason = "Current guide uses Frostscythe at 2+ targets in the Raid/Mythic+ shell." },
+    { spellID = 194913, spellIDs = { 281491 }, fallbackName = "Glacial Advance", reason = "Current guide uses Glacial Advance at 3+ targets in the Raid/Mythic+ shell." },
+}
+
+-- Wowhead exposes a separate Delve recommendation for Frost and explicitly
+-- anchors it on Deathbringer/Reaper's Mark. Until the exact full import string
+-- is embedded and version-verified, r10 validates the Hero tree only instead of
+-- incorrectly reusing Raid/Mythic+ spec markers.
+local FROST_DELVE_KEYS = {}
+
+local UNHOLY_RIDER_AOE_KEYS = {
+    { spellID = 207317, fallbackName = "Epidemic", reason = "Current Wowhead Mythic+/Delve guidance explicitly switches the Runic Power spender to Epidemic at 3+ targets." },
+    { spellID = 390196, fallbackName = "Magus of the Dead", reason = "The current Rider Mythic+ profile focuses on strengthening and summoning Magi for sustained AoE." },
+}
+
+local UNHOLY_SANLAYN_AOE_KEYS = {
+    { spellID = 207317, fallbackName = "Epidemic", reason = "Current Mythic+/Delve gameplay uses Epidemic for multi-target Runic Power spending." },
+    { spellID = 1242616, fallbackName = "Blightfall", reason = "The current San'layn Mythic+ alternative is the disease-focused Blightfall profile." },
+}
+
+-- Current Wowhead marks Rider as the Single Target/Open World direction but the
+-- extractor does not expose a stable full import string for those rows. Keep
+-- those contexts Hero-only rather than validating unrelated generic spec nodes.
+local UNHOLY_SINGLE_TARGET_KEYS = {}
 
 local function withTalents(base, extra)
     local result = {}
@@ -191,6 +249,53 @@ DKM.Builds = {
     },
 }
 
+-- Attach context-specific visual-tree audit data after the profile table is built.
+-- `treeCoverage` is intentionally visible to TalentTree.lua so the UI can tell
+-- the player whether it is validating a full guide import or only confirmed
+-- context markers. r10 never calls a marker-only comparison an exact Wowhead build.
+local TREE_GUIDANCE = {
+    [250] = {
+        world = { keys = BLOOD_DELVE_KEYS, coverage = "derived-markers", label = "Solo markers derived from the current Wowhead Delve direction" },
+        delve = { keys = BLOOD_DELVE_KEYS, coverage = "context-markers", label = "Current Wowhead Delve markers" },
+        dungeon = { keys = BLOOD_MPLUS_KEYS, coverage = "derived-markers", label = "Dungeon markers derived from the current Wowhead Mythic+ direction" },
+        mythicplus = { keys = BLOOD_MPLUS_KEYS, coverage = "context-markers", label = "Current Wowhead Mythic+ markers" },
+        raid = { keys = BLOOD_RAID_KEYS, coverage = "context-markers", label = "Current Wowhead Raid markers" },
+    },
+    [251] = {
+        world = { keys = FROST_DELVE_KEYS, coverage = "hero-only", label = "Solo Hero Talent direction; full Open World tree is not claimed" },
+        delve = { keys = FROST_DELVE_KEYS, coverage = "hero-only", label = "Current Wowhead Delve Hero Talent direction" },
+        dungeon = { keys = FROST_RAID_MPLUS_KEYS, coverage = "derived-markers", label = "Dungeon markers derived from the current Wowhead Mythic+ build" },
+        mythicplus = { keys = FROST_RAID_MPLUS_KEYS, coverage = "context-markers", label = "Current Wowhead Mythic+ markers (same build family as Raid)" },
+        raid = { keys = FROST_RAID_MPLUS_KEYS, coverage = "context-markers", label = "Current Wowhead Raid markers" },
+    },
+    [252] = {
+        world = { keys = UNHOLY_SINGLE_TARGET_KEYS, coverage = "hero-only", label = "Current Wowhead Open World Hero Talent direction" },
+        delve = { byHero = { [31] = UNHOLY_SANLAYN_AOE_KEYS, [32] = UNHOLY_RIDER_AOE_KEYS }, coverage = "context-markers", label = "Current Wowhead Delve markers (same build families as Mythic+)" },
+        dungeon = { byHero = { [31] = UNHOLY_SANLAYN_AOE_KEYS, [32] = UNHOLY_RIDER_AOE_KEYS }, coverage = "derived-markers", label = "Dungeon markers derived from the current Wowhead Mythic+ direction" },
+        mythicplus = { byHero = { [31] = UNHOLY_SANLAYN_AOE_KEYS, [32] = UNHOLY_RIDER_AOE_KEYS }, coverage = "context-markers", label = "Current Wowhead Mythic+ markers" },
+        raid = { keys = UNHOLY_SINGLE_TARGET_KEYS, coverage = "hero-only", label = "Current Wowhead Single Target/Raid Hero Talent direction" },
+    },
+}
+
+for specID, specBuilds in pairs(DKM.Builds) do
+    for contextKey, profiles in pairs(specBuilds) do
+        for _, profile in ipairs(profiles) do
+            profile.contextKey = contextKey
+            if profile.heroSpellID and not profile.heroSubTreeID then
+                profile.heroSubTreeID = HERO_SUBTREE_BY_SPELL[profile.heroSpellID]
+            end
+            local guidance = TREE_GUIDANCE[specID] and TREE_GUIDANCE[specID][contextKey]
+            if contextKey ~= "pvp" and guidance then
+                local keys = guidance.keys
+                if guidance.byHero then keys = guidance.byHero[profile.heroSubTreeID] or {} end
+                profile.treeKeyTalents = keys or {}
+                profile.treeCoverage = guidance.coverage
+                profile.treeCoverageLabel = guidance.label
+                profile.guideExactImport = false
+            end
+        end
+    end
+end
 
 -- DK Mentor 3.1 accessibility layer. This is deliberately recommendation-only:
 -- Blizzard's native Single-Button Assistant owns the offensive sequence. DK
@@ -200,13 +305,13 @@ for specID, specBuilds in pairs(DKM.Builds) do
     for contextKey, profiles in pairs(specBuilds) do
         for _, profile in ipairs(profiles) do
             if specID == 250 then
-                profile.sbaFriendly = profile.heroTalent == "Deathbringer"
+                profile.sbaFriendly = profile.heroSubTreeID == 33
                 if profile.sbaFriendly then
                     profile.sbaKeyTalents = BLOOD_CORE
                     profile.sbaNote = "SBA-friendly: Deathbringer is favored for lower setup friction. Blizzard SBA can handle supported offensive sequencing, while Death Strike decisions, defensives, interrupts, grips, crowd control, and utility remain manual."
                 end
             elseif specID == 251 then
-                profile.sbaFriendly = not (contextKey == "pvp" and profile.heroTalent == "Deathbringer")
+                profile.sbaFriendly = not (contextKey == "pvp" and profile.heroSubTreeID == 33)
                 profile.sbaKeyTalents = FROST_SBA_CORE
                 if profile.sbaFriendly then
                     profile.sbaNote = "SBA-friendly: favor the reduced-complexity Frost direction and avoid Breath of Sindragosa or Shattering Blade when the selected build allows it. Defensives, interrupts, crowd control, utility, and encounter-specific movement remain manual."
@@ -214,7 +319,7 @@ for specID, specBuilds in pairs(DKM.Builds) do
                     profile.sbaNote = "This profile is kept as a manual burst alternative. SBA-friendly mode favors Rider in PvP because the Deathbringer one-shot setup asks for tighter manual coordination."
                 end
             elseif specID == 252 then
-                profile.sbaFriendly = profile.heroTalent == "Rider of the Apocalypse"
+                profile.sbaFriendly = profile.heroSubTreeID == 32
                 profile.sbaKeyTalents = UNHOLY_CORE
                 if profile.sbaFriendly then
                     profile.sbaNote = "SBA-friendly: Rider is favored for a simpler sustained loop with fewer fragile setup windows. Blizzard SBA handles only supported offensive sequencing; defensives, interrupts, crowd control, utility, pet positioning, and situational PvP decisions remain manual."

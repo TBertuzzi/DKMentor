@@ -3,7 +3,7 @@ local DKM = {}
 assert(loadfile("GearData.lua"))("DKMentor", DKM)
 assert(type(DKM.GearData) == "table", "GearData table missing")
 assert(DKM.GearData.patch == "12.1.0", "GearData patch mismatch")
-assert(DKM.GearData.reviewed == "2026-09-06", "GearData review date mismatch")
+assert(DKM.GearData.reviewed == "2026-09-08", "GearData review date mismatch")
 
 local tier = assert(DKM.GearData.tierSet, "Season 2 tier set data missing")
 assert(tier.setID == 2055, "Death Knight Season 2 set ID mismatch")
@@ -36,6 +36,8 @@ assert(hasTarget(251, 268209), "Frost Aman'muso target missing")
 assert(hasTarget(251, 268202), "Frost Jaw target missing")
 assert(hasTarget(250, 268213), "Blood Maze-roa target missing")
 assert(hasTarget(252, 268213), "Unholy Maze-roa target missing")
+assert(hasTarget(252, 268249), "Unholy Vile Alchemist's Band target missing")
+assert(hasTarget(252, 252258), "Unholy Sickening Signet of Atroxus target missing")
 assert(hasTarget(250, 270175) and hasTarget(251, 270175) and hasTarget(252, 270175), "Voracious Heart should be tracked for all three specs")
 
 local function hasCraftTarget(specID, itemID)

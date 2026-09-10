@@ -1,6 +1,6 @@
 # Publishing DK Mentor 3.2.0
 
-DK Mentor 3.2.0 adds the DK-specific Stats & Folio Advisor and Gear Targets 2.0 while preserving the complete 3.1.6 feature/fix set.
+DK Mentor 3.2.0 adds the DK-specific Stats & Folio Advisor, Gear Targets 2.0, and Valeera Delve Mentor while preserving the complete 3.1.6 feature/fix set.
 
 ## Before publishing
 1. Run `python3 scripts/validate.py`.
@@ -12,13 +12,13 @@ DK Mentor 3.2.0 adds the DK-specific Stats & Folio Advisor and Gear Targets 2.0 
 ## CurseForge
 Upload `DKMentor-v3.2.0-CurseForge.zip` after live validation.
 
-Suggested display name: `DK Mentor 3.2.0 - Stats, Folio & Gear Targets 2.0`
+Suggested display name: `DK Mentor 3.2.0 - Stats, Folio, Gear Targets 2.0 DK Mentor 3.2.0 - Stats, Folio & Gear Targets 2.0 Valeera Mentor`
 
 Use `CURSEFORGE_CHANGELOG_v3.2.0.md` as the file changelog.
 
 ## GitHub
 Tag: `v3.2.0`
 
-Suggested release title: `DK Mentor 3.2.0 - Stats, Folio & Gear Targets 2.0`
+Suggested release title: `DK Mentor 3.2.0 - Stats, Folio, Gear Targets 2.0 DK Mentor 3.2.0 - Stats, Folio & Gear Targets 2.0 Valeera Mentor`
 
 Use `RELEASE_NOTES_v3.2.0.md` as the GitHub release body.

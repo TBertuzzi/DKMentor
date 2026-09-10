@@ -10,14 +10,16 @@ local DKM = {
 assert(loadfile("Codex.lua"))("DKMentor", DKM)
 assert(type(DKM.Codex) == "table", "Codex table missing")
 assert(DKM.Codex.patch == "12.1.0", "Unexpected Codex patch")
-assert(#DKM.Codex.sectionOrder == 9, "Expected nine Codex sections")
+assert(#DKM.Codex.sectionOrder == 10, "Expected ten Codex sections")
 assert(DKM.Codex.sectionOrder[2] == "advisor", "Stats & Folio must be a first-class Codex section")
 assert(DKM.Codex.sectionOrder[3] == "stats", "Gear Mentor must remain a first-class Codex section")
 assert(DKM.Codex.sectionOrder[4] == "builds", "Build recommendations must remain a first-class Codex section")
-assert(DKM.Codex.sectionOrder[5] == "valeera", "Valeera Delve Mentor must be a first-class Codex section")
+assert(DKM.Codex.sectionOrder[5] == "meta", "Meta Pulse must be a first-class Codex section")
+assert(DKM.Codex.sectionOrder[6] == "valeera", "Valeera Delve Mentor must be a first-class Codex section")
 assert(DKM.Codex.sectionLabels.advisor == "Stats & Folio", "Stats & Folio section label missing")
 assert(DKM.Codex.sectionLabels.builds == "Builds", "Builds section label missing")
 assert(DKM.Codex.sectionLabels.stats == "Gear Mentor", "Gear Mentor section label missing")
+assert(DKM.Codex.sectionLabels.meta == "Meta", "Meta section label missing")
 assert(DKM.Codex.sectionLabels.valeera == "Valeera", "Valeera section label missing")
 local unholyText = ""
 for _, row in ipairs(DKM.Codex.specs[252].rotation or {}) do unholyText = unholyText .. " " .. tostring(row.body or "") end
@@ -36,4 +38,4 @@ for _, specID in ipairs({ 250, 251, 252 }) do
     assert(DKM.Codex.checkNotes[specID], "Character Check note missing for " .. tostring(specID))
 end
 
-print("DK Codex 3.2 smoke test passed")
+print("DK Codex 3.3 smoke test passed")

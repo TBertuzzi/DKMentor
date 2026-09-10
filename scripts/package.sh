@@ -6,7 +6,7 @@ OUT="$ROOT/release"
 STAGE="$OUT/DKMentor"
 rm -rf "$OUT"
 mkdir -p "$STAGE"
-for f in DKMentor.toc Localization.lua Data.lua Builds.lua Guides.lua GearData.lua PreparationData.lua AdvisorData.lua ValeeraData.lua Codex.lua Voices.lua Core.lua Advisor.lua Valeera.lua MentorEngine.lua MentorReview.lua DKTools.lua MentorStudio.lua LICENSE THIRD_PARTY_NOTICES.md; do
+for f in DKMentor.toc Localization.lua Data.lua Builds.lua Guides.lua GearData.lua PreparationData.lua AdvisorData.lua ValeeraData.lua MetaData.lua MetaProvider.lua Codex.lua Voices.lua Core.lua TalentTree.lua Advisor.lua Valeera.lua Meta.lua MentorEngine.lua MentorReview.lua DKTools.lua MentorStudio.lua LICENSE THIRD_PARTY_NOTICES.md; do
   cp "$ROOT/$f" "$STAGE/$f"
 done
 mkdir -p "$STAGE/Media"

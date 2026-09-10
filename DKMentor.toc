@@ -1,9 +1,10 @@
 ## Interface: 120100
 ## Title: DK Mentor
-## Notes: Death Knight Stats/Folio Advisor, Valeera Delve Mentor, build/gear preparation, SBA-friendly guidance, combat coaching, configurable HUDs/presets, Review, DK Codex, and optional Lich King commentary. Loadout automation is handled by Loadout Pilot.
+## Notes: Death Knight Meta Pulse, Stats/Folio Advisor, Valeera Delve Mentor, build/gear preparation, SBA-friendly guidance, combat coaching, configurable HUDs/presets, Review, DK Codex, and optional Lich King commentary. Loadout automation is handled by Loadout Pilot.
 ## Author: Thiago Bertuzzi
-## Version: 3.2.0
+## Version: 3.3.0
 ## SavedVariables: DKMentorDB
+## OptionalDeps: ArchonTooltip, ArchonTooltipDB, ArchonTooltipDB_US, ArchonTooltipDB_EU, ArchonTooltipDB_KR, ArchonTooltipDB_TW, ArchonTooltipDB_CN
 ## X-Category: Combat
 ## X-License: MIT
 ## IconTexture: Interface\Icons\spell_deathknight_classicon
@@ -16,11 +17,15 @@ GearData.lua
 PreparationData.lua
 AdvisorData.lua
 ValeeraData.lua
+MetaData.lua
+MetaProvider.lua
 Codex.lua
 Voices.lua
 Core.lua
+TalentTree.lua
 Advisor.lua
 Valeera.lua
+Meta.lua
 MentorEngine.lua
 MentorReview.lua
 DKTools.lua

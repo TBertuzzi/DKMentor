@@ -284,7 +284,7 @@ local function ApplyDefaults(target, defaults)
 end
 
 local DEFAULTS = {
-    schema = 33,
+    schema = 34,
     firstRun = true,
     majorReleaseNotice = "",
     languageOverride = "auto",
@@ -295,6 +295,7 @@ local DEFAULTS = {
     codexSpecID = 0,
     codexSection = "overview",
     codexBuildContext = "auto",
+    codexMetaContext = "raid",
     codexAdvisorContext = "auto",
     codexBuildMode = "standard",
     codexGearView = "overview",
@@ -2348,12 +2349,13 @@ local function CreateMainFrame()
     end
 
     guidePage.sectionButtons = {}
-    local codexSections = { "overview", "advisor", "stats", "builds", "valeera", "rotation", "survival", "utility", "check" }
+    local codexSections = { "overview", "advisor", "stats", "builds", "meta", "valeera", "rotation", "survival", "utility", "check" }
     local codexSectionMenuLabels = {
         overview = "Overview",
         advisor = "Stats & Folio",
         stats = "Equipment",
         builds = "Builds",
+        meta = "Meta",
         valeera = "Valeera",
         rotation = "Rotation",
         survival = "Survival",
@@ -2361,17 +2363,19 @@ local function CreateMainFrame()
         check = "Character check short",
     }
     -- Native WoW icons only: no artwork is bundled by DK Mentor.
-    -- Spell-driven textures keep the navigation recognizably Death Knight-themed.
+    -- Use distinct silhouettes for Codex navigation so sections are readable at a glance.
+    -- Numeric textures are Blizzard FileDataIDs from the retail client and avoid locale coupling.
     local codexSectionMenuIcons = {
-        overview = { texture = "Interface\\Icons\\spell_deathknight_classicon" },
+        overview = { texture = 133743 },  -- INV_Misc_Book_11: reference / overview
         advisor = { spellID = 1279609 }, -- Omnium Folio: Critical Power
-        stats = { spellID = 53344 },      -- Rune of the Fallen Crusader
-        builds = { dynamic = "spec" },
-        valeera = { spellID = 1784 },      -- Valeera / Rogue Stealth
-        rotation = { dynamic = "rotation" },
+        stats = { texture = 132736 },     -- INV_Chest_Plate01: equipment
+        builds = { texture = 132222 },    -- Ability_Marksmanship: planning / build target
+        meta = { texture = 132767 },      -- INV_Crown_01: ranking / meta
+        valeera = { spellID = 1784 },     -- Stealth: Valeera / rogue companion
+        rotation = { texture = 132306 },  -- Ability_Rogue_SliceDice: action sequence / rotation
         survival = { spellID = 48792 },   -- Icebound Fortitude
         utility = { spellID = 49576 },    -- Death Grip
-        check = { spellID = 48707 },      -- Anti-Magic Shell
+        check = { texture = "Interface\\RaidFrame\\ReadyCheck-Ready" }, -- Blizzard ready-check mark
     }
 
     frame.guideSection = CreateSection(guidePage, T("DK Codex"), -81, 538)
@@ -8256,7 +8260,7 @@ end
 
 function addon:SetCodexSection(sectionKey)
     if not DB then return end
-    local valid = { overview = true, advisor = true, builds = true, stats = true, valeera = true, rotation = true, survival = true, utility = true, check = true }
+    local valid = { overview = true, advisor = true, builds = true, stats = true, meta = true, valeera = true, rotation = true, survival = true, utility = true, check = true }
     if not valid[sectionKey] then sectionKey = "overview" end
     DB.codexSection = sectionKey
     self:UpdateGuideSection()
@@ -8309,7 +8313,7 @@ end
 
 function addon:GetValeeraPreset()
     local preset = DB and tostring(DB.valeeraPreset or "auto") or "auto"
-    local valid = { auto = true, safe = true, balanced = true, fast = true, high = true }
+    local valid = { auto = true, safe = true, balanced = true, fast = true, high = true, leveling = true }
     if not valid[preset] then preset = "auto" end
     return preset
 end
@@ -8317,7 +8321,7 @@ end
 function addon:SetValeeraPreset(presetKey)
     if not DB then return end
     presetKey = string.lower(tostring(presetKey or "auto"))
-    local valid = { auto = true, safe = true, balanced = true, fast = true, high = true }
+    local valid = { auto = true, safe = true, balanced = true, fast = true, high = true, leveling = true }
     if not valid[presetKey] then presetKey = "auto" end
     DB.valeeraPreset = presetKey
     DB.codexSection = "valeera"
@@ -8657,6 +8661,7 @@ function addon:ResetGearVisual(root)
     for _, frame in ipairs(root.advisorContextButtons or {}) do frame:Hide() end
     if self.HideDKAdvisorVisualPools then self:HideDKAdvisorVisualPools(root) end
     if self.HideValeeraVisualPools then self:HideValeeraVisualPools(root) end
+    if self.HideMetaVisualPools then self:HideMetaVisualPools(root) end
 end
 
 function addon:AcquireGearText(root, fontObject)
@@ -9967,6 +9972,7 @@ function addon:ResetBuildVisual(root)
     for _, panel in ipairs(root.panelPool or {}) do panel:Hide() end
     for _, frame in ipairs(root.profilePool or {}) do frame:Hide() end
     for _, frame in ipairs(root.talentPool or {}) do frame:Hide() end
+    if self.ResetBuildTalentTreeVisual then self:ResetBuildTalentTreeVisual(root) end
 end
 
 function addon:AcquireBuildTalentCard(root)
@@ -10288,7 +10294,13 @@ function addon:RenderBuildMentorVisual(specID, contextKey, autoDetected)
             local card = self:AcquireBuildProfileCard(root)
             card:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
             local height = self:ConfigureBuildProfileCard(root, card, profile, contentWidth)
-            y = y - height - 10
+            y = y - height - 8
+            if self.RenderBuildTalentTreePreview then
+                local treeHeight = self:RenderBuildTalentTreePreview(root, specID, profile, contentWidth, y, index) or 0
+                if treeHeight > 0 then y = y - treeHeight - 10 end
+            else
+                y = y - 2
+            end
         end
     end
 
@@ -10431,7 +10443,7 @@ local function RefreshGuideResponsiveLayout()
         guidePage.scope:SetWidth(math.max(700, (frame.GetWidth and frame:GetWidth() or 1060) - 72))
     end
 
-    local orderedSections = { "overview", "advisor", "stats", "builds", "valeera", "rotation", "survival", "utility", "check" }
+    local orderedSections = { "overview", "advisor", "stats", "builds", "meta", "valeera", "rotation", "survival", "utility", "check" }
     if guidePage and guidePage.sectionButtons then
         for index, key in ipairs(orderedSections) do
             local button = guidePage.sectionButtons[key]
@@ -10492,7 +10504,7 @@ function addon:UpdateGuideSection()
     local specID = self:GetCodexSpecID()
     local currentSpecID = select(1, self:GetSpecInfo())
     local sectionKey = DB and DB.codexSection or "overview"
-    local valid = { overview = true, advisor = true, builds = true, stats = true, valeera = true, rotation = true, survival = true, utility = true, check = true }
+    local valid = { overview = true, advisor = true, builds = true, stats = true, meta = true, valeera = true, rotation = true, survival = true, utility = true, check = true }
     if not valid[sectionKey] then sectionKey = "overview" end
 
     local guide = mainFrame.guideSection
@@ -10623,6 +10635,8 @@ function addon:UpdateGuideSection()
         self:UpdateLoadoutPilotIntegration()
     elseif sectionKey == "advisor" then
         self.currentGearVisualHeight = self.RenderDKAdvisorVisual and self:RenderDKAdvisorVisual(specID) or nil
+    elseif sectionKey == "meta" then
+        self.currentGearVisualHeight = self.RenderMetaAdvisorVisual and self:RenderMetaAdvisorVisual(specID) or nil
     elseif sectionKey == "stats" then
         local gearView = DB and DB.codexGearView or "overview"
         if gearView == "plan" then gearView = "upgrades" end
@@ -10658,7 +10672,7 @@ function addon:UpdateGuideSection()
         end
     end
 
-    if (sectionKey == "stats" or sectionKey == "advisor" or sectionKey == "valeera") and self.currentGearVisualHeight then
+    if (sectionKey == "stats" or sectionKey == "advisor" or sectionKey == "meta" or sectionKey == "valeera") and self.currentGearVisualHeight then
         self.currentBuildVisualHeight = nil
         if guide.buildVisual then guide.buildVisual:Hide() end
         guide.text:Hide()
@@ -10833,6 +10847,7 @@ function addon:ShowHelp()
     Print(T("/dkm codex — open the DK Codex"))
     Print(T("/dkm advisor — open DK Stats & Folio Advisor"))
     Print(T("/dkm builds — open DK Codex build recommendations"))
+    Print(T("/dkm meta — open DK Meta Pulse"))
     Print(T("/dkm valeera — open Valeera Delve Mentor"))
     Print(T("/dkm loadouts — open Loadout Pilot when installed"))
     Print(T("/dkm coach on|off — show or hide the compact survival coach"))
@@ -11022,6 +11037,11 @@ function addon:HandleSlashCommand(message)
     elseif command == "build" or command == "builds" then
         mainFrame:Show()
         DB.codexSection = "builds"
+        self:SetMainTab("guide")
+        self:UpdateGuideSection()
+    elseif command == "meta" or command == "metapulse" then
+        mainFrame:Show()
+        DB.codexSection = "meta"
         self:SetMainTab("guide")
         self:UpdateGuideSection()
     elseif command == "valeera" or command == "delvecompanion" then

@@ -9,7 +9,7 @@ local ADDON_NAME, DKM = ...
 local GearData = {
     patch = "12.1.0",
     season = "Midnight Season 2",
-    reviewed = "2026-09-06",
+    reviewed = "2026-09-08",
     sourceName = "Wowhead",
     sourceNote = "Guide-backed targets are a farming reference, not a replacement for simming your character.",
     specs = {},
@@ -151,7 +151,7 @@ GearData.specs[251] = {
 
 GearData.specs[252] = {
     sourceURL = "https://www.wowhead.com/guide/classes/death-knight/unholy/bis-gear",
-    sourceUpdated = "2026-09-05",
+    sourceUpdated = "2026-09-08",
     summary = "Unholy gearing prioritizes weapon power, the current active/passive trinket pair, and strong Venomous Abyss cantrip pieces while keeping Crit/Mastery-oriented crafted options flexible.",
     weaponNote = "Maze-roa is the headline two-handed target. A crafted two-handed weapon with Darkmoon Sigil: Hunt can be a strong early-season bridge when your weapon is far behind.",
     targets = {
@@ -159,6 +159,8 @@ GearData.specs[252] = {
         Target(270175, "Voracious Heart of Ula'tek", "Trinket", "Ula'tek - Venomous Abyss", "VERY HIGH", "Powerful on-use trinket that aligns naturally with Unholy's major cooldown package."),
         Target(270173, "Zul'jin's Guillotine Technique", "Trinket", "Coiled Altar - Venomous Abyss", "HIGH", "Excellent in 1-2 target scenarios, but current guidance ranks stat trinkets ahead of it in meaningful AoE."),
         Target(268265, "Aqirbane Reliquary", "Neck", "Ula'tek - Venomous Abyss", "HIGH", "Cantrip neck with a socket and a flexible secondary-stat effect."),
+        Target(268249, "Vile Alchemist's Band", "Finger", "Vashnik - Venomous Abyss", "HIGH", "Current Unholy Best-in-Slot ring target in the September 8 Wowhead gear refresh."),
+        Target(252258, "Sickening Signet of Atroxus", "Finger", "Atroxus - Voidscar Arena", "HIGH", "Current companion Best-in-Slot ring target for Unholy alongside Vile Alchemist's Band."),
         Target(271878, "Chausses of Unbound Rancor", "Legs", "Ula'tek - Venomous Abyss", "HIGH", "High-item-level cantrip legs and a valuable raid target."),
     },
     trinkets = {

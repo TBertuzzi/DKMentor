@@ -1,4 +1,39 @@
-## 3.2.0 - 2026-09-03 - Stats & Folio Advisor and Gear Targets 2.0
+
+## 3.3.0 Test r10 - Build source audit (2026-09-09)
+
+- Re-audited Blood, Frost and Unholy PvE build profiles by context against current Wowhead guidance.
+- Removed the generic per-spec tree-marker assignment that caused Delve/Open World comparisons to inherit Raid/Mythic+ markers.
+- Added context-specific, derived and Hero-only coverage modes.
+- Frost Delves now validates Deathbringer only until an exact current Delve import is embedded.
+- Unholy Raid/Open World no longer reuse Mythic+ AoE markers.
+- Renamed `Create in WoW` to `Clone in WoW` so the UI accurately describes the current behavior.
+- Build data reviewed date: 2026-09-09.
+
+## 3.3.0 - 2026-09-08 - DK Meta Pulse
+
+- Added the r8 stable-ID Talent Tree pass: guide-node matching now uses Blizzard node/entry/spell IDs and Hero subTreeID, including rank-zero choice/subtree selections, fixing false mapped/selected counts caused by runtime identity differences.
+- Added r8 **Create in WoW**: a fully aligned current-spec build can be cloned as a new saved Blizzard talent loadout from the complete generated import string. Saved DK Mentor snapshots can also be recreated directly; newly created loadouts are never auto-activated.
+- Added the r7 Talent Tree usability pass: centers the first Hero-tree singleton rows on a shared vertical spine and adds Blizzard loadout export plus reusable DK Mentor talent snapshots. Saved snapshots keep the generated Blizzard import string and the guide-reference spell IDs, remain manual/read-only, and can be copied later from the in-addon Saved library.
+- Added the r6 live-layout pass for the Visual Talent Tree: taller 540-unit canvas, independent X/Y fitting, extra padding, and a 40/20/40 Class/Hero/Spec width split to prevent node crowding seen in the first in-game test.
+- Added a native Blizzard talent-tree preview to Build Mentor. The primary recommendation now renders Class, Hero, and Spec trees from C_Traits/C_ClassTalents, overlays curated guide-defining talent nodes by stable spell ID, explains why those nodes matter, and compares them with the player's active or saved loadout without changing talents.
+
+- Added a first-class Meta Pulse Codex section with reviewed Archon.gg / Warcraft Logs snapshots for Heroic Raid, Mythic+ +7 to +20, and High Keys.
+- Added side-by-side Blood/Frost/Unholy observed Hero Talent usage, sample size, build snapshot, popular weapon, and guide-vs-logs alignment.
+- Added ALIGNED, ALIGNED / SPLIT, SPLIT SIGNAL, and META DIFFERS states without allowing observed popularity to silently overwrite guide-backed recommendations.
+- Added `/dkm meta` / `/dkm metapulse`.
+- Added an optional Archon Tooltip provider router with strict aggregate-schema validation and built-in snapshot fallback.
+- Added `ArchonTooltip` as an optional dependency so compatible data can be discovered when available without making it required.
+- Added a small `DKMentorMetaBridge` registration surface for compatible aggregate-data providers.
+- DK Mentor deliberately avoids `ArchonTooltipPrivate` internals and performs no HTTP requests from inside WoW.
+- Fixed Valeera Leveling preset persistence in the Core preset validator.
+
+## 3.2.1 - 2026-09-08 - Unholy Gear Data Hotfix
+- Updated Unholy Season 2 Best-in-Slot ring targets from the latest Wowhead gear refresh.
+- Added Vile Alchemist's Band (Vashnik) and Sickening Signet of Atroxus (Atroxus / Voidscar Arena) as current Unholy Finger targets.
+- Updated Unholy Gear Mentor source metadata to 2026-09-08.
+- No changes to builds, Hero Talents, stats, trinkets, crafting, tier guidance, PvP, Valeera, Folio, Preparation, or HUD behavior.
+
+## 3.2.0 - 2026-09-06 - Stats, Folio, Gear Targets 2.0 and Valeera Mentor
 
 - Valeera live-data refresh reviewed 2026-09-06: added a dedicated **Leveling** preset after Blizzard restored companion XP from Mislaid Curiosities.
 - Leveling uses **Dundun's Favor** plus **Soulthirst Venom** for curiosity/XP routing while preserving the DK-specific role pairing for Blood/Frost/Unholy.
@@ -992,3 +1027,4 @@ All notable changes to DK Mentor are documented here.
 - The survival coach is contextual and is not a real-time health, cooldown, or encounter-mechanic analyzer.
 - No third-party talent import strings are bundled.
 - Final visual behavior must still be verified inside the live game client.
+- 3.3.0 r9 guide-key diagnostics: per-key OK/MISSING/SWAP/NOT MAPPED states, explicit mapper-failure wording, and precise Create in WoW blocker tooltips.

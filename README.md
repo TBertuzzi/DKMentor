@@ -2,13 +2,13 @@
 
 # DK Mentor
 
-**DK Mentor** is a World of Warcraft Retail addon built specifically for **Blood, Frost, and Unholy Death Knights**. Version 3.2 extends the project into a more complete Death Knight companion: **Prepare → Build → Gear → Stats/Folio → Live Mentor → Review → Improve**.
+**DK Mentor** is a World of Warcraft Retail addon built specifically for **Blood, Frost, and Unholy Death Knights**. Version 3.3 extends the project into a more complete Death Knight companion: **Prepare → Build → Meta → Gear → Stats/Folio → Live Mentor → Review → Improve**.
 
 Loadout automation is no longer part of DK Mentor. Specialization/talent/gear/Loot Specialization automation belongs to the dedicated **Loadout Pilot** addon. DK Mentor can detect Loadout Pilot and open it from Settings or `/dkm loadouts`, but it does not require it.
 
 The in-game UI defaults to Brazilian Portuguese on `ptBR` clients and English on `enUS`/`enGB`, with a manual **Auto / Português / English** override in Settings. After changing the override, use `/reload` to rebuild the UI in the selected addon language. Addon-owned labels, context names, guidance, Codex text, and specialization labels follow that override; spell/item names returned directly by the WoW client intentionally remain in the WoW client language.
 
-## DK Mentor 3.2 focus
+## DK Mentor 3.3 focus
 
 - Blood, Frost, and Unholy specialization detection.
 - World, Delve, Dungeon, Mythic+, Raid, and PvP **content detection for guidance and HUD labels only**.
@@ -29,8 +29,10 @@ The in-game UI defaults to Brazilian Portuguese on `ptBR` clients and English on
 - **Stats & Folio Advisor** with live Crit/Haste/Mastery/Versatility percentages and ratings, specialization/Hero Talent direction, Auto/PvE/PvP planning context, and visible diminishing-return bands.
 - **Omnium Folio Mentor** with five-row Blood/Frost/Unholy recommendations and a read-only MATCH / REVIEW comparison when WoW exposes the active Folio safely; DK Mentor never changes Folio runes.
 - **Gear Targets 2.0** adds specialization-specific Catalyst planning plus smart item tooltips for tracked targets, crafts, and tier pieces, including EQUIPPED / OWNED / MISSING state.
+- **DK Meta Pulse** adds reviewed Archon.gg / Warcraft Logs snapshots for Heroic Raid, Mythic+ +7 to +20, and High Keys, showing observed Hero Talent usage, sample size, popular weapon, and guide-vs-logs alignment without replacing guide-backed recommendations.
+- **Visual Talent Tree Mentor** renders Blizzard's native Class/Hero/Spec tree structure, matches guide nodes by stable node/entry/spell/subtree IDs, compares them with active/saved loadouts, and can explicitly create a separate saved Blizzard loadout when the compared build is fully aligned.
 - Guide-backed data now exposes **CURRENT / REVIEW PENDING** freshness so post-hotfix recommendations can stay conservative instead of silently guessing the meta.
-- Build recommendations are advisory and source-linked. DK Mentor does **not** create, select, import, or switch WoW talent loadouts.
+- Build recommendations remain advisory and source-linked. DK Mentor never purchases/refunds talent points or automatically switches builds; 3.3 can create a **new saved Blizzard loadout** only after an explicit user click, using a complete generated/saved Blizzard import string.
 - Optional **Loadout Pilot integration** for players who want automatic specialization, talents, equipment, or Loot Specialization changes.
 - DK Buff Bar for important class buffs/procs using Blizzard's Retail 12.1 AuraContainer.
 - External Buff Bar for helpful effects applied by other players/NPCs.
@@ -52,7 +54,7 @@ DK Mentor and Loadout Pilot had started solving the same problem in two places. 
 
 This keeps DK Mentor easier to maintain and lets loadout improvements be implemented once in the addon dedicated to that job.
 
-Existing 1.x/2.x SavedVariables are intentionally preserved for rollback safety. DK Mentor 3.0 moves to schema 31 to migrate the new resource-visibility mode while preserving valid HUD anchors, coordinates, scale/opacity, and legacy inert mapping data. Retired automatic-switch flags remain forced off.
+Existing SavedVariables are intentionally preserved for rollback safety. DK Mentor 3.3 uses schema 34 and applies new defaults non-destructively, preserving valid HUD anchors, coordinates, scale/opacity, Codex choices, and legacy inert mapping data. Retired automatic-switch flags remain forced off.
 
 ## Retail 12.1 combat restrictions
 
@@ -64,18 +66,22 @@ Runic Power can also become a secret value in combat. DK Mentor passes it to Bli
 
 ## DK Codex
 
-The **DK Codex** can browse Current, Blood, Frost, or Unholy without changing the specialization you are playing. It contains eight sections:
+The **DK Codex** can browse Current, Blood, Frost, or Unholy without changing the specialization you are playing. It contains ten sections:
 
 - Overview
 - Stats & Folio
 - Gear Mentor
 - Builds
+- Meta Pulse
+- Valeera Delve Mentor
 - Rotation
 - Survival
 - Utility
 - Character Check
 
-The **Builds** section uses the content DK Mentor currently detects and shows source-linked recommendations for that specialization/content. It is intentionally recommendation-only. If Loadout Pilot is loaded, the Codex can open it directly for players who want automation.
+The **Builds** section uses the content DK Mentor currently detects and shows source-linked recommendations for that specialization/content. The Visual Talent Tree compares guide-defining nodes by stable Blizzard IDs, can Export/Save complete Blizzard loadout snapshots, and can explicitly create a separate saved Blizzard loadout when the current compared build is fully aligned. It never auto-activates that loadout or silently spends/refunds talent points. If Loadout Pilot is loaded, the Codex can open it directly for players who want context-driven automation.
+
+The **Meta Pulse** complements those recommendations with a versioned Archon.gg / Warcraft Logs snapshot. It compares Blood, Frost, and Unholy across Heroic Raid, general Mythic+, and High Keys; highlights observed Hero Talent usage and popular gear; and labels whether the observed logs are aligned, split, or meaningfully different from DK Mentor's guide default. No live web request is made from inside World of Warcraft, and observed popularity never silently replaces the guide. If the optional Archon Tooltip addon exposes a compatible aggregate meta dataset, DK Mentor can use it automatically; otherwise it safely uses the reviewed built-in snapshot.
 
 The **Stats & Folio** section is also recommendation-only. It reads the current character secondary stats, highlights rating-based diminishing-return bands, can follow the current content automatically or be pinned to PvE/PvP for planning, and shows the currently reviewed Omnium Folio direction. When the client exposes Folio trait selection safely, DK Mentor compares the recommendation with the live selection; otherwise it simply shows the recommendation without claiming the setup is wrong.
 
@@ -144,6 +150,7 @@ They use Blizzard's Retail aura-container system. DK Buffs combines spec-aware c
 /dkm help
 /dkm codex
 /dkm builds
+/dkm meta
 /dkm gearmentor
 /dkm advisor
 /dkm loadouts
@@ -242,3 +249,7 @@ DK Mentor source code is released under the [MIT License](LICENSE).
 Developed and maintained by **Thiago Bertuzzi** with AI-assisted implementation and documentation.
 
 World of Warcraft, Warcraft, the Lich King, and Blizzard Entertainment are trademarks or registered trademarks of Blizzard Entertainment, Inc. DK Mentor is an independent community project and is not affiliated with or endorsed by Blizzard Entertainment.
+
+### Saved talent snapshots
+
+Build Mentor can export the current compared Blizzard loadout, save the import string plus the DK Mentor guide reference in SavedVariables, and reopen saved snapshots later for manual copy/import. DK Mentor does not auto-apply talent changes.

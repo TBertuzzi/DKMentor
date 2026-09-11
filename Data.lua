@@ -5,7 +5,7 @@ local Data = DKM.Data
 local T = DKM.T or function(value) return value end
 
 Data.addonName = ADDON_NAME
-Data.version = "3.3.0"
+Data.version = "3.3.1"
 Data.interface = 120100
 Data.dataVersion = "2026-09-11"
 Data.patch = "12.1.0"

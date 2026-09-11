@@ -1,12 +1,12 @@
-## 3.3.0 Test r12 - DK/Valeera guidance refresh (2026-09-11)
+## 3.3.1 - 2026-09-11 - Guidance and Valeera Hotfix
 
-- Re-audited current Blood, Frost and Unholy PvE builds, Hero Talents, gear, trinkets, crafting, tier-set guidance and stat priorities; no directional PvE rewrite was required.
 - Added a dedicated Valeera **Nemesis / Azta'rec** preset: Healer + Corrosive Bilespear + Soul-Cracking Dreamcatcher + Phantasmal Spore Toxin, with Soulthirst Venom documented as an alternative.
 - Separated generic **High Tier / Hard Delves** from the boss-specific Nemesis recommendation.
-- Refreshed Unholy Preparation from the Wowhead 2026-09-10 consumables update: Powerful Eversong Diamond, Flask of the Blood Knights, Refulgent Whetstone and Refulgent Weightstone are now represented as alternatives.
-- Corrected Unholy PvP presentation for the current internally contradictory Icy Veins page: Pet/Rider is the practical Recommended profile; Disease/San'layn remains the rot-pressure Alternative; the ambiguity is disclosed in the UI note.
-- Reviewed Blizzard's September 9 Grip of the Dead fix and September 10 Magus of the Dead positioning fix; neither requires combat-engine logic changes.
-- Kept live target at Patch 12.1.0 / Interface 120100; 12.1.5 is not the live addon target for this revision.
+- Refreshed Unholy Preparation with current optional alternatives from the September 10 Wowhead consumables update: Powerful Eversong Diamond, Flask of the Blood Knights, Refulgent Whetstone and Refulgent Weightstone.
+- Corrected Unholy PvP presentation for the current contradictory Icy Veins page: Pet/Rider is the practical Recommended profile; Disease/San'layn remains the rot-pressure Alternative; the ambiguity is disclosed in the UI note.
+- Re-audited Blood, Frost and Unholy PvE builds, Hero Talents, gear, trinkets, crafting, tier-set guidance and stat priorities; no broader PvE rewrite was required.
+- Reviewed Blizzard's recent Grip of the Dead and Magus of the Dead bug fixes; neither requires combat-engine logic changes.
+- Kept live target at Patch 12.1.0 / Interface 120100.
 - Data review date: 2026-09-11.
 
 ## 3.3.0 Test r10 - Build source audit (2026-09-09)

@@ -6,15 +6,15 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "3.3.0"
+VERSION = "3.3.1"
 INTERFACE = "120100"
 
 RUNTIME_LUA = ["Localization.lua", "Data.lua", "Builds.lua", "Guides.lua", "GearData.lua", "PreparationData.lua", "AdvisorData.lua", "ValeeraData.lua", "MetaData.lua", "MetaProvider.lua", "Codex.lua", "Voices.lua", "Core.lua", "TalentTree.lua", "Advisor.lua", "Valeera.lua", "Meta.lua", "MentorEngine.lua", "MentorReview.lua", "DKTools.lua", "MentorStudio.lua"]
 REQUIRED = [
     "DKMentor.toc", *RUNTIME_LUA, "README.md", "CHANGELOG.md", "LICENSE",
     "THIRD_PARTY_NOTICES.md", "POLICY_AND_SOURCES.md", "PUBLISHING.md",
-    "RELEASE_NOTES_v3.3.0.md", "TESTING_v3.3.0.md", "CURSEFORGE_CHANGELOG_v3.3.0.md", "VALIDATION_REPORT_v3.3.0.md", "DATA_AUDIT_v3.1.0.md",
-    "tests/localization_smoke.lua", "tests/review_smoke.lua", "tests/tools_smoke.lua", "tests/studio_smoke.lua", "tests/core_ux_smoke.lua", "tests/modal_navigation_smoke.lua", "tests/interrupt_enhancements_smoke.lua", "tests/gear_mentor_smoke.lua", "tests/build_mentor_smoke.lua", "tests/rune_order_smoke.lua", "tests/preparation_31_smoke.lua", "tests/accessibility_preset_31_smoke.lua", "tests/voice_portrait_315_smoke.lua", "tests/layout_preset_316_smoke.lua", "tests/portrait_position_316_smoke.lua", "tests/advisor_320_smoke.lua", "tests/guidance_refresh_320_smoke.lua", "tests/valeera_320_smoke.lua", "tests/unholy_gear_321_smoke.lua", "tests/meta_330_smoke.lua", "tests/meta_provider_330_smoke.lua", "tests/talent_tree_330_smoke.lua", "tests/talent_tree_runtime_330_smoke.lua", "tests/talent_tree_ids_330_smoke.lua", "tests/talent_tree_create_330_smoke.lua",
+    "RELEASE_NOTES_v3.3.1.md", "TESTING_v3.3.1.md", "CURSEFORGE_CHANGELOG_v3.3.1.md", "VALIDATION_REPORT_v3.3.1.md", "BUILD_SOURCE_AUDIT_v3.3.1.md", "DATA_AUDIT_v3.1.0.md",
+    "tests/localization_smoke.lua", "tests/review_smoke.lua", "tests/tools_smoke.lua", "tests/studio_smoke.lua", "tests/core_ux_smoke.lua", "tests/modal_navigation_smoke.lua", "tests/interrupt_enhancements_smoke.lua", "tests/gear_mentor_smoke.lua", "tests/build_mentor_smoke.lua", "tests/rune_order_smoke.lua", "tests/preparation_31_smoke.lua", "tests/accessibility_preset_31_smoke.lua", "tests/voice_portrait_315_smoke.lua", "tests/layout_preset_316_smoke.lua", "tests/portrait_position_316_smoke.lua", "tests/advisor_320_smoke.lua", "tests/guidance_refresh_320_smoke.lua", "tests/valeera_320_smoke.lua", "tests/unholy_gear_321_smoke.lua", "tests/meta_330_smoke.lua", "tests/meta_provider_330_smoke.lua", "tests/talent_tree_330_smoke.lua", "tests/talent_tree_runtime_330_smoke.lua", "tests/talent_tree_ids_330_smoke.lua", "tests/talent_tree_create_330_smoke.lua", "tests/guidance_refresh_331_smoke.lua",
     "Media/DKArcFill.tga", "Media/DKArcBG.tga", "Media/DKArcGlow.tga",
     "Media/DKArcFillRight.tga", "Media/DKArcBGRight.tga", "Media/DKArcGlowRight.tga",
 ]

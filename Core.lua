@@ -8313,7 +8313,7 @@ end
 
 function addon:GetValeeraPreset()
     local preset = DB and tostring(DB.valeeraPreset or "auto") or "auto"
-    local valid = { auto = true, safe = true, balanced = true, fast = true, high = true, leveling = true }
+    local valid = { auto = true, safe = true, balanced = true, fast = true, high = true, nemesis = true, leveling = true }
     if not valid[preset] then preset = "auto" end
     return preset
 end
@@ -8321,7 +8321,7 @@ end
 function addon:SetValeeraPreset(presetKey)
     if not DB then return end
     presetKey = string.lower(tostring(presetKey or "auto"))
-    local valid = { auto = true, safe = true, balanced = true, fast = true, high = true, leveling = true }
+    local valid = { auto = true, safe = true, balanced = true, fast = true, high = true, nemesis = true, leveling = true }
     if not valid[presetKey] then presetKey = "auto" end
     DB.valeeraPreset = presetKey
     DB.codexSection = "valeera"

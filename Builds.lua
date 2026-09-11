@@ -9,7 +9,7 @@ local ADDON_NAME, DKM = ...
 local T = DKM.T or function(value) return value end
 
 local REVIEWED_PATCH = "12.1.0"
-local REVIEWED_DATE = "2026-09-09"
+local REVIEWED_DATE = "2026-09-11"
 
 local HERO_SUBTREE_BY_SPELL = {
     [433895] = 31, -- San'layn
@@ -243,8 +243,8 @@ DKM.Builds = {
             }),
         },
         pvp = {
-            sourced("unholyPvp", "Unholy PvP — Disease", "Icy Veins currently labels the Disease setup as its Best 3v3 build, emphasizing rot pressure and spread damage.", "Current 12.1 PvP guide. PvP talents should be adjusted for the opposing composition.", { heroTalent="San'layn", heroSpellID=433895, focus="3v3 rot pressure and spread damage", badge="RECOMMENDED", keyTalents=UNHOLY_CORE }),
-            sourced("unholyPvp", "Unholy PvP — Pet", "Pet remains the single-target and pet-damage alternative for compositions that want more focused pressure.", "Current 12.1 PvP guide. PvP talents should be adjusted for the opposing composition.", { heroTalent="Rider of the Apocalypse", heroSpellID=444040, focus="Pet damage and single-target pressure", badge="ALTERNATIVE", keyTalents=UNHOLY_CORE }),
+            sourced("unholyPvp", "Unholy PvP — Pet", "Icy Veins' explanatory text says the Disease build is currently weaker than the Pet build. DK Mentor therefore treats Pet as the practical default while the same source still labels Disease as its Best 3v3 heading.", "Current 12.1 PvP guide. PvP talents should be adjusted for the opposing composition; the source currently contains contradictory Pet/Disease ranking text.", { heroTalent="Rider of the Apocalypse", heroSpellID=444040, focus="Pet damage and single-target pressure", badge="RECOMMENDED", keyTalents=UNHOLY_CORE }),
+            sourced("unholyPvp", "Unholy PvP — Disease", "Disease remains the rot-pressure alternative. Icy Veins labels it Best 3v3 in the page heading, but the explanatory text says it is currently weaker than the Pet build.", "Current 12.1 PvP guide. PvP talents should be adjusted for the opposing composition; the source currently contains contradictory Pet/Disease ranking text.", { heroTalent="San'layn", heroSpellID=433895, focus="3v3 rot pressure and spread damage", badge="ALTERNATIVE", keyTalents=UNHOLY_CORE }),
         },
     },
 }

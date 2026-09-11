@@ -7,10 +7,10 @@ local ADDON_NAME, DKM = ...
 
 DKM.PreparationData = {
     patch = "12.1.0",
-    reviewed = "2026-09-06",
+    reviewed = "2026-09-11",
     sourceName = "Wowhead",
     sourceURL = "https://www.wowhead.com/guide/classes/death-knight",
-    sourceNote = "Recommendations reviewed for Midnight Season 2. Close stat choices should still be simulated for the individual character.",
+    sourceNote = "Recommendations reviewed for Midnight Season 2 through 2026-09-11. Unholy consumable alternatives reflect the Wowhead September 10 refresh; close stat choices should still be simulated for the individual character.",
 
     commonEnchants = {
         { kind="enchant", slotID=1,  slot="Head",      itemID=243981, fallbackName="Enchant Helm - Empowered Blessing of Speed", priority="RECOMMENDED", reason="Current Season 2 Death Knight helm enchant direction." },
@@ -104,6 +104,7 @@ DKM.PreparationData = {
             acceptedRuneforges = { [6245]=true },
             gems = {
                 { kind="gem", itemID=240983, fallbackName="Indecipherable Eversong Diamond", slot="Diamond", priority="RECOMMENDED", reason="Primary Season 2 diamond recommendation." },
+                { kind="gem", itemID=240967, fallbackName="Powerful Eversong Diamond", slot="Diamond", priority="ALTERNATIVE", reason="Current guide-listed diamond alternative; keep Indecipherable as the default and sim the choice." },
                 { kind="gem", itemID=240908, fallbackName="Flawless Masterful Garnet", slot="Other gems", priority="RECOMMENDED", reason="Current Unholy secondary gem direction." },
                 { kind="gem", itemID=240898, fallbackName="Flawless Deadly Amethyst", slot="Other gems", priority="ALTERNATIVE", reason="Current Unholy secondary gem alternative." },
             },
@@ -111,6 +112,7 @@ DKM.PreparationData = {
                 flask = {
                     { kind="consumable", itemID=241322, fallbackName="Flask of the Magisters", slot="Flask", priority="RECOMMENDED", reason="Current Unholy baseline when extra Mastery is needed to keep it as the highest secondary rating." },
                     { kind="consumable", itemID=241326, fallbackName="Flask of the Shattered Sun", slot="Flask", priority="ALTERNATIVE", reason="Current Unholy alternative when your existing Mastery is already high enough; sim the close choice." },
+                    { kind="consumable", itemID=241324, fallbackName="Flask of the Blood Knights", slot="Flask", priority="ALTERNATIVE", reason="Situational Haste option from the September 10 guide refresh when your current gear makes Haste spike in value; sim before switching." },
                 },
                 combatPotion = {
                     { kind="consumable", itemID=241288, fallbackName="Potion of Recklessness", slot="Combat potion", priority="RECOMMENDED", reason="Current Season 2 Unholy combat potion." },
@@ -121,6 +123,8 @@ DKM.PreparationData = {
                 },
                 weaponBuff = {
                     { kind="consumable", itemID=243734, fallbackName="Thalassian Phoenix Oil", slot="Weapon buff", priority="RECOMMENDED", reason="Current temporary weapon consumable direction." },
+                    { kind="consumable", itemID=237371, fallbackName="Refulgent Whetstone", slot="Weapon buff", priority="ALTERNATIVE", reason="Guide-listed alternative for swords and axes." },
+                    { kind="consumable", itemID=237369, fallbackName="Refulgent Weightstone", slot="Weapon buff", priority="ALTERNATIVE", reason="Guide-listed alternative for maces." },
                 },
                 augmentRune = {
                     { kind="consumable", itemID=259085, fallbackName="Void-Touched Augment Rune", slot="Augment rune", priority="RECOMMENDED", reason="Current Season 2 augment rune." },

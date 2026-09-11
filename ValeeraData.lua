@@ -5,9 +5,9 @@ local T = DKM.T or function(value) return value end
 local ValeeraData = {
     patch = "12.1.0",
     season = T("Midnight Season 2"),
-    reviewed = "2026-09-06",
+    reviewed = "2026-09-11",
     sourceName = "Icy Veins + Wowhead + Blizzard",
-    sourceNote = T("Season 2 live guidance keeps Corrosive Bilespear + Soul-Cracking Dreamcatcher as the all-role Curio baseline. Blizzard has restored Valeera XP from Mislaid Curiosities; DK Mentor's Leveling preset uses Dundun's Favor for that farm."),
+    sourceNote = T("Season 2 live guidance keeps Corrosive Bilespear + Soul-Cracking Dreamcatcher as the general Curio baseline. Azta'rec has a dedicated Nemesis preset using Healer Valeera, Bilespear, Dreamcatcher, and Phantasmal Spore Toxin; Soulthirst Venom is also guide-approved. Blizzard has restored Valeera XP from Mislaid Curiosities; DK Mentor's Leveling preset uses Dundun's Favor for that farm."),
 
     liveHotfixes = {
         {
@@ -60,7 +60,12 @@ local ValeeraData = {
         },
         high = {
             label = T("High Tier"),
-            short = T("Hard Delves / Nemesis"),
+            short = T("Hard Delves"),
+            spellID = 48707, -- Anti-Magic Shell
+        },
+        nemesis = {
+            label = T("Nemesis"),
+            short = T("Azta'rec"),
             spellID = 48707, -- Anti-Magic Shell
         },
         leveling = {
@@ -70,7 +75,7 @@ local ValeeraData = {
         },
     },
 
-    presetOrder = { "auto", "safe", "balanced", "fast", "high", "leveling" },
+    presetOrder = { "auto", "safe", "balanced", "fast", "high", "nemesis", "leveling" },
 
     roles = {
         dps = {
@@ -207,6 +212,10 @@ local ValeeraData = {
                 role = "dps", combat = "bilespear", utility = "dreamcatcher", poison = "bloodcrypt",
                 reason = T("For high-tier Blood, keep Valeera in DPS but switch to Bloodcrypt for a meaningful defensive layer on enemies you are actively hitting."),
             },
+            nemesis = {
+                role = "healer", combat = "bilespear", utility = "dreamcatcher", poison = "phantasmal",
+                reason = T("Azta'rec-specific setup: Healer Valeera supplies the poison dispel and sustain recommended for the fight. Use Corrosive Bilespear + Soul-Cracking Dreamcatcher with Phantasmal Spore Toxin; Soulthirst Venom is also a guide-approved poison option."),
+            },
             leveling = {
                 role = "dps", combat = "bilespear", utility = "dundun", poison = "soulthirst",
                 reason = T("Valeera leveling preset: Blood handles combat safely while Dundun's Favor turns Mislaid Curiosities into an efficient XP route again; Soulthirst adds movement speed and passive sustain."),
@@ -233,6 +242,10 @@ local ValeeraData = {
                 role = "healer", combat = "bilespear", utility = "dreamcatcher", poison = "bloodcrypt",
                 reason = T("High-tier Frost favors consistency: Healer Valeera and Bloodcrypt smooth damage intake while Dreamcatcher turns your interrupts and control into extra Elite damage."),
             },
+            nemesis = {
+                role = "healer", combat = "bilespear", utility = "dreamcatcher", poison = "phantasmal",
+                reason = T("Azta'rec-specific setup: Healer Valeera supplies the poison dispel and sustain recommended for the fight. Use Corrosive Bilespear + Soul-Cracking Dreamcatcher with Phantasmal Spore Toxin; Soulthirst Venom is also a guide-approved poison option."),
+            },
             leveling = {
                 role = "healer", combat = "bilespear", utility = "dundun", poison = "soulthirst",
                 reason = T("Valeera leveling preset: keep Healer support for comfortable pulls, use Dundun's Favor for Mislaid Curiosity XP, and Soulthirst for extra speed while moving between curiosities."),
@@ -258,6 +271,10 @@ local ValeeraData = {
             high = {
                 role = "healer", combat = "bilespear", utility = "dreamcatcher", poison = "bloodcrypt",
                 reason = T("High-tier Unholy keeps the safer Healer + Bloodcrypt pairing so you can preserve offensive momentum without overusing Death Strike."),
+            },
+            nemesis = {
+                role = "healer", combat = "bilespear", utility = "dreamcatcher", poison = "phantasmal",
+                reason = T("Azta'rec-specific setup: Healer Valeera supplies the poison dispel and sustain recommended for the fight. Use Corrosive Bilespear + Soul-Cracking Dreamcatcher with Phantasmal Spore Toxin; Soulthirst Venom is also a guide-approved poison option."),
             },
             leveling = {
                 role = "healer", combat = "bilespear", utility = "dundun", poison = "soulthirst",

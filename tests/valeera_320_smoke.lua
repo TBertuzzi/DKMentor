@@ -8,8 +8,8 @@ local DKM = {
 assert(loadfile("ValeeraData.lua"))("DKMentor", DKM)
 local data = assert(DKM.ValeeraData, "ValeeraData missing")
 assert(data.patch == "12.1.0", "Unexpected Valeera patch")
-assert(data.reviewed == "2026-09-06", "Valeera review date missing")
-assert(#data.presetOrder == 6, "Expected six Valeera presets including Leveling")
+assert(data.reviewed == "2026-09-11", "Valeera review date missing")
+assert(#data.presetOrder == 7, "Expected seven Valeera presets including Nemesis and Leveling")
 assert(#data.roleOrder == 3, "Expected three Valeera roles")
 assert(#data.combatOrder == 3, "Expected three Combat Curios")
 assert(#data.utilityOrder == 3, "Expected three Utility Curios")
@@ -29,6 +29,15 @@ assert(data.recommendations[251].auto.role == "healer", "Frost Auto should pair 
 assert(data.recommendations[252].auto.role == "healer", "Unholy Auto should pair with Healer Valeera")
 assert(data.recommendations[251].auto.poison == "frostheart", "Frost Auto should use Frostheart")
 assert(data.recommendations[252].auto.poison == "bloodcrypt", "Unholy Auto should use Bloodcrypt")
+assert(data.recommendations[250].nemesis.role == "healer", "Blood Nemesis should use Healer Valeera")
+assert(data.recommendations[251].nemesis.role == "healer", "Frost Nemesis should use Healer Valeera")
+assert(data.recommendations[252].nemesis.role == "healer", "Unholy Nemesis should use Healer Valeera")
+for _, specID in ipairs({250, 251, 252}) do
+    local nemesis = data.recommendations[specID].nemesis
+    assert(nemesis.combat == "bilespear", "Nemesis should use Corrosive Bilespear")
+    assert(nemesis.utility == "dreamcatcher", "Nemesis should use Soul-Cracking Dreamcatcher")
+    assert(nemesis.poison == "phantasmal", "Nemesis should default to Phantasmal Spore Toxin")
+end
 assert(type(data.liveHotfixes) == "table" and #data.liveHotfixes >= 3, "Valeera live hotfix notes missing")
 assert(data.recommendations[250].leveling.utility == "dundun", "Blood Leveling should use Dundun's Favor")
 assert(data.recommendations[251].leveling.utility == "dundun", "Frost Leveling should use Dundun's Favor")

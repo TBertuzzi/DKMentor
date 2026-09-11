@@ -1025,8 +1025,12 @@ def main() -> int:
     # 3.1 Preparation / Ready Check.
     for snippet in (
         'patch = "12.1.0"',
-        'reviewed = "2026-09-06"',
+        'reviewed = "2026-09-11"',
         'itemID=240983',
+        'itemID=240967',
+        'itemID=241324',
+        'itemID=237371',
+        'itemID=237369',
         'itemID=241288',
         'itemID=243734',
         'itemID=259085',
@@ -1198,6 +1202,8 @@ def main() -> int:
         'poison = "bursting"',
         'utility = "dundun"',
         'poison = "soulthirst"',
+        'nemesis = {',
+        "short = T(\"Azta'rec\")",
         'liveHotfixes = {',
     ):
         if snippet not in valeera_data:
@@ -1223,6 +1229,7 @@ def main() -> int:
         'P("Safe", "Seguro")',
         'P("Balanced", "Equilibrado")',
         'P("High Tier", "Tier alto")',
+        'P("Nemesis", "Nêmesis")',
         'P("Leveling", "Nivelamento")',
         'P("Valeera XP restored", "XP da Valeera restaurado")',
         'P("Open Valeera setup", "Abrir configuração da Valeera")',
@@ -1239,6 +1246,7 @@ def main() -> int:
         'sectionKey == "meta"',
         'self:RenderMetaAdvisorVisual(specID)',
         'command == "meta" or command == "metapulse"',
+        'nemesis = true',
         'leveling = true',
     ):
         if snippet not in core:

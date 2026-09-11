@@ -20,5 +20,8 @@ assert(unholyRaid.treeCoverage == 'hero-only', 'Unholy ST/Raid must stay conserv
 assert(unholyMplus.treeCoverage == 'context-markers', 'Unholy M+ must use context-specific markers')
 assert(#unholyMplus.treeKeyTalents >= 2, 'Unholy M+ Rider markers missing')
 
-assert(frostMplus.reviewedDate == '2026-09-09', 'Build source audit date must be current')
-print('DK Mentor 3.3 r10 build source audit smoke test passed')
+assert(frostMplus.reviewedDate == '2026-09-11', 'Build source audit date must be current')
+local unholyPvp = assert(DKM.Builds[252].pvp)
+assert(unholyPvp[1].badge == 'RECOMMENDED' and unholyPvp[1].heroTalent == 'Rider of the Apocalypse', 'Unholy PvP Pet/Rider should be the practical default after resolving source contradiction')
+assert(unholyPvp[2].badge == 'ALTERNATIVE' and unholyPvp[2].heroTalent == "San'layn", "Unholy PvP Disease/San'layn should remain the rot alternative")
+print('DK Mentor 3.3 r12 build source audit smoke test passed')

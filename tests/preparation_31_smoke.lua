@@ -4,7 +4,7 @@ assert(loadfile("PreparationData.lua"))("DKMentor", DKM)
 
 local data = assert(DKM.PreparationData, "PreparationData table missing")
 assert(data.patch == "12.1.0", "PreparationData patch mismatch")
-assert(data.reviewed == "2026-09-06", "PreparationData review date mismatch")
+assert(data.reviewed == "2026-09-11", "PreparationData review date mismatch")
 assert(type(data.commonEnchants) == "table" and #data.commonEnchants >= 5, "Common enchant guidance missing")
 
 local function hasItem(entries, itemID)
@@ -39,6 +39,10 @@ end
 assert(hasItem(data.specs[252].consumables.flask, 241322), "Unholy Magisters flask missing")
 assert(hasItem(data.specs[252].consumables.healthPotion, 241304), "Unholy Silvermoon Health Potion missing")
 assert(hasItem(data.specs[252].consumables.food, 255845), "Unholy Silvermoon Parade feast missing")
+assert(hasItem(data.specs[252].gems, 240967), "Unholy Powerful Eversong Diamond alternative missing")
+assert(hasItem(data.specs[252].consumables.flask, 241324), "Unholy Blood Knights situational flask missing")
+assert(hasItem(data.specs[252].consumables.weaponBuff, 237371), "Unholy Refulgent Whetstone alternative missing")
+assert(hasItem(data.specs[252].consumables.weaponBuff, 237369), "Unholy Refulgent Weightstone alternative missing")
 
 local coreFile = assert(io.open("Core.lua", "r"))
 local core = coreFile:read("*a")

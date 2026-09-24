@@ -8,7 +8,7 @@ local ADDON_NAME, DKM = ...
 local AdvisorData = {
     patch = "12.1.0",
     season = "Midnight Season 2",
-    reviewed = "2026-09-06",
+    reviewed = "2026-09-24",
     folioTreeID = 1186,
     specs = {},
 }
@@ -220,7 +220,9 @@ AdvisorData.specs[252] = {
 }
 
 AdvisorData.freshness = {
-    builds = { [250] = "current", [251] = "current", [252] = "current" },
+    -- Build rankings are under review because the current talent guides predate
+    -- the September 22 DK tuning; gear/stat directions were re-audited and stay current.
+    builds = { [250] = "review", [251] = "review", [252] = "review" },
     gear = { [250] = "current", [251] = "current", [252] = "current" },
 }
 

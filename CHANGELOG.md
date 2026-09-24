@@ -1,3 +1,14 @@
+## 3.3.2 - 2026-09-24 - Post-Tuning DK Guidance
+
+- Audited the September 22 Death Knight tuning and September 23 hotfixes against the published 3.3.1 baseline.
+- Blood PvE now reflects the targeted Deathbringer buffs and marks the pre-tuning Wowhead ranking as REVIEW PENDING instead of inventing a post-tuning winner.
+- Frost PvE records the PvE-only Frostreaper +100% and Obliterate +10% tuning while preserving the current 2+ Frostscythe / 3+ Glacial Advance thresholds.
+- Unholy adds a Single Target / San'layn Blightfall raid Alternative and refreshes San'layn Delve/Mythic+ guidance after the September 23 Blightfall bug fix.
+- Unholy PvP now calls out the direct San'layn PvP buffs while preserving Pet/Rider as the provisional guide default until Icy Veins refreshes its August page.
+- Valeera adds the September 23 faction-change recovery hotfix; existing role, Curio, poison, Nemesis, and Leveling presets remain unchanged.
+- Re-audited gear, trinkets, crafting, tier sets, Catalyst, stats, runeforges, and consumables; no replacement targets were required.
+- Data/guidance review date: 2026-09-24.
+
 ## 3.3.1 - 2026-09-11 - Guidance and Valeera Hotfix
 
 - Added a dedicated Valeera **Nemesis / Azta'rec** preset: Healer + Corrosive Bilespear + Soul-Cracking Dreamcatcher + Phantasmal Spore Toxin, with Soulthirst Venom documented as an alternative.

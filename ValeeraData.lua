@@ -5,11 +5,16 @@ local T = DKM.T or function(value) return value end
 local ValeeraData = {
     patch = "12.1.0",
     season = T("Midnight Season 2"),
-    reviewed = "2026-09-11",
+    reviewed = "2026-09-24",
     sourceName = "Icy Veins + Wowhead + Blizzard",
-    sourceNote = T("Season 2 live guidance keeps Corrosive Bilespear + Soul-Cracking Dreamcatcher as the general Curio baseline. Azta'rec has a dedicated Nemesis preset using Healer Valeera, Bilespear, Dreamcatcher, and Phantasmal Spore Toxin; Soulthirst Venom is also guide-approved. Blizzard has restored Valeera XP from Mislaid Curiosities; DK Mentor's Leveling preset uses Dundun's Favor for that farm."),
+    sourceNote = T("Season 2 live guidance still keeps Corrosive Bilespear + Soul-Cracking Dreamcatcher as the general Curio baseline. Azta'rec remains Healer Valeera + Bilespear + Dreamcatcher + Phantasmal Spore Toxin, with Soulthirst Venom as a guide-approved alternative. The September 23 Valeera change is a faction-change recovery bug fix only; it does not replace DK Mentor's role, Curio, poison, Nemesis, or Leveling presets."),
 
     liveHotfixes = {
+        {
+            date = "2026-09-23",
+            label = T("Faction-change recovery fixed"),
+            text = T("Blizzard fixed an issue where Valeera could become unable to change talents or gain abilities after a faction change. Affected characters should enter a Delve, leave it, then log out once to recover the companion state."),
+        },
         {
             date = "2026-09-04",
             label = T("Darkway curiosity spawn fixed"),

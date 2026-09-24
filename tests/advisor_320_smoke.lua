@@ -9,7 +9,7 @@ local DKM = {
 assert(loadfile("AdvisorData.lua"))("DKMentor", DKM)
 local data = assert(DKM.AdvisorData, "AdvisorData table missing")
 assert(data.patch == "12.1.0", "AdvisorData patch mismatch")
-assert(data.reviewed == "2026-09-06", "AdvisorData review date mismatch")
+assert((data.reviewed or "") >= "2026-09-06", "AdvisorData review date must not regress")
 assert(data.folioTreeID == 1186, "Omnium Folio tree ID mismatch")
 
 for _, stat in ipairs({"crit", "haste", "mastery", "versatility"}) do

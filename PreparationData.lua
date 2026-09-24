@@ -7,10 +7,10 @@ local ADDON_NAME, DKM = ...
 
 DKM.PreparationData = {
     patch = "12.1.0",
-    reviewed = "2026-09-11",
+    reviewed = "2026-09-24",
     sourceName = "Wowhead",
     sourceURL = "https://www.wowhead.com/guide/classes/death-knight",
-    sourceNote = "Recommendations reviewed for Midnight Season 2 through 2026-09-11. Unholy consumable alternatives reflect the Wowhead September 10 refresh; close stat choices should still be simulated for the individual character.",
+    sourceNote = "Recommendations re-reviewed through 2026-09-24 after the September 22 Death Knight tuning. No new runeforge, gem, enchant, flask, food, potion, or weapon-consumable direction replaced the September 10 Unholy refresh; close stat choices should still be simulated for the individual character.",
 
     commonEnchants = {
         { kind="enchant", slotID=1,  slot="Head",      itemID=243981, fallbackName="Enchant Helm - Empowered Blessing of Speed", priority="RECOMMENDED", reason="Current Season 2 Death Knight helm enchant direction." },

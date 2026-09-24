@@ -4,7 +4,7 @@ assert(loadfile("PreparationData.lua"))("DKMentor", DKM)
 
 local data = assert(DKM.PreparationData, "PreparationData table missing")
 assert(data.patch == "12.1.0", "PreparationData patch mismatch")
-assert(data.reviewed == "2026-09-11", "PreparationData review date mismatch")
+assert((data.reviewed or "") >= "2026-09-11", "PreparationData review date must not regress")
 assert(type(data.commonEnchants) == "table" and #data.commonEnchants >= 5, "Common enchant guidance missing")
 
 local function hasItem(entries, itemID)

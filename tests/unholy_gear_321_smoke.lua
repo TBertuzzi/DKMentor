@@ -4,7 +4,7 @@ assert(loadfile("GearData.lua"))("DKMentor", DKM)
 
 local gear = assert(DKM.GearData, "GearData missing")
 local unholy = assert(gear.specs[252], "Unholy GearData missing")
-assert(gear.reviewed == "2026-09-08", "GearData review date must be September 8")
+assert((gear.reviewed or "") >= "2026-09-08", "GearData review date must not regress")
 assert(unholy.sourceUpdated == "2026-09-08", "Unholy source date must be September 8")
 
 local targets = {}

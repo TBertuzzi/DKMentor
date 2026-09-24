@@ -9,9 +9,9 @@ local ADDON_NAME, DKM = ...
 local GearData = {
     patch = "12.1.0",
     season = "Midnight Season 2",
-    reviewed = "2026-09-08",
+    reviewed = "2026-09-24",
     sourceName = "Wowhead",
-    sourceNote = "Guide-backed targets are a farming reference, not a replacement for simming your character.",
+    sourceNote = "Re-audited after the September 22 class tuning. Current Wowhead gear, trinket, crafting, tier-set, and Catalyst targets remain unchanged; guide-backed targets are a farming reference, not a replacement for simming your character.",
     specs = {},
 }
 

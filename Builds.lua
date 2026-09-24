@@ -9,7 +9,7 @@ local ADDON_NAME, DKM = ...
 local T = DKM.T or function(value) return value end
 
 local REVIEWED_PATCH = "12.1.0"
-local REVIEWED_DATE = "2026-09-11"
+local REVIEWED_DATE = "2026-09-24"
 
 local HERO_SUBTREE_BY_SPELL = {
     [433895] = 31, -- San'layn
@@ -18,12 +18,15 @@ local HERO_SUBTREE_BY_SPELL = {
 }
 
 local SOURCES = {
-    bloodPve = { name="Wowhead", url="https://www.wowhead.com/guide/classes/death-knight/blood/talent-builds-pve-tank", author="Mandl", updated="2026-08-20", freshness="current" },
-    frostPve = { name="Wowhead", url="https://www.wowhead.com/guide/classes/death-knight/frost/talent-builds-pve-dps", author="khazakdk", updated="2026-09-05", freshness="current" },
-    unholyPve = { name="Wowhead", url="https://www.wowhead.com/guide/classes/death-knight/unholy/talent-builds-pve-dps", author="Taeznak", updated="2026-09-05", freshness="current" },
+    -- The September 22 class pass landed after the current talent-guide revisions.
+    -- Keep the last published guide date visible, but flag the build ranking as
+    -- review-pending instead of pretending the post-tuning ordering is settled.
+    bloodPve = { name="Wowhead", url="https://www.wowhead.com/guide/classes/death-knight/blood/talent-builds-pve-tank", author="Mandl", updated="2026-09-21", freshness="review" },
+    frostPve = { name="Wowhead", url="https://www.wowhead.com/guide/classes/death-knight/frost/talent-builds-pve-dps", author="khazakdk", updated="2026-09-05", freshness="review" },
+    unholyPve = { name="Wowhead", url="https://www.wowhead.com/guide/classes/death-knight/unholy/talent-builds-pve-dps", author="Taeznak", updated="2026-09-05", freshness="review" },
     bloodPvp = { name="Icy Veins", url="https://www.icy-veins.com/wow/blood-death-knight-pve-tank-spec-builds-talents", author="Mandl / Panthea", updated="2026-08-10", freshness="current" },
     frostPvp = { name="Icy Veins", url="https://www.icy-veins.com/wow/frost-death-knight-pvp-talents-and-builds", author="Keator", updated="2026-08-10", freshness="current" },
-    unholyPvp = { name="Icy Veins", url="https://www.icy-veins.com/wow/unholy-death-knight-pvp-talents-and-builds", author="Keator", updated="2026-08-10", freshness="current" },
+    unholyPvp = { name="Icy Veins", url="https://www.icy-veins.com/wow/unholy-death-knight-pvp-talents-and-builds", author="Keator", updated="2026-08-10", freshness="review" },
 }
 
 local function sourced(sourceKey, name, note, pvp, meta)
@@ -159,18 +162,18 @@ DKM.Builds = {
             }),
         },
         mythicplus = {
-            sourced("bloodPve", "Blood — Mythic+ / Deathbringer", "Deathbringer is the safer default for Mythic+: it is easier to execute consistently and brings strong defensive advantages while keeping Reaper's Mark on a compact cadence.", nil, {
+            sourced("bloodPve", "Blood — Mythic+ / Deathbringer", "Deathbringer remains DK Mentor's low-friction Mythic+ default. The September 22 tuning specifically buffed Exterminate, Reaper's Mark, Wave of Souls, Bind in Darkness, Deathly Blows, and Swift and Painful to offset Blood's 6% aura reduction; the current Wowhead talent page predates that tuning, so the exact post-tuning ranking remains under review.", nil, {
                 heroTalent="Deathbringer", heroSpellID=434765, focus="Mythic+ tanking, control, and planned defensives", badge="RECOMMENDED", keyTalents=BLOOD_CORE,
             }),
-            sourced("bloodPve", "Blood — Mythic+ / San'layn", "San'layn remains a throughput-oriented alternative when you can commit Dancing Rune Weapon aggressively and maintain its haste-driven loop across pulls.", nil, {
+            sourced("bloodPve", "Blood — Mythic+ / San'layn", "San'layn remains the established throughput alternative when you can commit Dancing Rune Weapon aggressively, but the September 22 pass reduced Blood's overall ability/minion damage by 6% specifically because San'layn AoE was above target. Keep it as an alternative while post-tuning guide data settles.", nil, {
                 heroTalent="San'layn", heroSpellID=433895, focus="Higher-throughput alternative with stricter setup", badge="ALTERNATIVE", keyTalents=BLOOD_CORE,
             }),
         },
         raid = {
-            sourced("bloodPve", "Blood — Raid / San'layn", "San'layn is the high-throughput raid direction when encounter timing lets you commit Dancing Rune Weapon and maintain Essence of the Blood Queen cleanly.", nil, {
+            sourced("bloodPve", "Blood — Raid / San'layn", "San'layn remains the last guide-backed raid recommendation from the September 21 Wowhead update, but that page predates the September 22 Blood tuning. Treat the Recommended badge as provisional while Deathbringer's targeted single-target buffs are re-evaluated by the guide authors.", nil, {
                 heroTalent="San'layn", heroSpellID=433895, focus="Boss tanking and throughput", badge="RECOMMENDED", keyTalents=BLOOD_CORE,
             }),
-            sourced("bloodPve", "Blood — Raid / Deathbringer", "Deathbringer is the simpler raid alternative when you value predictable Reaper's Mark windows and its defensive package over San'layn's tighter maintenance loop.", nil, {
+            sourced("bloodPve", "Blood — Raid / Deathbringer", "Deathbringer is still shown as the simpler raid alternative from the last guide revision, but the September 22 targeted buffs materially improved its single-target case. It is now a serious profile to re-check rather than a throwaway comfort option; exact ranking is pending a post-tuning guide refresh.", nil, {
                 heroTalent="Deathbringer", heroSpellID=434765, focus="Predictable burst and defensive consistency", badge="ALTERNATIVE", keyTalents=BLOOD_CORE,
             }),
         },
@@ -193,12 +196,12 @@ DKM.Builds = {
             }),
         },
         mythicplus = {
-            sourced("frostPve", "Frost — Mythic+ / Deathbringer", "Frost currently builds almost the same in Mythic+ as in raid. Deathbringer remains the practical default; Smothering Offense carries the AoE profile, and Frostbane is no longer a recommended competitive option.", nil, {
+            sourced("frostPve", "Frost — Mythic+ / Deathbringer", "Keep the current Deathbringer Mythic+ direction and existing AoE markers. September 22 doubled Frostreaper damage and increased Obliterate by 10% in PvE, improving single-target/two-target output without changing the guide's existing Frostscythe-at-2+ and Glacial-Advance-at-3+ thresholds; the talent page itself still predates the tuning.", nil, {
                 heroTalent="Deathbringer", heroSpellID=434765, focus="Mythic+ damage, cleave, and utility", badge="RECOMMENDED", keyTalents=FROST_CORE,
             }),
         },
         raid = {
-            sourced("frostPve", "Frost — Raid / Deathbringer", "Deathbringer is the default raid direction: Reaper's Mark lines up naturally with Pillar of Frost and Exterminate adds valuable cleave without changing the core rotation much.", nil, {
+            sourced("frostPve", "Frost — Raid / Deathbringer", "Deathbringer remains the last guide-backed raid default. September 22 doubled Frostreaper damage and increased Obliterate by 10% in PvE, directly improving Frost's single-target/two-target weakness; keep the build structure and thresholds, but mark the hero/build ranking for review until Wowhead refreshes the talent page.", nil, {
                 heroTalent="Deathbringer", heroSpellID=434765, focus="Boss damage and frequent burst windows", badge="RECOMMENDED", keyTalents=FROST_CORE,
             }),
             sourced("frostPve", "Frost — Raid / Rider", "Rider is a viable alternative for very stable single-target encounters and adds excellent mobility without introducing another active burst button.", nil, {
@@ -220,8 +223,8 @@ DKM.Builds = {
             sourced("unholyPve", "Unholy — Delves / Rider", "Wowhead recommends the Rider-style Mythic+ build for Delves as the simpler sustained-AoE option, with the same core loop and excellent mobility.", nil, {
                 heroTalent="Rider of the Apocalypse", heroSpellID=444040, focus="Sustained AoE and minion setup", badge="RECOMMENDED", keyTalents=withTalents(UNHOLY_CORE, { { spellID=444010 } }),
             }),
-            sourced("unholyPve", "Unholy — Delves / San'layn", "San'layn remains viable in Delves if you prefer the disease-focused Blightfall / Vampiric Strike rhythm and are comfortable managing its timing.", nil, {
-                heroTalent="San'layn", heroSpellID=433895, focus="Disease windows and burst setup", badge="ALTERNATIVE", keyTalents=UNHOLY_CORE,
+            sourced("unholyPve", "Unholy — Delves / San'layn", "San'layn's disease profile is materially stronger after September 22 doubled Blightfall's remaining-plague conversion and buffed several San'layn effects; the September 23 hotfix then fixed Blightfall losing damage as plague age increased. Keep it as an alternative until the talent guide publishes a post-tuning ranking.", nil, {
+                heroTalent="San'layn", heroSpellID=433895, focus="Disease windows and burst setup", badge="ALTERNATIVE", keyTalents=withTalents(UNHOLY_CORE, { { spellID=1242616 } }),
             }),
         },
         dungeon = {
@@ -233,18 +236,21 @@ DKM.Builds = {
             sourced("unholyPve", "Unholy — Mythic+ / Rider", "Rider focuses on sustained minion pressure and is the simpler Mythic+ recommendation. Keep the single-target loop and swap to Epidemic at 3+ targets.", nil, {
                 heroTalent="Rider of the Apocalypse", heroSpellID=444040, focus="Mythic+ sustained AoE and minions", badge="RECOMMENDED", keyTalents=withTalents(UNHOLY_CORE, { { spellID=444010 } }),
             }),
-            sourced("unholyPve", "Unholy — Mythic+ / San'layn", "San'layn is the viable alternative, leaning into Blightfall and disease extension during Gift of the San'layn windows before consuming the setup for a larger payoff.", nil, {
-                heroTalent="San'layn", heroSpellID=433895, focus="Disease extension and burst payoff", badge="ALTERNATIVE", keyTalents=UNHOLY_CORE,
+            sourced("unholyPve", "Unholy — Mythic+ / San'layn", "San'layn remains the disease-focused alternative, now materially strengthened by the September 22 Blightfall/San'layn tuning and the September 23 Blightfall bug fix. The current rotation guide recognizes both Rider and San'layn/Blightfall paths, but the talent-build page still predates the tuning, so DK Mentor does not promote this to Recommended yet.", nil, {
+                heroTalent="San'layn", heroSpellID=433895, focus="Disease extension and burst payoff", badge="ALTERNATIVE", keyTalents=withTalents(UNHOLY_CORE, { { spellID=1242616 } }),
             }),
         },
         raid = {
-            sourced("unholyPve", "Unholy — Single Target / Rider", "Rider is the straightforward raid baseline for the current single-target build, reinforcing Unholy's major minion windows without adding another active Hero Talent button.", nil, {
+            sourced("unholyPve", "Unholy — Single Target / Rider", "Rider remains the last published talent-guide baseline for raid single target, but that September 5 guide predates the September 22 San'layn/Blightfall tuning and September 23 Blightfall hotfix. Keep it as the provisional Recommended profile rather than silently flipping the guide ranking.", nil, {
                 heroTalent="Rider of the Apocalypse", heroSpellID=444040, focus="Single-target setup and major minion windows", badge="RECOMMENDED", keyTalents=UNHOLY_CORE,
+            }),
+            sourced("unholyPve", "Unholy — Single Target / San'layn Blightfall", "Post-tuning review candidate: Blizzard explicitly targeted raid output and the Blightfall build on September 22, then fixed Blightfall's plague-age damage bug on September 23. Wowhead's September 23 rotation page now exposes San'layn and Blightfall in its current setup checks, but its talent-build page is still from September 5; keep this as an Alternative until that ranking is consolidated.", nil, {
+                heroTalent="San'layn", heroSpellID=433895, focus="Post-hotfix Blightfall and disease payoff", badge="ALTERNATIVE", keyTalents=withTalents(UNHOLY_CORE, { { spellID=1242616 } }),
             }),
         },
         pvp = {
-            sourced("unholyPvp", "Unholy PvP — Pet", "Icy Veins' explanatory text says the Disease build is currently weaker than the Pet build. DK Mentor therefore treats Pet as the practical default while the same source still labels Disease as its Best 3v3 heading.", "Current 12.1 PvP guide. PvP talents should be adjusted for the opposing composition; the source currently contains contradictory Pet/Disease ranking text.", { heroTalent="Rider of the Apocalypse", heroSpellID=444040, focus="Pet damage and single-target pressure", badge="RECOMMENDED", keyTalents=UNHOLY_CORE }),
-            sourced("unholyPvp", "Unholy PvP — Disease", "Disease remains the rot-pressure alternative. Icy Veins labels it Best 3v3 in the page heading, but the explanatory text says it is currently weaker than the Pet build.", "Current 12.1 PvP guide. PvP talents should be adjusted for the opposing composition; the source currently contains contradictory Pet/Disease ranking text.", { heroTalent="San'layn", heroSpellID=433895, focus="3v3 rot pressure and spread damage", badge="ALTERNATIVE", keyTalents=UNHOLY_CORE }),
+            sourced("unholyPvp", "Unholy PvP — Pet", "The August 10 Icy Veins explanatory text still says Disease is weaker than Pet, so DK Mentor keeps Pet/Rider as the provisional practical default. That page predates September 22's direct San'layn PvP buffs, so the ordering is now explicitly marked for review.", "PvP review pending: Icy Veins still contains contradictory Pet/Disease ranking text and has not yet incorporated the September 22 San'layn PvP tuning.", { heroTalent="Rider of the Apocalypse", heroSpellID=444040, focus="Pet damage and single-target pressure", badge="RECOMMENDED", keyTalents=UNHOLY_CORE }),
+            sourced("unholyPvp", "Unholy PvP — Disease", "Disease/San'layn remains the rot-pressure alternative while the guide catches up. On September 22 Blizzard doubled Inevitable's missing-health plague bonus ceiling in PvP (30% to 60%) and increased Vampiric Strike damage by 100% specifically to make San'layn more viable; do not treat the old 'weaker than Pet' sentence as a settled post-tuning ranking.", "PvP review pending: official September 22 tuning materially buffed San'layn, but the current Icy Veins page is still the August 10 version and contains contradictory Pet/Disease ranking text.", { heroTalent="San'layn", heroSpellID=433895, focus="3v3 rot pressure and spread damage", badge="ALTERNATIVE", keyTalents=UNHOLY_CORE }),
         },
     },
 }

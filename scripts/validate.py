@@ -6,15 +6,15 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "3.3.1"
+VERSION = "3.3.2"
 INTERFACE = "120100"
 
 RUNTIME_LUA = ["Localization.lua", "Data.lua", "Builds.lua", "Guides.lua", "GearData.lua", "PreparationData.lua", "AdvisorData.lua", "ValeeraData.lua", "MetaData.lua", "MetaProvider.lua", "Codex.lua", "Voices.lua", "Core.lua", "TalentTree.lua", "Advisor.lua", "Valeera.lua", "Meta.lua", "MentorEngine.lua", "MentorReview.lua", "DKTools.lua", "MentorStudio.lua"]
 REQUIRED = [
     "DKMentor.toc", *RUNTIME_LUA, "README.md", "CHANGELOG.md", "LICENSE",
     "THIRD_PARTY_NOTICES.md", "POLICY_AND_SOURCES.md", "PUBLISHING.md",
-    "RELEASE_NOTES_v3.3.1.md", "TESTING_v3.3.1.md", "CURSEFORGE_CHANGELOG_v3.3.1.md", "VALIDATION_REPORT_v3.3.1.md", "BUILD_SOURCE_AUDIT_v3.3.1.md", "DATA_AUDIT_v3.1.0.md",
-    "tests/localization_smoke.lua", "tests/review_smoke.lua", "tests/tools_smoke.lua", "tests/studio_smoke.lua", "tests/core_ux_smoke.lua", "tests/modal_navigation_smoke.lua", "tests/interrupt_enhancements_smoke.lua", "tests/gear_mentor_smoke.lua", "tests/build_mentor_smoke.lua", "tests/rune_order_smoke.lua", "tests/preparation_31_smoke.lua", "tests/accessibility_preset_31_smoke.lua", "tests/voice_portrait_315_smoke.lua", "tests/layout_preset_316_smoke.lua", "tests/portrait_position_316_smoke.lua", "tests/advisor_320_smoke.lua", "tests/guidance_refresh_320_smoke.lua", "tests/valeera_320_smoke.lua", "tests/unholy_gear_321_smoke.lua", "tests/meta_330_smoke.lua", "tests/meta_provider_330_smoke.lua", "tests/talent_tree_330_smoke.lua", "tests/talent_tree_runtime_330_smoke.lua", "tests/talent_tree_ids_330_smoke.lua", "tests/talent_tree_create_330_smoke.lua", "tests/guidance_refresh_331_smoke.lua",
+    "RELEASE_NOTES_v3.3.2.md", "TESTING_v3.3.2.md", "CURSEFORGE_CHANGELOG_v3.3.2.md", "VALIDATION_REPORT_v3.3.2.md", "BUILD_SOURCE_AUDIT_v3.3.2.md", "DATA_AUDIT_v3.1.0.md",
+    "tests/localization_smoke.lua", "tests/review_smoke.lua", "tests/tools_smoke.lua", "tests/studio_smoke.lua", "tests/core_ux_smoke.lua", "tests/modal_navigation_smoke.lua", "tests/interrupt_enhancements_smoke.lua", "tests/gear_mentor_smoke.lua", "tests/build_mentor_smoke.lua", "tests/rune_order_smoke.lua", "tests/preparation_31_smoke.lua", "tests/accessibility_preset_31_smoke.lua", "tests/voice_portrait_315_smoke.lua", "tests/layout_preset_316_smoke.lua", "tests/portrait_position_316_smoke.lua", "tests/advisor_320_smoke.lua", "tests/guidance_refresh_320_smoke.lua", "tests/valeera_320_smoke.lua", "tests/unholy_gear_321_smoke.lua", "tests/meta_330_smoke.lua", "tests/meta_provider_330_smoke.lua", "tests/talent_tree_330_smoke.lua", "tests/talent_tree_runtime_330_smoke.lua", "tests/talent_tree_ids_330_smoke.lua", "tests/talent_tree_create_330_smoke.lua", "tests/guidance_refresh_331_smoke.lua", "tests/guidance_refresh_332_smoke.lua",
     "Media/DKArcFill.tga", "Media/DKArcBG.tga", "Media/DKArcGlow.tga",
     "Media/DKArcFillRight.tga", "Media/DKArcBGRight.tga", "Media/DKArcGlowRight.tga",
 ]
@@ -811,7 +811,7 @@ def main() -> int:
     for snippet in (
         'patch = "12.1.0"',
         'season = "Midnight Season 2"',
-        'reviewed = "2026-09-08"',
+        'reviewed = "2026-09-24"',
         'GearData.specs[250]',
         'GearData.specs[251]',
         'GearData.specs[252]',
@@ -1025,7 +1025,7 @@ def main() -> int:
     # 3.1 Preparation / Ready Check.
     for snippet in (
         'patch = "12.1.0"',
-        'reviewed = "2026-09-11"',
+        'reviewed = "2026-09-24"',
         'itemID=240983',
         'itemID=240967',
         'itemID=241324',
@@ -1117,7 +1117,7 @@ def main() -> int:
         'Rune of Unleashed Fire',
         'Rune of Critical Power',
         'Rune of Overload',
-        'reviewed = "2026-09-06"',
+        'reviewed = "2026-09-24"',
     ):
         if snippet not in advisor_data:
             errors.append(f"3.2 AdvisorData regression: {snippet}")
@@ -1145,9 +1145,9 @@ def main() -> int:
         if snippet not in core:
             errors.append(f"3.2 Core integration regression: {snippet}")
     for snippet in (
-        'updated="2026-09-05", freshness="current"',
+        'updated="2026-09-05", freshness="review"',
         'freshness = s.freshness or "current"',
-        'Smothering Offense carries the AoE profile',
+        'spellID = 435005, fallbackName = "Smothering Offense"',
     ):
         if snippet not in builds:
             errors.append(f"3.2 build freshness regression: {snippet}")
@@ -1161,7 +1161,7 @@ def main() -> int:
         if snippet not in gear_data:
             errors.append(f"3.2 Catalyst data regression: {snippet}")
     for snippet in (
-        'reviewed = "2026-09-08"',
+        'reviewed = "2026-09-24"',
         'sourceUpdated = "2026-09-08"',
         'Target(268249, "Vile Alchemist\'s Band", "Finger"',
         'Target(252258, "Sickening Signet of Atroxus", "Finger"',
@@ -1325,6 +1325,38 @@ def main() -> int:
     ):
         if snippet not in loc:
             errors.append(f"2.0 EN/ptBR localization missing: {snippet}")
+
+    # 3.3.2 post-September 22 tuning refresh.
+    for snippet in (
+        'local REVIEWED_DATE = "2026-09-24"',
+        'updated="2026-09-21", freshness="review"',
+        'frostPve = { name="Wowhead"',
+        'unholyPve = { name="Wowhead"',
+        'unholyPvp = { name="Icy Veins"',
+        'Unholy — Single Target / San\'layn Blightfall',
+        'spellID=1242616',
+        'PvP review pending:',
+    ):
+        if snippet not in builds:
+            errors.append(f"3.3.2 build refresh regression: {snippet}")
+    for snippet in (
+        'reviewed = "2026-09-24"',
+        'Faction-change recovery fixed',
+        'date = "2026-09-23"',
+    ):
+        if snippet not in valeera_data:
+            errors.append(f"3.3.2 Valeera refresh regression: {snippet}")
+    if 'reviewed = "2026-09-24"' not in gear_data:
+        errors.append("3.3.2 GearData review date regression")
+    if 'reviewed = "2026-09-24"' not in advisor_data:
+        errors.append("3.3.2 AdvisorData review date regression")
+    for snippet in (
+        'Post-tuning review candidate: Blizzard explicitly targeted raid output',
+        'Faction-change recovery fixed',
+        'Re-audited after the September 22 class tuning.',
+    ):
+        if snippet not in loc:
+            errors.append(f"3.3.2 localization regression: {snippet}")
 
     if errors:
         print("Validation failed:", file=sys.stderr)

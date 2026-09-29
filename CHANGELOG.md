@@ -1,3 +1,14 @@
+## 3.3.3 Test r1 - 2026-09-26 - Unholy San'layn / Blightfall Meta Consolidation
+
+- Promoted **San'layn / Blightfall** to the Recommended Unholy PvE direction for Raid, Mythic+, Dungeons, and Delves after current Wowhead guidance consolidated the post-September-22 tuning fallout.
+- Kept **Rider of the Apocalypse** as the Recommended Open World profile and as a lower-friction/SBA-friendly alternative in instanced PvE.
+- Added concise San'layn / Blightfall timing guidance around Dark Transformation, Soul Reaper, Blightfall, Putrefy, and Lesser Ghoul setup.
+- Kept Unholy PvP ranking in REVIEW PENDING because the current Icy Veins PvP guide still predates the September 22 San'layn PvP tuning.
+- Kept Blood and Frost PvE rankings in REVIEW PENDING because their current Wowhead talent pages still predate the September 22 tuning pass.
+- Rechecked current gear/stat, Valeera, Delve, and official hotfix sources; no new target/preset churn is required in 3.3.3.
+- No change to combat engine, HUDs, Gear Mentor, Preparation, Valeera presets, MetaData snapshot, or automation boundaries.
+- Guidance review date: 2026-09-26.
+
 ## 3.3.2 - 2026-09-24 - Post-Tuning DK Guidance
 
 - Audited the September 22 Death Knight tuning and September 23 hotfixes against the published 3.3.1 baseline.

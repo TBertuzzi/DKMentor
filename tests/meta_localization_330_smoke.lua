@@ -25,6 +25,6 @@ assert(bloodGuide.heroSpellID ~= bloodMeta.heroSpellID, "Blood High Keys should 
 
 local unholyGuide = assert(DKM.Builds[252].mythicplus[1], "Unholy M+ guide missing")
 local unholyMeta = assert(DKM.MetaData.contexts.highkeys.specs[252], "Unholy High Keys meta missing")
-assert(unholyGuide.heroSpellID ~= unholyMeta.heroSpellID, "Unholy High Keys should remain a genuine meta difference")
+assert(unholyGuide.heroSpellID == unholyMeta.heroSpellID, "Unholy High Keys should align after the San'layn guide promotion")
 
 print("DK Mentor 3.3 localized Meta alignment smoke test passed")

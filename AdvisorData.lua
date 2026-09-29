@@ -220,9 +220,9 @@ AdvisorData.specs[252] = {
 }
 
 AdvisorData.freshness = {
-    -- Build rankings are under review because the current talent guides predate
-    -- the September 22 DK tuning; gear/stat directions were re-audited and stay current.
-    builds = { [250] = "review", [251] = "review", [252] = "review" },
+    -- Blood/Frost rankings still predate the September 22 tuning. Current Unholy
+    -- guidance has now consolidated on San'layn/Blightfall for Raid and Mythic+/Delves.
+    builds = { [250] = "review", [251] = "review", [252] = "current" },
     gear = { [250] = "current", [251] = "current", [252] = "current" },
 }
 

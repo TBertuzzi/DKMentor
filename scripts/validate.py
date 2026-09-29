@@ -6,15 +6,15 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "3.3.2"
+VERSION = "3.3.3"
 INTERFACE = "120100"
 
 RUNTIME_LUA = ["Localization.lua", "Data.lua", "Builds.lua", "Guides.lua", "GearData.lua", "PreparationData.lua", "AdvisorData.lua", "ValeeraData.lua", "MetaData.lua", "MetaProvider.lua", "Codex.lua", "Voices.lua", "Core.lua", "TalentTree.lua", "Advisor.lua", "Valeera.lua", "Meta.lua", "MentorEngine.lua", "MentorReview.lua", "DKTools.lua", "MentorStudio.lua"]
 REQUIRED = [
     "DKMentor.toc", *RUNTIME_LUA, "README.md", "CHANGELOG.md", "LICENSE",
     "THIRD_PARTY_NOTICES.md", "POLICY_AND_SOURCES.md", "PUBLISHING.md",
-    "RELEASE_NOTES_v3.3.2.md", "TESTING_v3.3.2.md", "CURSEFORGE_CHANGELOG_v3.3.2.md", "VALIDATION_REPORT_v3.3.2.md", "BUILD_SOURCE_AUDIT_v3.3.2.md", "DATA_AUDIT_v3.1.0.md",
-    "tests/localization_smoke.lua", "tests/review_smoke.lua", "tests/tools_smoke.lua", "tests/studio_smoke.lua", "tests/core_ux_smoke.lua", "tests/modal_navigation_smoke.lua", "tests/interrupt_enhancements_smoke.lua", "tests/gear_mentor_smoke.lua", "tests/build_mentor_smoke.lua", "tests/rune_order_smoke.lua", "tests/preparation_31_smoke.lua", "tests/accessibility_preset_31_smoke.lua", "tests/voice_portrait_315_smoke.lua", "tests/layout_preset_316_smoke.lua", "tests/portrait_position_316_smoke.lua", "tests/advisor_320_smoke.lua", "tests/guidance_refresh_320_smoke.lua", "tests/valeera_320_smoke.lua", "tests/unholy_gear_321_smoke.lua", "tests/meta_330_smoke.lua", "tests/meta_provider_330_smoke.lua", "tests/talent_tree_330_smoke.lua", "tests/talent_tree_runtime_330_smoke.lua", "tests/talent_tree_ids_330_smoke.lua", "tests/talent_tree_create_330_smoke.lua", "tests/guidance_refresh_331_smoke.lua", "tests/guidance_refresh_332_smoke.lua",
+    "RELEASE_NOTES_v3.3.3.md", "TESTING_v3.3.3.md", "CURSEFORGE_CHANGELOG_v3.3.3.md", "VALIDATION_REPORT_v3.3.3.md", "BUILD_SOURCE_AUDIT_v3.3.3.md", "DATA_AUDIT_v3.1.0.md",
+    "tests/localization_smoke.lua", "tests/review_smoke.lua", "tests/tools_smoke.lua", "tests/studio_smoke.lua", "tests/core_ux_smoke.lua", "tests/modal_navigation_smoke.lua", "tests/interrupt_enhancements_smoke.lua", "tests/gear_mentor_smoke.lua", "tests/build_mentor_smoke.lua", "tests/rune_order_smoke.lua", "tests/preparation_31_smoke.lua", "tests/accessibility_preset_31_smoke.lua", "tests/voice_portrait_315_smoke.lua", "tests/layout_preset_316_smoke.lua", "tests/portrait_position_316_smoke.lua", "tests/advisor_320_smoke.lua", "tests/guidance_refresh_320_smoke.lua", "tests/valeera_320_smoke.lua", "tests/unholy_gear_321_smoke.lua", "tests/meta_330_smoke.lua", "tests/meta_provider_330_smoke.lua", "tests/talent_tree_330_smoke.lua", "tests/talent_tree_runtime_330_smoke.lua", "tests/talent_tree_ids_330_smoke.lua", "tests/talent_tree_create_330_smoke.lua", "tests/guidance_refresh_331_smoke.lua", "tests/guidance_refresh_332_smoke.lua", "tests/guidance_refresh_333_smoke.lua",
     "Media/DKArcFill.tga", "Media/DKArcBG.tga", "Media/DKArcGlow.tga",
     "Media/DKArcFillRight.tga", "Media/DKArcBGRight.tga", "Media/DKArcGlowRight.tga",
 ]
@@ -1326,9 +1326,8 @@ def main() -> int:
         if snippet not in loc:
             errors.append(f"2.0 EN/ptBR localization missing: {snippet}")
 
-    # 3.3.2 post-September 22 tuning refresh.
+    # 3.3.2 post-September 22 tuning regression boundary.
     for snippet in (
-        'local REVIEWED_DATE = "2026-09-24"',
         'updated="2026-09-21", freshness="review"',
         'frostPve = { name="Wowhead"',
         'unholyPve = { name="Wowhead"',
@@ -1357,6 +1356,30 @@ def main() -> int:
     ):
         if snippet not in loc:
             errors.append(f"3.3.2 localization regression: {snippet}")
+
+
+    # 3.3.3 Unholy post-tuning meta consolidation.
+    for snippet in (
+        'local REVIEWED_DATE = "2026-09-26"',
+        'updated="2026-09-05", freshness="current"',
+        'Unholy — Delves / San\'layn Blightfall',
+        'Unholy — Dungeon / San\'layn Blightfall',
+        'Unholy — Mythic+ / San\'layn Blightfall',
+        'Current Wowhead guidance now marks San\'layn as Best for Single Target/Cleave',
+        'heroTalent="San\'layn", heroSpellID=433895',
+        'badge="RECOMMENDED"',
+    ):
+        if snippet not in builds:
+            errors.append(f"3.3.3 Unholy meta regression: {snippet}")
+    for snippet in (
+        'San\'layn / Blightfall timing',
+        'use it about 6 seconds after Dark Transformation',
+        'keep at least 3 Lesser Ghoul stacks available for Soul Reaper',
+    ):
+        if snippet not in (ROOT / "Guides.lua").read_text(encoding="utf-8"):
+            errors.append(f"3.3.3 Unholy guide regression: {snippet}")
+    if 'builds = { [250] = "review", [251] = "review", [252] = "current" }' not in advisor_data:
+        errors.append("3.3.3 Advisor freshness must mark only consolidated Unholy PvE as current")
 
     if errors:
         print("Validation failed:", file=sys.stderr)

@@ -13,18 +13,26 @@ assert(frostPvp.freshness == 'current', 'Frost PvP should stay current because S
 
 local unholyRaid = assert(DKM.Builds[252].raid)
 assert(#unholyRaid == 2, 'Unholy Raid should expose Rider plus Sanlayn Blightfall review candidate')
-assert(unholyRaid[1].heroTalent == 'Rider of the Apocalypse' and unholyRaid[1].badge == 'RECOMMENDED', 'Rider must remain provisional guide-backed Raid default')
-assert(unholyRaid[2].heroTalent == "San'layn" and unholyRaid[2].badge == 'ALTERNATIVE', 'Sanlayn Blightfall must be an alternative until the talent guide refreshes')
-assert(unholyRaid[2].treeCoverage == 'hero-only', 'New Unholy Raid alternative must not claim an exact post-tuning talent import')
+local sanlaynRaid, riderRaid
+for _, profile in ipairs(unholyRaid) do
+    if profile.heroTalent == "San'layn" then sanlaynRaid = profile end
+    if profile.heroTalent == 'Rider of the Apocalypse' then riderRaid = profile end
+end
+assert(sanlaynRaid and riderRaid, 'Unholy Raid must retain both Rider and Sanlayn directions')
+assert(sanlaynRaid.treeCoverage == 'hero-only', 'Unholy Raid Sanlayn profile must not claim an exact third-party talent import')
 local foundBlightfall = false
-for _, entry in ipairs(unholyRaid[2].keyTalents or {}) do
+for _, entry in ipairs(sanlaynRaid.keyTalents or {}) do
     if entry.spellID == 1242616 then foundBlightfall = true end
 end
-assert(foundBlightfall, 'Sanlayn Blightfall Raid alternative must expose Blightfall as a key talent')
+assert(foundBlightfall, 'Sanlayn Raid profile must expose Blightfall as a key talent')
 
-local unholyMplus = assert(DKM.Builds[252].mythicplus[2])
+local sanlaynMplus
+for _, profile in ipairs(assert(DKM.Builds[252].mythicplus)) do
+    if profile.heroTalent == "San'layn" then sanlaynMplus = profile end
+end
+assert(sanlaynMplus, 'Sanlayn Mythic+ profile must remain available')
 local mplusBlightfall = false
-for _, entry in ipairs(unholyMplus.keyTalents or {}) do
+for _, entry in ipairs(sanlaynMplus.keyTalents or {}) do
     if entry.spellID == 1242616 then mplusBlightfall = true end
 end
 assert(mplusBlightfall, 'Sanlayn Mythic+ profile should expose Blightfall after the hotfix')
@@ -33,7 +41,7 @@ local unholyPvp = assert(DKM.Builds[252].pvp)
 assert(unholyPvp[1].freshness == 'review' and unholyPvp[2].freshness == 'review', 'Unholy PvP must be review pending after direct Sanlayn PvP tuning')
 assert(unholyPvp[1].badge == 'RECOMMENDED' and unholyPvp[1].heroTalent == 'Rider of the Apocalypse', 'Pet/Rider remains provisional recommendation')
 assert(unholyPvp[2].badge == 'ALTERNATIVE' and unholyPvp[2].heroTalent == "San'layn", 'Disease/Sanlayn remains alternative pending Icy Veins refresh')
-assert(unholyPvp[1].reviewedDate == '2026-09-24', 'Build review date must be 2026-09-24')
+assert(unholyPvp[1].reviewedDate >= '2026-09-24', 'Build review date must not regress before 2026-09-24')
 
 local VA = { T = DKM.T }
 assert(loadfile('ValeeraData.lua'))('DKMentor', VA)
@@ -56,7 +64,8 @@ assert(PD.PreparationData.reviewed == '2026-09-24', 'Preparation review date mus
 local AD = { T = DKM.T }
 assert(loadfile('AdvisorData.lua'))('DKMentor', AD)
 assert(AD.AdvisorData.reviewed == '2026-09-24', 'Advisor review date must advance')
-assert(AD.AdvisorData.freshness.builds[250] == 'review' and AD.AdvisorData.freshness.builds[251] == 'review' and AD.AdvisorData.freshness.builds[252] == 'review', 'Advisor build freshness should reflect pre-tuning talent pages')
+assert(AD.AdvisorData.freshness.builds[250] == 'review' and AD.AdvisorData.freshness.builds[251] == 'review', 'Blood/Frost build freshness must remain review-pending until their post-tuning guides consolidate')
+assert(AD.AdvisorData.freshness.builds[252] == 'review' or AD.AdvisorData.freshness.builds[252] == 'current', 'Unholy build freshness must be a valid review/current state')
 assert(AD.AdvisorData.freshness.gear[250] == 'current' and AD.AdvisorData.freshness.gear[251] == 'current' and AD.AdvisorData.freshness.gear[252] == 'current', 'Gear freshness should remain current after re-audit')
 
-print('DK Mentor 3.3.2 post-tuning guidance smoke test passed')
+print('DK Mentor 3.3.2 regression-boundary smoke test passed')

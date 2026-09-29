@@ -9,7 +9,7 @@ local ADDON_NAME, DKM = ...
 local T = DKM.T or function(value) return value end
 
 local REVIEWED_PATCH = "12.1.0"
-local REVIEWED_DATE = "2026-09-24"
+local REVIEWED_DATE = "2026-09-26"
 
 local HERO_SUBTREE_BY_SPELL = {
     [433895] = 31, -- San'layn
@@ -18,12 +18,13 @@ local HERO_SUBTREE_BY_SPELL = {
 }
 
 local SOURCES = {
-    -- The September 22 class pass landed after the current talent-guide revisions.
-    -- Keep the last published guide date visible, but flag the build ranking as
-    -- review-pending instead of pretending the post-tuning ordering is settled.
+    -- Blood and Frost still predate the September 22 class pass. Unholy is different:
+    -- the current Wowhead content now explicitly marks San'layn as Best for Single
+    -- Target/Cleave and Mythic+/Delves, while Rider remains Best for Open World.
+    -- Keep the displayed guide date truthful even when the recommendation body changed.
     bloodPve = { name="Wowhead", url="https://www.wowhead.com/guide/classes/death-knight/blood/talent-builds-pve-tank", author="Mandl", updated="2026-09-21", freshness="review" },
     frostPve = { name="Wowhead", url="https://www.wowhead.com/guide/classes/death-knight/frost/talent-builds-pve-dps", author="khazakdk", updated="2026-09-05", freshness="review" },
-    unholyPve = { name="Wowhead", url="https://www.wowhead.com/guide/classes/death-knight/unholy/talent-builds-pve-dps", author="Taeznak", updated="2026-09-05", freshness="review" },
+    unholyPve = { name="Wowhead", url="https://www.wowhead.com/guide/classes/death-knight/unholy/talent-builds-pve-dps", author="Taeznak", updated="2026-09-05", freshness="current" },
     bloodPvp = { name="Icy Veins", url="https://www.icy-veins.com/wow/blood-death-knight-pve-tank-spec-builds-talents", author="Mandl / Panthea", updated="2026-08-10", freshness="current" },
     frostPvp = { name="Icy Veins", url="https://www.icy-veins.com/wow/frost-death-knight-pvp-talents-and-builds", author="Keator", updated="2026-08-10", freshness="current" },
     unholyPvp = { name="Icy Veins", url="https://www.icy-veins.com/wow/unholy-death-knight-pvp-talents-and-builds", author="Keator", updated="2026-08-10", freshness="review" },
@@ -220,32 +221,35 @@ DKM.Builds = {
             }),
         },
         delve = {
-            sourced("unholyPve", "Unholy — Delves / Rider", "Wowhead recommends the Rider-style Mythic+ build for Delves as the simpler sustained-AoE option, with the same core loop and excellent mobility.", nil, {
-                heroTalent="Rider of the Apocalypse", heroSpellID=444040, focus="Sustained AoE and minion setup", badge="RECOMMENDED", keyTalents=withTalents(UNHOLY_CORE, { { spellID=444010 } }),
+            sourced("unholyPve", "Unholy — Delves / San'layn Blightfall", "Current Wowhead guidance now marks San'layn as Best for Mythic+/Delves after the September 22 tuning and September 23 Blightfall fix. Build disease duration through your Dark Transformation window and cash it out with Blightfall near the end of the setup.", nil, {
+                heroTalent="San'layn", heroSpellID=433895, focus="Disease windows, Blightfall payoff, and Delve burst", badge="RECOMMENDED", keyTalents=withTalents(UNHOLY_CORE, { { spellID=1242616 } }),
             }),
-            sourced("unholyPve", "Unholy — Delves / San'layn", "San'layn's disease profile is materially stronger after September 22 doubled Blightfall's remaining-plague conversion and buffed several San'layn effects; the September 23 hotfix then fixed Blightfall losing damage as plague age increased. Keep it as an alternative until the talent guide publishes a post-tuning ranking.", nil, {
-                heroTalent="San'layn", heroSpellID=433895, focus="Disease windows and burst setup", badge="ALTERNATIVE", keyTalents=withTalents(UNHOLY_CORE, { { spellID=1242616 } }),
+            sourced("unholyPve", "Unholy — Delves / Rider", "Rider remains a strong lower-friction Delve alternative with excellent mobility and sustained minion pressure. It is also the SBA-friendly option when you prefer a simpler setup than San'layn/Blightfall.", nil, {
+                heroTalent="Rider of the Apocalypse", heroSpellID=444040, focus="Sustained AoE, mobility, and simpler minion setup", badge="ALTERNATIVE", keyTalents=withTalents(UNHOLY_CORE, { { spellID=444010 } }),
             }),
         },
         dungeon = {
-            sourced("unholyPve", "Unholy — Dungeon / Rider", "Use the Rider Mythic+ direction as the default dungeon profile: the core single-target loop stays intact and Epidemic takes over as packs reach meaningful AoE size.", nil, {
-                heroTalent="Rider of the Apocalypse", heroSpellID=444040, focus="Dungeon AoE, pets, and cooldown planning", badge="RECOMMENDED", keyTalents=withTalents(UNHOLY_CORE, { { spellID=444010 } }),
+            sourced("unholyPve", "Unholy — Dungeon / San'layn Blightfall", "Use the current San'layn Mythic+ direction as the default dungeon profile. Blightfall rewards extending diseases through Dark Transformation before the payoff, while Epidemic remains the multi-target Runic Power spender.", nil, {
+                heroTalent="San'layn", heroSpellID=433895, focus="Dungeon disease setup, Blightfall, and AoE payoff", badge="RECOMMENDED", keyTalents=withTalents(UNHOLY_CORE, { { spellID=1242616 } }),
+            }),
+            sourced("unholyPve", "Unholy — Dungeon / Rider", "Rider remains the simpler dungeon alternative for sustained minion pressure, mobility, and lower setup friction between packs.", nil, {
+                heroTalent="Rider of the Apocalypse", heroSpellID=444040, focus="Dungeon AoE, mobility, and minion pressure", badge="ALTERNATIVE", keyTalents=withTalents(UNHOLY_CORE, { { spellID=444010 } }),
             }),
         },
         mythicplus = {
-            sourced("unholyPve", "Unholy — Mythic+ / Rider", "Rider focuses on sustained minion pressure and is the simpler Mythic+ recommendation. Keep the single-target loop and swap to Epidemic at 3+ targets.", nil, {
-                heroTalent="Rider of the Apocalypse", heroSpellID=444040, focus="Mythic+ sustained AoE and minions", badge="RECOMMENDED", keyTalents=withTalents(UNHOLY_CORE, { { spellID=444010 } }),
+            sourced("unholyPve", "Unholy — Mythic+ / San'layn Blightfall", "Current Wowhead guidance now marks San'layn as Best for Mythic+/Delves. The September 22 tuning materially increased the disease payoff and the September 23 hotfix fixed Blightfall losing damage as plague age increased; this is now DK Mentor's primary Mythic+ direction.", nil, {
+                heroTalent="San'layn", heroSpellID=433895, focus="Mythic+ disease extension, Blightfall, and AoE payoff", badge="RECOMMENDED", keyTalents=withTalents(UNHOLY_CORE, { { spellID=1242616 } }),
             }),
-            sourced("unholyPve", "Unholy — Mythic+ / San'layn", "San'layn remains the disease-focused alternative, now materially strengthened by the September 22 Blightfall/San'layn tuning and the September 23 Blightfall bug fix. The current rotation guide recognizes both Rider and San'layn/Blightfall paths, but the talent-build page still predates the tuning, so DK Mentor does not promote this to Recommended yet.", nil, {
-                heroTalent="San'layn", heroSpellID=433895, focus="Disease extension and burst payoff", badge="ALTERNATIVE", keyTalents=withTalents(UNHOLY_CORE, { { spellID=1242616 } }),
+            sourced("unholyPve", "Unholy — Mythic+ / Rider", "Rider remains a valid lower-friction Mythic+ alternative with excellent mobility and sustained minion pressure. Keep the single-target loop and swap to Epidemic at 3+ targets.", nil, {
+                heroTalent="Rider of the Apocalypse", heroSpellID=444040, focus="Mythic+ sustained AoE, mobility, and minions", badge="ALTERNATIVE", keyTalents=withTalents(UNHOLY_CORE, { { spellID=444010 } }),
             }),
         },
         raid = {
-            sourced("unholyPve", "Unholy — Single Target / Rider", "Rider remains the last published talent-guide baseline for raid single target, but that September 5 guide predates the September 22 San'layn/Blightfall tuning and September 23 Blightfall hotfix. Keep it as the provisional Recommended profile rather than silently flipping the guide ranking.", nil, {
-                heroTalent="Rider of the Apocalypse", heroSpellID=444040, focus="Single-target setup and major minion windows", badge="RECOMMENDED", keyTalents=UNHOLY_CORE,
+            sourced("unholyPve", "Unholy — Single Target / San'layn Blightfall", "Current Wowhead guidance now marks San'layn as Best for Single Target/Cleave, matching the post-September 22 tuning direction. Build disease duration through Dark Transformation, align Soul Reaper when available, and consume the setup with Blightfall near the end of the window before restoring diseases with Putrefy.", nil, {
+                heroTalent="San'layn", heroSpellID=433895, focus="Single-target Blightfall and disease payoff", badge="RECOMMENDED", keyTalents=withTalents(UNHOLY_CORE, { { spellID=1242616 } }),
             }),
-            sourced("unholyPve", "Unholy — Single Target / San'layn Blightfall", "Post-tuning review candidate: Blizzard explicitly targeted raid output and the Blightfall build on September 22, then fixed Blightfall's plague-age damage bug on September 23. Wowhead's September 23 rotation page now exposes San'layn and Blightfall in its current setup checks, but its talent-build page is still from September 5; keep this as an Alternative until that ranking is consolidated.", nil, {
-                heroTalent="San'layn", heroSpellID=433895, focus="Post-hotfix Blightfall and disease payoff", badge="ALTERNATIVE", keyTalents=withTalents(UNHOLY_CORE, { { spellID=1242616 } }),
+            sourced("unholyPve", "Unholy — Single Target / Rider", "Rider remains a viable single-target alternative and keeps a simpler pet-focused rhythm, but current post-tuning guidance now favors San'layn/Blightfall for the primary Raid direction.", nil, {
+                heroTalent="Rider of the Apocalypse", heroSpellID=444040, focus="Single-target minion pressure with lower setup friction", badge="ALTERNATIVE", keyTalents=UNHOLY_CORE,
             }),
         },
         pvp = {

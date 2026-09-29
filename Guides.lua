@@ -82,6 +82,10 @@ DKM.Guides = {
                 body = T("Dark Transformation creates an important pet window. When your build includes Putrefy, use the readable Lesser Ghoul state to avoid wasting the conversion opportunity. Dread Plague remains important, but Midnight can restrict target-aura visibility, so DK Mentor does not pretend to know it when the API hides it."),
             },
             {
+                heading = T("San'layn / Blightfall timing"),
+                body = T("With San'layn/Blightfall, build plague duration through the Dark Transformation window. When Soul Reaper aligns, use it about 6 seconds after Dark Transformation and consume with Blightfall just before Soul Reaper ends; otherwise consume near the end of Dark Transformation. Follow the payoff with Putrefy to restore diseases, and keep at least 3 Lesser Ghoul stacks available for Soul Reaper."),
+            },
+            {
                 heading = T("Runic Power"),
                 body = T("Spend Runic Power without capping, but keep survival in mind in solo or PvP content. Death Coil and Epidemic are damage tools; Death Strike competes for the same resource when you need to live."),
             },

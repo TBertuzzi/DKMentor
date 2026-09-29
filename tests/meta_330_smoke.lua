@@ -38,6 +38,6 @@ assert(DKM.Builds[251].mythicplus[1].heroSpellID == meta.heroSpellIDs[high.specs
 
 assert(DKM.Builds[250].mythicplus[1].heroTalent == "Deathbringer", "Blood guide default changed unexpectedly")
 assert(DKM.Builds[251].mythicplus[1].heroTalent == "Deathbringer", "Frost guide default changed unexpectedly")
-assert(DKM.Builds[252].mythicplus[1].heroTalent == "Rider of the Apocalypse", "Unholy guide default changed unexpectedly")
+assert(DKM.Builds[252].mythicplus[1].heroTalent == "San'layn", "Unholy guide default should reflect the post-tuning San'layn consolidation")
 
 print("DK Mentor 3.3 Meta Pulse smoke test passed")

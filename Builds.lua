@@ -8,8 +8,8 @@ local ADDON_NAME, DKM = ...
 -- Context automation remains the responsibility of Loadout Pilot.
 local T = DKM.T or function(value) return value end
 
-local REVIEWED_PATCH = "12.1.0"
-local REVIEWED_DATE = "2026-09-26"
+local REVIEWED_PATCH = "12.1.5"
+local REVIEWED_DATE = "2026-10-13"
 
 local HERO_SUBTREE_BY_SPELL = {
     [433895] = 31, -- San'layn
@@ -130,7 +130,7 @@ local UNHOLY_RIDER_AOE_KEYS = {
 
 local UNHOLY_SANLAYN_AOE_KEYS = {
     { spellID = 207317, fallbackName = "Epidemic", reason = "Current Mythic+/Delve gameplay uses Epidemic for multi-target Runic Power spending." },
-    { spellID = 1242616, fallbackName = "Blightfall", reason = "The current San'layn Mythic+ alternative is the disease-focused Blightfall profile." },
+    { spellID = 1242616, fallbackName = "Blightfall", reason = "Current San'layn Mythic+/Delve guidance retains Blightfall after the October 6 tuning that returned its payoff to 100% of remaining plague damage." },
 }
 
 -- Current Wowhead marks Rider as the Single Target/Open World direction but the

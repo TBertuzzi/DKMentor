@@ -1,8 +1,8 @@
-## Interface: 120100
+## Interface: 120105
 ## Title: DK Mentor
 ## Notes: Death Knight Meta Pulse, Stats/Folio Advisor, Valeera Delve Mentor, build/gear preparation, SBA-friendly guidance, combat coaching, configurable HUDs/presets, Review, DK Codex, and optional Lich King commentary. Loadout automation is handled by Loadout Pilot.
 ## Author: Thiago Bertuzzi
-## Version: 3.3.3
+## Version: 3.3.4
 ## SavedVariables: DKMentorDB
 ## OptionalDeps: ArchonTooltip, ArchonTooltipDB, ArchonTooltipDB_US, ArchonTooltipDB_EU, ArchonTooltipDB_KR, ArchonTooltipDB_TW, ArchonTooltipDB_CN
 ## X-Category: Combat

@@ -6,15 +6,15 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "3.3.3"
-INTERFACE = "120100"
+VERSION = "3.3.4"
+INTERFACE = "120105"
 
 RUNTIME_LUA = ["Localization.lua", "Data.lua", "Builds.lua", "Guides.lua", "GearData.lua", "PreparationData.lua", "AdvisorData.lua", "ValeeraData.lua", "MetaData.lua", "MetaProvider.lua", "Codex.lua", "Voices.lua", "Core.lua", "TalentTree.lua", "Advisor.lua", "Valeera.lua", "Meta.lua", "MentorEngine.lua", "MentorReview.lua", "DKTools.lua", "MentorStudio.lua"]
 REQUIRED = [
     "DKMentor.toc", *RUNTIME_LUA, "README.md", "CHANGELOG.md", "LICENSE",
     "THIRD_PARTY_NOTICES.md", "POLICY_AND_SOURCES.md", "PUBLISHING.md",
-    "RELEASE_NOTES_v3.3.3.md", "TESTING_v3.3.3.md", "CURSEFORGE_CHANGELOG_v3.3.3.md", "VALIDATION_REPORT_v3.3.3.md", "BUILD_SOURCE_AUDIT_v3.3.3.md", "DATA_AUDIT_v3.1.0.md",
-    "tests/localization_smoke.lua", "tests/review_smoke.lua", "tests/tools_smoke.lua", "tests/studio_smoke.lua", "tests/core_ux_smoke.lua", "tests/modal_navigation_smoke.lua", "tests/interrupt_enhancements_smoke.lua", "tests/gear_mentor_smoke.lua", "tests/build_mentor_smoke.lua", "tests/rune_order_smoke.lua", "tests/preparation_31_smoke.lua", "tests/accessibility_preset_31_smoke.lua", "tests/voice_portrait_315_smoke.lua", "tests/layout_preset_316_smoke.lua", "tests/portrait_position_316_smoke.lua", "tests/advisor_320_smoke.lua", "tests/guidance_refresh_320_smoke.lua", "tests/valeera_320_smoke.lua", "tests/unholy_gear_321_smoke.lua", "tests/meta_330_smoke.lua", "tests/meta_provider_330_smoke.lua", "tests/talent_tree_330_smoke.lua", "tests/talent_tree_runtime_330_smoke.lua", "tests/talent_tree_ids_330_smoke.lua", "tests/talent_tree_create_330_smoke.lua", "tests/guidance_refresh_331_smoke.lua", "tests/guidance_refresh_332_smoke.lua", "tests/guidance_refresh_333_smoke.lua",
+    "RELEASE_NOTES_v3.3.4.md", "TESTING_v3.3.4.md", "CURSEFORGE_CHANGELOG_v3.3.4.md", "VALIDATION_REPORT_v3.3.4.md", "BUILD_SOURCE_AUDIT_v3.3.4.md", "DATA_AUDIT_v3.1.0.md",
+    "tests/localization_smoke.lua", "tests/review_smoke.lua", "tests/tools_smoke.lua", "tests/studio_smoke.lua", "tests/core_ux_smoke.lua", "tests/modal_navigation_smoke.lua", "tests/interrupt_enhancements_smoke.lua", "tests/gear_mentor_smoke.lua", "tests/build_mentor_smoke.lua", "tests/rune_order_smoke.lua", "tests/preparation_31_smoke.lua", "tests/accessibility_preset_31_smoke.lua", "tests/voice_portrait_315_smoke.lua", "tests/layout_preset_316_smoke.lua", "tests/portrait_position_316_smoke.lua", "tests/advisor_320_smoke.lua", "tests/guidance_refresh_320_smoke.lua", "tests/valeera_320_smoke.lua", "tests/unholy_gear_321_smoke.lua", "tests/meta_330_smoke.lua", "tests/meta_provider_330_smoke.lua", "tests/talent_tree_330_smoke.lua", "tests/talent_tree_runtime_330_smoke.lua", "tests/talent_tree_ids_330_smoke.lua", "tests/talent_tree_create_330_smoke.lua", "tests/guidance_refresh_331_smoke.lua", "tests/guidance_refresh_332_smoke.lua", "tests/guidance_refresh_333_smoke.lua", "tests/patch_1215_334_smoke.lua", "tests/interrupt_1215_r2_smoke.lua",
     "Media/DKArcFill.tga", "Media/DKArcBG.tga", "Media/DKArcGlow.tga",
     "Media/DKArcFillRight.tga", "Media/DKArcBGRight.tga", "Media/DKArcGlowRight.tga",
 ]
@@ -1117,7 +1117,6 @@ def main() -> int:
         'Rune of Unleashed Fire',
         'Rune of Critical Power',
         'Rune of Overload',
-        'reviewed = "2026-09-24"',
     ):
         if snippet not in advisor_data:
             errors.append(f"3.2 AdvisorData regression: {snippet}")
@@ -1339,16 +1338,17 @@ def main() -> int:
         if snippet not in builds:
             errors.append(f"3.3.2 build refresh regression: {snippet}")
     for snippet in (
-        'reviewed = "2026-09-24"',
         'Faction-change recovery fixed',
         'date = "2026-09-23"',
     ):
         if snippet not in valeera_data:
             errors.append(f"3.3.2 Valeera refresh regression: {snippet}")
+    if 'reviewed = "2026-10-13"' not in valeera_data:
+        errors.append('3.3.4 Valeera review date must be 2026-10-13')
     if 'reviewed = "2026-09-24"' not in gear_data:
         errors.append("3.3.2 GearData review date regression")
-    if 'reviewed = "2026-09-24"' not in advisor_data:
-        errors.append("3.3.2 AdvisorData review date regression")
+    if 'reviewed = "2026-10-13"' not in advisor_data:
+        errors.append("3.3.4 AdvisorData review date must be 2026-10-13")
     for snippet in (
         'Post-tuning review candidate: Blizzard explicitly targeted raid output',
         'Faction-change recovery fixed',
@@ -1358,9 +1358,9 @@ def main() -> int:
             errors.append(f"3.3.2 localization regression: {snippet}")
 
 
-    # 3.3.3 Unholy post-tuning meta consolidation.
+    # 3.3.3/3.3.4 Unholy post-tuning meta consolidation.
     for snippet in (
-        'local REVIEWED_DATE = "2026-09-26"',
+        'local REVIEWED_DATE = "2026-10-13"',
         'updated="2026-09-05", freshness="current"',
         'Unholy — Delves / San\'layn Blightfall',
         'Unholy — Dungeon / San\'layn Blightfall',
@@ -1380,6 +1380,57 @@ def main() -> int:
             errors.append(f"3.3.3 Unholy guide regression: {snippet}")
     if 'builds = { [250] = "review", [251] = "review", [252] = "current" }' not in advisor_data:
         errors.append("3.3.3 Advisor freshness must mark only consolidated Unholy PvE as current")
+
+    # 3.3.4 Patch 12.1.5 compatibility.
+    data_text = (ROOT / "Data.lua").read_text(encoding="utf-8")
+    codex_text = (ROOT / "Codex.lua").read_text(encoding="utf-8")
+    advisor_runtime = (ROOT / "Advisor.lua").read_text(encoding="utf-8")
+    for snippet in ('Data.version = "3.3.4"', 'Data.interface = 120105', 'Data.patch = "12.1.5"', 'Data.dataVersion = "2026-10-13"'):
+        if snippet not in data_text:
+            errors.append(f"3.3.4 Data compatibility regression: {snippet}")
+    if 'patch = "12.1.5"' not in codex_text:
+        errors.append("3.3.4 Codex patch target must be 12.1.5")
+    removed_item_api = re.compile(r'(?<!C_Item\.)\b(GetItemQualityColor|GetItemInfoInstant|GetItemIcon|GetItemSpell|GetItemInfo|GetItemCount|GetItemCooldown|GetDetailedItemLevelInfo)\b')
+    for name, text_ in (("Core.lua", core), ("Advisor.lua", advisor_runtime)):
+        match = removed_item_api.search(text_)
+        if match:
+            errors.append(f"3.3.4 removed 12.1.5 item API fallback remains in {name}: {match.group(1)}")
+    for snippet in ('C_Item.GetItemQualityColor', 'C_Item.GetItemInfoInstant', 'C_Item.GetItemIconByID', 'C_Item.GetItemSpell'):
+        if snippet not in core and snippet != 'C_Item.GetItemInfoInstant':
+            errors.append(f"3.3.4 C_Item migration missing: {snippet}")
+    if 'C_Item.GetItemInfoInstant' not in advisor_runtime:
+        errors.append("3.3.4 Advisor tooltip migration must use C_Item.GetItemInfoInstant")
+    if 'C_PartyInfo.IsDelveInProgress' not in core:
+        errors.append("3.3.4 Delve/Labyrinth primary context detector missing")
+    for snippet in (
+        'patch = "12.1.5"',
+        'reviewed = "2026-10-13"',
+        'utilityOrder = { "dundun", "dreamcatcher", "venom" }',
+        'general Curio baseline across Valeera roles',
+    ):
+        if snippet not in valeera_data:
+            errors.append(f"3.3.4 Valeera refresh regression: {snippet}")
+    guides_text = (ROOT / "Guides.lua").read_text(encoding="utf-8")
+    if 'Blightfall now deals 100% of the remaining plague damage after the October 6 tuning' not in guides_text:
+        errors.append("3.3.4 Blightfall 100% tuning wording missing")
+
+    # 3.3.4 Test r2: 12.1.5 interrupt visibility hardening.
+    for snippet in (
+        'local interruptEventTargetScoped = {}',
+        'interruptEventTargetScoped[eventName] = registered == true',
+        'local isTargetEvent = interruptEventTargetScoped[event] == true',
+        'if targetInterruptEventState == true then',
+        'elseif targetInterruptEventState == false then',
+    ):
+        if snippet not in core:
+            errors.append(f"3.3.4 r2 Core interrupt regression: {snippet}")
+    for snippet in (
+        'local interruptEventTargetScoped = {}',
+        'local hasCast, _, castKey, spellID = GetTargetCastStateFromAPI()',
+        'elseif event == "UNIT_SPELLCAST_INTERRUPTIBLE" or event == "UNIT_SPELLCAST_NOT_INTERRUPTIBLE" then',
+    ):
+        if snippet not in mentor_engine:
+            errors.append(f"3.3.4 r2 MentorEngine interrupt regression: {snippet}")
 
     if errors:
         print("Validation failed:", file=sys.stderr)

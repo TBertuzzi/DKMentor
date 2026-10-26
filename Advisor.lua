@@ -1182,8 +1182,8 @@ function addon:RegisterGearTargetTooltipIntegration()
         if not itemID and tooltip.GetItem then
             local ok, _, link = pcall(tooltip.GetItem, tooltip)
             if ok and type(link) == "string" then
-                if GetItemInfoInstant then
-                    local okID, resolved = pcall(GetItemInfoInstant, link)
+                if C_Item and C_Item.GetItemInfoInstant then
+                    local okID, resolved = pcall(C_Item.GetItemInfoInstant, link)
                     if okID and type(resolved) == "number" then itemID = resolved end
                 end
                 if not itemID then itemID = tonumber(link:match("item:(%d+)")) end

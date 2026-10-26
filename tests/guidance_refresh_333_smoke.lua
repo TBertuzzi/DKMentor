@@ -10,7 +10,7 @@ for _, context in ipairs({ 'delve', 'dungeon', 'mythicplus', 'raid' }) do
     local profiles = assert(unholy[context], 'Missing Unholy context: ' .. context)
     assert(profiles[1].heroTalent == "San'layn" and profiles[1].badge == 'RECOMMENDED', context .. ' should promote Sanlayn')
     assert(profiles[2].heroTalent == 'Rider of the Apocalypse' and profiles[2].badge == 'ALTERNATIVE', context .. ' should retain Rider as alternative')
-    assert(profiles[1].reviewedDate == '2026-09-26', context .. ' review date must be 2026-09-26')
+    assert(profiles[1].reviewedDate >= '2026-09-26', context .. ' review date must not regress before 2026-09-26')
     local blightfall = false
     for _, entry in ipairs(profiles[1].keyTalents or {}) do
         if entry.spellID == 1242616 then blightfall = true end

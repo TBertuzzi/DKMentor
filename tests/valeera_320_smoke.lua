@@ -7,7 +7,7 @@ local DKM = {
 
 assert(loadfile("ValeeraData.lua"))("DKMentor", DKM)
 local data = assert(DKM.ValeeraData, "ValeeraData missing")
-assert(data.patch == "12.1.0", "Unexpected Valeera patch")
+assert(data.patch == "12.1.5", "Unexpected Valeera patch")
 assert((data.reviewed or "") >= "2026-09-11", "Valeera review date must not regress")
 assert(#data.presetOrder == 7, "Expected seven Valeera presets including Nemesis and Leveling")
 assert(#data.roleOrder == 3, "Expected three Valeera roles")

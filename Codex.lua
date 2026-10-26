@@ -3,9 +3,9 @@ local ADDON_NAME, DKM = ...
 local T = DKM.T or function(value) return value end
 
 local Codex = {
-    patch = "12.1.0",
+    patch = "12.1.5",
     season = T("Midnight Season 2"),
-    reviewed = "2026-09-08",
+    reviewed = "2026-10-13",
     sectionOrder = { "overview", "advisor", "stats", "builds", "meta", "valeera", "rotation", "survival", "utility", "check" },
     sectionLabels = {
         overview = T("Overview"),

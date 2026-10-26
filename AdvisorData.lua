@@ -6,9 +6,9 @@ local ADDON_NAME, DKM = ...
 -- third-party talent strings, prose, artwork, or addon code.
 
 local AdvisorData = {
-    patch = "12.1.0",
+    patch = "12.1.5",
     season = "Midnight Season 2",
-    reviewed = "2026-09-24",
+    reviewed = "2026-10-13",
     folioTreeID = 1186,
     specs = {},
 }
@@ -223,7 +223,7 @@ AdvisorData.freshness = {
     -- Blood/Frost rankings still predate the September 22 tuning. Current Unholy
     -- guidance has now consolidated on San'layn/Blightfall for Raid and Mythic+/Delves.
     builds = { [250] = "review", [251] = "review", [252] = "current" },
-    gear = { [250] = "current", [251] = "current", [252] = "current" },
+    gear = { [250] = "review", [251] = "review", [252] = "review" },
 }
 
 DKM.AdvisorData = AdvisorData

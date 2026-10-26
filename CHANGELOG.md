@@ -1,3 +1,15 @@
+## 3.3.4 - 2026-10-26 - Patch 12.1.5 Compatibility / Interrupt Hotfix
+
+- Fixed the Mind Freeze interrupt prompt/action glow not reliably appearing on interruptible target casts under 12.1.5.
+- Interruptibility events registered specifically for `target` are now trusted by event name even when spellcast payload fields are restricted.
+- Mentor Coach no longer depends on `castGUID`/`spellID` being present on interruptibility events; it resolves the active target cast through the sanctioned cast API and NeverSecret `castBarID`.
+- Updated Retail compatibility to 12.1.5 / Interface 120105.
+- Migrated remaining legacy item API fallbacks to current C_Item APIs.
+- Updated general Valeera Curio baseline to Corrosive Bilespear + Dundun's Favor; preserved the Azta'rec Dreamcatcher exception.
+- Corrected Unholy Blightfall guidance to 100% of remaining plague damage after the October 6 tuning.
+- Added Labyrinth live context-detection validation.
+- Marked Gear Mentor target freshness REVIEW pending the dedicated 12.1.5/Kith'ix item audit.
+
 ## 3.3.3 Test r1 - 2026-09-26 - Unholy San'layn / Blightfall Meta Consolidation
 
 - Promoted **San'layn / Blightfall** to the Recommended Unholy PvE direction for Raid, Mythic+, Dungeons, and Delves after current Wowhead guidance consolidated the post-September-22 tuning fallout.

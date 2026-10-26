@@ -3,11 +3,11 @@ local ADDON_NAME, DKM = ...
 local T = DKM.T or function(value) return value end
 
 local ValeeraData = {
-    patch = "12.1.0",
+    patch = "12.1.5",
     season = T("Midnight Season 2"),
-    reviewed = "2026-09-24",
+    reviewed = "2026-10-13",
     sourceName = "Icy Veins + Wowhead + Blizzard",
-    sourceNote = T("Season 2 live guidance still keeps Corrosive Bilespear + Soul-Cracking Dreamcatcher as the general Curio baseline. Azta'rec remains Healer Valeera + Bilespear + Dreamcatcher + Phantasmal Spore Toxin, with Soulthirst Venom as a guide-approved alternative. The September 23 Valeera change is a faction-change recovery bug fix only; it does not replace DK Mentor's role, Curio, poison, Nemesis, or Leveling presets."),
+    sourceNote = T("Patch 12.1.5 guidance now recommends Corrosive Bilespear + Dundun's Favor as the general Curio baseline across Valeera roles. Azta'rec remains a boss-specific exception: Healer Valeera + Bilespear + Soul-Cracking Dreamcatcher + Phantasmal Spore Toxin, with Soulthirst Venom as a guide-approved alternative. Labyrinth uses Valeera and is treated as Delve content pending live context-detection verification."),
 
     liveHotfixes = {
         {
@@ -135,14 +135,14 @@ local ValeeraData = {
         dreamcatcher = {
             fallbackName = "Soul-Cracking Dreamcatcher",
             spellID = 1248899,
-            tag = T("Guide baseline"),
-            description = T("Rewards interrupts and crowd control on Elite enemies, which pairs naturally with the DK control toolkit."),
+            tag = T("Elite / boss alternative"),
+            description = T("Rewards interrupts and crowd control on Elite enemies. It remains the boss-specific Azta'rec recommendation even though Dundun's Favor is now the general 12.1.5 baseline."),
         },
         dundun = {
             fallbackName = "Dundun's Favor",
             spellID = 1248894,
-            tag = T("Leveling / farm"),
-            description = T("Leveling and farm option: Mislaid Curiosities grant Valeera XP again, while Dundun's Favor helps collect them and fires Volatile Sprites."),
+            tag = T("Guide baseline"),
+            description = T("Current 12.1.5 general recommendation across Valeera roles. Mislaid Curiosities or Spirits trigger Volatile Sprites while preserving its leveling and farming utility."),
         },
         venom = {
             fallbackName = "Venom Infusion",
@@ -152,7 +152,7 @@ local ValeeraData = {
         },
     },
 
-    utilityOrder = { "dreamcatcher", "dundun", "venom" },
+    utilityOrder = { "dundun", "dreamcatcher", "venom" },
 
     poisons = {
         bloodcrypt = {
@@ -198,23 +198,23 @@ local ValeeraData = {
     recommendations = {
         [250] = { -- Blood
             auto = {
-                role = "dps", combat = "bilespear", utility = "dreamcatcher", poison = "bursting",
+                role = "dps", combat = "bilespear", utility = "dundun", poison = "bursting",
                 reason = T("Blood already tanks and self-heals extremely well, so Valeera can stay in DPS while Bursting Toad Toxin helps clear packs faster."),
             },
             safe = {
-                role = "healer", combat = "bilespear", utility = "dreamcatcher", poison = "bloodcrypt",
+                role = "healer", combat = "bilespear", utility = "dundun", poison = "bloodcrypt",
                 reason = T("Use Healer Valeera plus Bloodcrypt when a Delve is actually threatening your survival or you are learning a difficult mechanic."),
             },
             balanced = {
-                role = "dps", combat = "bilespear", utility = "dreamcatcher", poison = "bursting",
-                reason = T("Balanced Blood keeps Valeera in DPS: you supply the tanking, she supplies extra damage, and Dreamcatcher rewards your frequent DK control."),
+                role = "dps", combat = "bilespear", utility = "dundun", poison = "bursting",
+                reason = T("Balanced Blood keeps Valeera in DPS: you supply the tanking, she supplies extra damage, and Dundun's Favor is the current general guide baseline."),
             },
             fast = {
-                role = "dps", combat = "bilespear", utility = "dreamcatcher", poison = "bursting",
+                role = "dps", combat = "bilespear", utility = "dundun", poison = "bursting",
                 reason = T("Speed-farm setup: maximize Valeera damage and add AoE poison pressure while Blood handles the incoming damage."),
             },
             high = {
-                role = "dps", combat = "bilespear", utility = "dreamcatcher", poison = "bloodcrypt",
+                role = "dps", combat = "bilespear", utility = "dundun", poison = "bloodcrypt",
                 reason = T("For high-tier Blood, keep Valeera in DPS but switch to Bloodcrypt for a meaningful defensive layer on enemies you are actively hitting."),
             },
             nemesis = {
@@ -228,24 +228,24 @@ local ValeeraData = {
         },
         [251] = { -- Frost
             auto = {
-                role = "healer", combat = "bilespear", utility = "dreamcatcher", poison = "frostheart",
+                role = "healer", combat = "bilespear", utility = "dundun", poison = "frostheart",
                 reason = T("Frost gains a comfortable solo pairing from Healer Valeera. Frostheart adds control while you stay aggressive in melee."),
             },
             safe = {
-                role = "healer", combat = "bilespear", utility = "dreamcatcher", poison = "bloodcrypt",
+                role = "healer", combat = "bilespear", utility = "dundun", poison = "bloodcrypt",
                 reason = T("Safest Frost setup: Healer Valeera plus Bloodcrypt lowers incoming pressure while you keep Runic Power available for emergency Death Strikes."),
             },
             balanced = {
-                role = "healer", combat = "bilespear", utility = "dreamcatcher", poison = "frostheart",
+                role = "healer", combat = "bilespear", utility = "dundun", poison = "frostheart",
                 reason = T("Balanced Frost uses Healer Valeera and Frostheart control, leaving you free to focus on Obliterate/Frostscythe pressure and interrupts."),
             },
             fast = {
-                role = "dps", combat = "bilespear", utility = "dreamcatcher", poison = "bursting",
+                role = "dps", combat = "bilespear", utility = "dundun", poison = "bursting",
                 reason = T("When the Delve is easy, switch Valeera to DPS and Bursting Toad Toxin to shorten pulls and move faster between packs."),
             },
             high = {
-                role = "healer", combat = "bilespear", utility = "dreamcatcher", poison = "bloodcrypt",
-                reason = T("High-tier Frost favors consistency: Healer Valeera and Bloodcrypt smooth damage intake while Dreamcatcher turns your interrupts and control into extra Elite damage."),
+                role = "healer", combat = "bilespear", utility = "dundun", poison = "bloodcrypt",
+                reason = T("High-tier Frost favors consistency: Healer Valeera and Bloodcrypt smooth damage intake while Dundun's Favor supplies the current general utility baseline."),
             },
             nemesis = {
                 role = "healer", combat = "bilespear", utility = "dreamcatcher", poison = "phantasmal",
@@ -258,23 +258,23 @@ local ValeeraData = {
         },
         [252] = { -- Unholy
             auto = {
-                role = "healer", combat = "bilespear", utility = "dreamcatcher", poison = "bloodcrypt",
+                role = "healer", combat = "bilespear", utility = "dundun", poison = "bloodcrypt",
                 reason = T("Unholy can keep its damage engine rolling while Healer Valeera and Bloodcrypt reduce the punishment from extended melee pulls."),
             },
             safe = {
-                role = "healer", combat = "bilespear", utility = "dreamcatcher", poison = "bloodcrypt",
+                role = "healer", combat = "bilespear", utility = "dundun", poison = "bloodcrypt",
                 reason = T("Safe Unholy keeps Valeera healing and uses Bloodcrypt to lower enemy damage and Haste during longer or more dangerous fights."),
             },
             balanced = {
-                role = "healer", combat = "bilespear", utility = "dreamcatcher", poison = "bloodcrypt",
-                reason = T("Balanced Unholy prioritizes steady uptime: your pets and diseases provide pressure while Valeera stabilizes you and Dreamcatcher rewards DK crowd control."),
+                role = "healer", combat = "bilespear", utility = "dundun", poison = "bloodcrypt",
+                reason = T("Balanced Unholy prioritizes steady uptime: your pets and diseases provide pressure while Valeera stabilizes you and Dundun's Favor follows the current general utility recommendation."),
             },
             fast = {
-                role = "dps", combat = "bilespear", utility = "dreamcatcher", poison = "bursting",
+                role = "dps", combat = "bilespear", utility = "dundun", poison = "bursting",
                 reason = T("For easy farming, DPS Valeera plus Bursting Toad Toxin adds more pack damage while Unholy spreads its normal AoE pressure."),
             },
             high = {
-                role = "healer", combat = "bilespear", utility = "dreamcatcher", poison = "bloodcrypt",
+                role = "healer", combat = "bilespear", utility = "dundun", poison = "bloodcrypt",
                 reason = T("High-tier Unholy keeps the safer Healer + Bloodcrypt pairing so you can preserve offensive momentum without overusing Death Strike."),
             },
             nemesis = {

@@ -1673,9 +1673,11 @@ local events = {
     "UNIT_SPELLCAST_EMPOWER_STOP",
 }
 for _, eventName in ipairs(events) do pcall(eventFrame.RegisterEvent, eventFrame, eventName) end
+local interruptEventTargetScoped = {}
 for _, eventName in ipairs({ "UNIT_SPELLCAST_INTERRUPTIBLE", "UNIT_SPELLCAST_NOT_INTERRUPTIBLE" }) do
     local registered = false
     if eventFrame.RegisterUnitEvent then registered = pcall(eventFrame.RegisterUnitEvent, eventFrame, eventName, "target") end
+    interruptEventTargetScoped[eventName] = registered == true
     if not registered then pcall(eventFrame.RegisterEvent, eventFrame, eventName) end
 end
 
@@ -1728,19 +1730,24 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
                 addon:UpdateCoach()
             end
         end
-    elseif event == "UNIT_SPELLCAST_INTERRUPTIBLE" then
-        local unit, castGUID, spellID = ...
-        if unit == "target" then
-            local key = IsAccessibleValue(castGUID) and tostring(castGUID) or ("target:" .. tostring(IsAccessibleNumber(spellID) and spellID or GetNow()))
-            OpenInterruptWindow(key)
-            addon:UpdateCoach()
-            ScheduleTargetCastRefreshes()
+    elseif event == "UNIT_SPELLCAST_INTERRUPTIBLE" or event == "UNIT_SPELLCAST_NOT_INTERRUPTIBLE" then
+        local unit = ...
+        local isTargetEvent = interruptEventTargetScoped[event] == true
+        if not isTargetEvent and IsAccessibleValue(unit) and type(unit) == "string" then
+            isTargetEvent = unit == "target"
         end
-    elseif event == "UNIT_SPELLCAST_NOT_INTERRUPTIBLE" then
-        local unit, castGUID, spellID = ...
-        if unit == "target" then
-            local key = IsAccessibleValue(castGUID) and tostring(castGUID) or ("target:" .. tostring(IsAccessibleNumber(spellID) and spellID or GetNow()))
-            OpenUtilityWindow(key)
+        if isTargetEvent then
+            -- Midnight interruptibility events may expose only the unit token.
+            -- Recover the stable target cast identity from the sanctioned cast API
+            -- (castBarID is NeverSecret) instead of depending on castGUID/spellID
+            -- being present in this event payload.
+            local hasCast, _, castKey, spellID = GetTargetCastStateFromAPI()
+            local key = hasCast and castKey or ("target:" .. tostring(IsAccessibleNumber(spellID) and spellID or GetNow()))
+            if event == "UNIT_SPELLCAST_INTERRUPTIBLE" then
+                OpenInterruptWindow(key)
+            else
+                OpenUtilityWindow(key)
+            end
             addon:UpdateCoach()
             ScheduleTargetCastRefreshes()
         end

@@ -5,10 +5,10 @@ local Data = DKM.Data
 local T = DKM.T or function(value) return value end
 
 Data.addonName = ADDON_NAME
-Data.version = "3.3.3"
-Data.interface = 120100
-Data.dataVersion = "2026-09-26"
-Data.patch = "12.1.0"
+Data.version = "3.3.4"
+Data.interface = 120105
+Data.dataVersion = "2026-10-13"
+Data.patch = "12.1.5"
 
 Data.specNames = {
     [250] = "Blood",

@@ -83,7 +83,7 @@ DKM.Guides = {
             },
             {
                 heading = T("San'layn / Blightfall timing"),
-                body = T("With San'layn/Blightfall, build plague duration through the Dark Transformation window. When Soul Reaper aligns, use it about 6 seconds after Dark Transformation and consume with Blightfall just before Soul Reaper ends; otherwise consume near the end of Dark Transformation. Follow the payoff with Putrefy to restore diseases, and keep at least 3 Lesser Ghoul stacks available for Soul Reaper."),
+                body = T("With San'layn/Blightfall, build plague duration through the Dark Transformation window. Blightfall now deals 100% of the remaining plague damage after the October 6 tuning, so the setup still matters even though the burst is lower than the temporary 200% state. When Soul Reaper aligns, use it about 6 seconds after Dark Transformation and consume with Blightfall just before Soul Reaper ends; otherwise consume near the end of Dark Transformation. Follow the payoff with Putrefy to restore diseases, and keep at least 3 Lesser Ghoul stacks available for Soul Reaper."),
             },
             {
                 heading = T("Runic Power"),

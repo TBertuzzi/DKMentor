@@ -54,6 +54,7 @@ local activeProcGlows = {}
 local activeProcGlowOrder = {}
 local cooldownManagerProfileCache = {}
 local targetInterruptEventState = nil
+local interruptEventTargetScoped = {}
 addon.interruptActionGlowTargets = {}
 addon.interruptGlowFrames = setmetatable({}, { __mode = "k" })
 addon.interruptGlowRefreshToken = 0
@@ -1242,8 +1243,6 @@ function addon:CacheHearthstoneItemSpell(itemID, requestIfMissing)
     local ok, spellName, spellID
     if C_Item and C_Item.GetItemSpell then
         ok, spellName, spellID = pcall(C_Item.GetItemSpell, itemID)
-    elseif GetItemSpell then
-        ok, spellName, spellID = pcall(GetItemSpell, itemID)
     end
 
     if ok and (type(spellID) == "number" or (type(spellName) == "string" and spellName ~= "")) then
@@ -7714,13 +7713,13 @@ function addon:UpdateInterruptActionGlows(hasCast, rawNotInterruptible, cooldown
             if visible then
                 glow:Show()
                 if glow.pulse and glow.pulse.IsPlaying and not glow.pulse:IsPlaying() then glow.pulse:Play() end
-                local bound = self:_SetInterruptActionGlowFromNotInterruptible(glow, rawNotInterruptible)
-                if not bound then
-                    if targetInterruptEventState == true then
-                        glow:SetAlpha(1)
-                    else
-                        glow:Hide()
-                    end
+                if targetInterruptEventState == true then
+                    glow:SetAlpha(1)
+                elseif targetInterruptEventState == false then
+                    glow:Hide()
+                else
+                    local bound = self:_SetInterruptActionGlowFromNotInterruptible(glow, rawNotInterruptible)
+                    if not bound then glow:Hide() end
                 end
             else
                 glow:Hide()
@@ -7872,15 +7871,20 @@ function addon:UpdateInterruptAlert()
         return
     end
 
-    -- Prefer the API value whenever it exists. In Midnight this may be Secret,
-    -- which is exactly why the frame consumes it through SetAlphaFromBoolean.
-    -- The readable unit events are only fallbacks for short API transition gaps.
-    local presentationBound = SetInterruptFrameFromNotInterruptible(interruptFrame, rawNotInterruptible)
-    if not presentationBound then
-        if targetInterruptEventState == true then
-            SetInterruptFrameFullyVisible(interruptFrame)
-        else
-            -- false = confirmed non-interruptible; nil = no safe signal yet.
+    -- 12.1.5: the dedicated interruptibility event is the clearest signal when
+    -- available. Because these events are registered with RegisterUnitEvent for
+    -- target, we can trust the event name even when its payload is restricted.
+    -- Fall back to the Secret-safe UnitCastingInfo/UnitChannelInfo boolean only
+    -- during the short transition before the event arrives.
+    if targetInterruptEventState == true then
+        SetInterruptFrameFullyVisible(interruptFrame)
+    elseif targetInterruptEventState == false then
+        interruptFrame:Hide()
+        self:HideInterruptActionGlows()
+        return
+    else
+        local presentationBound = SetInterruptFrameFromNotInterruptible(interruptFrame, rawNotInterruptible)
+        if not presentationBound then
             interruptFrame:Hide()
             self:HideInterruptActionGlows()
             return
@@ -8445,11 +8449,6 @@ function addon:GetGearTargetOwnedCount(itemID)
         ok, count = pcall(C_Item.GetItemCount, itemID)
         if ok and IsAccessibleNumber(count) then return math.max(0, count) end
     end
-    if GetItemCount then
-        local ok, count = pcall(GetItemCount, itemID, true)
-        if ok and IsAccessibleNumber(count) then return math.max(0, count) end
-    end
-
     local count = 0
     if C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemID then
         for bag = 0, 5 do
@@ -8474,8 +8473,8 @@ function addon:GetGearTargetName(target)
         local ok, name = pcall(C_Item.GetItemNameByID, itemID)
         if ok and type(name) == "string" and name ~= "" then return name end
     end
-    if itemID and GetItemInfo then
-        local ok, name = pcall(GetItemInfo, itemID)
+    if itemID and C_Item and C_Item.GetItemInfo then
+        local ok, name = pcall(C_Item.GetItemInfo, itemID)
         if ok and type(name) == "string" and name ~= "" then return name end
     end
     if itemID and C_Item and C_Item.RequestLoadItemDataByID then
@@ -8523,10 +8522,6 @@ function addon:GetGearTargetIcon(target)
         local ok, value = pcall(C_Item.GetItemIconByID, itemID)
         if ok and IsAccessibleNumber(value) then icon = value end
     end
-    if not icon and GetItemIcon then
-        local ok, value = pcall(GetItemIcon, itemID)
-        if ok and IsAccessibleNumber(value) then icon = value end
-    end
     if not icon and C_Item and C_Item.RequestLoadItemDataByID then
         pcall(C_Item.RequestLoadItemDataByID, itemID)
     end
@@ -8541,12 +8536,8 @@ function addon:GetGearTargetQualityColor(target)
         local ok, _, _, value = pcall(C_Item.GetItemInfo, itemID)
         if ok and IsAccessibleNumber(value) then quality = value end
     end
-    if not quality and GetItemInfo then
-        local ok, _, _, value = pcall(GetItemInfo, itemID)
-        if ok and IsAccessibleNumber(value) then quality = value end
-    end
-    if quality and GetItemQualityColor then
-        local ok, r, g, b = pcall(GetItemQualityColor, quality)
+    if quality and C_Item and C_Item.GetItemQualityColor then
+        local ok, r, g, b = pcall(C_Item.GetItemQualityColor, quality)
         if ok and IsAccessibleNumber(r) and IsAccessibleNumber(g) and IsAccessibleNumber(b) then
             return r, g, b
         end
@@ -8564,9 +8555,7 @@ function addon:GetItemSetID(itemInfo)
         if IsAccessibleNumber(setID) then return setID end
         return nil
     end
-    local setID = C_Item and ReadSetID(C_Item.GetItemInfo) or nil
-    if setID then return setID end
-    return ReadSetID(GetItemInfo)
+    return C_Item and ReadSetID(C_Item.GetItemInfo) or nil
 end
 
 function addon:GetEquippedTierSetState()
@@ -10594,8 +10583,8 @@ function addon:UpdateGuideSection()
             local iconTexture = button.iconTexture
             if button.iconSpellID then
                 iconTexture = select(2, GetSpellData(button.iconSpellID))
-            elseif button.iconItemID and GetItemInfoInstant then
-                local okItem, _, _, _, _, itemIcon = pcall(GetItemInfoInstant, button.iconItemID)
+            elseif button.iconItemID and C_Item and C_Item.GetItemInfoInstant then
+                local okItem, _, _, _, _, itemIcon = pcall(C_Item.GetItemInfoInstant, button.iconItemID)
                 if okItem and itemIcon then iconTexture = itemIcon end
             end
             SetFlatTabButtonIcon(button, iconTexture or QUESTION_MARK_ICON, 11)
@@ -11886,6 +11875,7 @@ function addon:RegisterRuntimeEvents()
         if self.RegisterUnitEvent then
             registered = pcall(self.RegisterUnitEvent, self, eventName, "target")
         end
+        interruptEventTargetScoped[eventName] = registered == true
         if not registered then
             pcall(self.RegisterEvent, self, eventName)
         end
@@ -12172,7 +12162,11 @@ addon:SetScript("OnEvent", function(self, event, ...)
         ScheduleInterruptAlertRefreshes()
     elseif event == "UNIT_SPELLCAST_INTERRUPTIBLE" or event == "UNIT_SPELLCAST_NOT_INTERRUPTIBLE" then
         local unitTarget = ...
-        if IsAccessibleValue(unitTarget) and type(unitTarget) == "string" and unitTarget == "target" then
+        local isTargetEvent = interruptEventTargetScoped[event] == true
+        if not isTargetEvent and IsAccessibleValue(unitTarget) and type(unitTarget) == "string" then
+            isTargetEvent = unitTarget == "target"
+        end
+        if isTargetEvent then
             targetInterruptEventState = event == "UNIT_SPELLCAST_INTERRUPTIBLE"
             self:UpdateInterruptAlert()
             ScheduleInterruptAlertRefreshes()

@@ -9,7 +9,7 @@ local DKM = {
 
 assert(loadfile("Codex.lua"))("DKMentor", DKM)
 assert(type(DKM.Codex) == "table", "Codex table missing")
-assert(DKM.Codex.patch == "12.1.0", "Unexpected Codex patch")
+assert(DKM.Codex.patch == "12.1.5", "Unexpected Codex patch")
 assert(#DKM.Codex.sectionOrder == 10, "Expected ten Codex sections")
 assert(DKM.Codex.sectionOrder[2] == "advisor", "Stats & Folio must be a first-class Codex section")
 assert(DKM.Codex.sectionOrder[3] == "stats", "Gear Mentor must remain a first-class Codex section")
